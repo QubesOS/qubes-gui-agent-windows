@@ -11,7 +11,9 @@ C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE /D_DBG /DDBG
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
-                    ..\vchan;
+                    ..\..\core\vchan; \
+                    ..\..\core\win\include; \
+                    ..\gui-common\include;
 
 SOURCES=vmside.c log.c txrx-vchan.c qvcontrol.c
 
@@ -20,10 +22,10 @@ TARGETLIBS=\
         $(SDK_LIB_PATH)\user32.lib \
         $(SDK_LIB_PATH)\gdi32.lib \
         $(SDK_LIB_PATH)\setupapi.lib \
-	..\libs\*\gntmem.lib \
-	..\libs\*\evtchn.lib \
-	..\libs\*\libxs.lib \
-	..\libs\*\libvchan.lib
+	..\..\core\win\libs\*\gntmem.lib \
+	..\..\core\win\libs\*\evtchn.lib \
+	..\..\core\win\libs\*\libxs.lib \
+	..\..\core\win\libs\*\libvchan.lib
 
 
 
