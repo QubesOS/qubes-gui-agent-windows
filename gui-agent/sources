@@ -1,0 +1,29 @@
+TARGETNAME=wga
+TARGETTYPE=PROGRAM
+TARGETPATH=bin
+
+
+UMTYPE=console
+USE_MSVCRT=1
+
+UMENTRY = wmain
+C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE /D_DBG /DDBG
+
+INCLUDES=$(INCLUDES); \
+                    ..\include; \
+                    ..\vchan;
+
+SOURCES=vmside.c log.c txrx-vchan.c qvcontrol.c
+
+TARGETLIBS=\
+        $(SDK_LIB_PATH)\kernel32.lib \
+        $(SDK_LIB_PATH)\user32.lib \
+        $(SDK_LIB_PATH)\gdi32.lib \
+        $(SDK_LIB_PATH)\setupapi.lib \
+	..\libs\*\gntmem.lib \
+	..\libs\*\evtchn.lib \
+	..\libs\*\libxs.lib \
+	..\libs\*\libvchan.lib
+
+
+

@@ -1,0 +1,14 @@
+TARGETNAME=qvmini
+TARGETTYPE=DRIVER
+TARGETPATH=..\bin
+
+#LINKER_FORCE_NO_DBG_SECTION=1
+
+TARGETLIBS=$(DDK_LIB_PATH)\videoprt.lib
+INCLUDES=$(INCLUDES); ..\inc;
+
+
+SOURCES=qvmini.c \
+        memory.c \
+        qvmini.rc
+

@@ -1,0 +1,21 @@
+TARGETNAME=qvgdi
+TARGETTYPE=GDI_DRIVER
+TARGETPATH=..\bin
+
+#LINKER_FORCE_NO_DBG_SECTION=1
+
+INCLUDES=$(INCLUDES); ..\inc;
+
+!IFNDEF MSC_WARNING_LEVEL
+MSC_WARNING_LEVEL=/W4
+!ENDIF
+
+MSC_WARNING_LEVEL=$(MSC_WARNING_LEVEL) /WX
+
+
+SOURCES=debug.c     \
+        enable.c    \
+        screen.c    \
+        gdi.rc
+
+

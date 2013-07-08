@@ -1,0 +1,39 @@
+#include <windows.h>
+//#include <ntverp.h>
+
+/* default is nodebug */
+#if DBG
+#define VER_DEBUG                   VS_FF_DEBUG
+#else
+#define VER_DEBUG                   0
+#endif
+
+/* default is prerelease */
+#if BETA
+#define VER_PRERELEASE              VS_FF_PRERELEASE
+#else
+#define VER_PRERELEASE              0
+#endif
+
+#if OFFICIAL_BUILD
+#define VER_PRIVATE                 0
+#else
+#define VER_PRIVATE                 VS_FF_PRIVATEBUILD
+#endif
+
+#define VER_FILEFLAGSMASK           VS_FFI_FILEFLAGSMASK
+#define VER_FILEOS                  VOS_NT_WINDOWS32
+#define VER_FILEFLAGS               (VER_PRERELEASE|VER_DEBUG|VER_PRIVATE)
+
+#define VER_FILETYPE                VFT_DRV
+#define VER_FILESUBTYPE             VFT2_DRV_DISPLAY
+#define VER_FILEDESCRIPTION_STR     "Qubes Video Miniport Driver"
+#define	VER_LEGALCOPYRIGHT_STR		L"\251 ITL. All rights reserved."
+#define VER_INTERNALNAME_STR        "virtvideo.sys"
+#define VER_ORIGINALFILENAME_STR    "virtvideo.sys"
+#define VER_COMPANYNAME_STR         "ITL"
+#define	VER_PRODUCTNAME_STR	"Qubes"
+
+#define VER_LANGNEUTRAL
+#include "common.ver"
+
