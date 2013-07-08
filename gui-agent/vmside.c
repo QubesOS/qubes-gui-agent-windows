@@ -235,7 +235,6 @@ ULONG WatchForEvents(
 
 	evtchn = libvchan_fd_for_select(ctrl);
 
-	evtchn = NULL;
 	memset(&ol, 0, sizeof(ol));
 	ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
