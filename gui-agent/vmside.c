@@ -91,6 +91,7 @@ void send_pixmap_mfns(
 		return;
 	}
 
+	/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
 	g_uScreenWidth = pShmCmd->width;
 	g_uScreenHeight = pShmCmd->height;
 
@@ -103,6 +104,55 @@ void send_pixmap_mfns(
 	write_data(pShmCmd, sizeof(struct shm_cmd) + size);
 
 	free(pShmCmd);
+}
+
+ULONG send_window_create(
+	HWND window
+)
+{
+	WINDOWINFO wi;
+	ULONG uResult;
+	struct msg_hdr hdr;
+	struct msg_create mc;
+	struct msg_map_info mmi;
+
+	wi.cbSize = sizeof(wi);
+	/* special case for full screen */
+	if (window == NULL) {
+		/* TODO: multiple screens? */
+		wi.rcWindow.left = 0;
+		wi.rcWindow.top = 0;
+		/* FIXME: error checking? */
+		/* FIXME: this code actually doesn't work */
+		wi.rcWindow.bottom = GetSystemMetrics(SM_CXSCREEN);
+		wi.rcWindow.right = GetSystemMetrics(SM_CYSCREEN);
+	} else 	if (!GetWindowInfo(window, &wi)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "send_window_create: GetWindowInfo()");
+		return uResult;
+	}
+
+	hdr.type = MSG_CREATE;
+	hdr.window = (uint32_t) window;
+
+	mc.x = wi.rcWindow.left;
+	mc.y = wi.rcWindow.top;
+	mc.width = wi.rcWindow.right - wi.rcWindow.left;
+	mc.height = wi.rcWindow.bottom - wi.rcWindow.top;
+	mc.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+	mc.override_redirect = 0;
+
+	write_message(hdr, mc);
+
+	/* FIXME: for now, all windows are imediately mapped, but this should be
+	 * changed to reflect real window visibility */
+	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+	mmi.override_redirect = 0;
+
+	hdr.type = MSG_MAP;
+	write_message(hdr, mmi);
+
+	return ERROR_SUCCESS;
 }
 
 void send_window_damage_event(
@@ -319,6 +369,7 @@ ULONG WatchForEvents(
 					}
 
 					send_protocol_version();
+					send_window_create(NULL);
 					send_pixmap_mfns(NULL);
 
 					bVchanClientConnected = TRUE;
