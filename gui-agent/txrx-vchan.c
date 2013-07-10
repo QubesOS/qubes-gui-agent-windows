@@ -45,7 +45,7 @@ int write_all_vchan_ext(
 		written += ret;
 	}
 
-//      fprintf(stderr, "sent %d bytes\n", size);
+//      fprintf(stderr, "sent %d bytes (0x%hhx, 0x%hhx, 0x%hhx, 0x%hhx)\n", size, ((char*)buf)[0], ((char*)buf)[1], ((char*)buf)[2], ((char*)buf)[3]);
 	return size;
 }
 

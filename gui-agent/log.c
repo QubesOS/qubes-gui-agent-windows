@@ -38,6 +38,7 @@ static VOID Lprintf_main(
 	if (hLog == INVALID_HANDLE_VALUE)
 		hLog = CreateFile(LOG_FILE, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hLog == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "Failed to open log file: %d\n", GetLastError());
 		return;
 	}
 	SetFilePointer(hLog, 0, NULL, FILE_END);
@@ -74,6 +75,7 @@ static VOID logprintf_main(
 	if (hLog == INVALID_HANDLE_VALUE)
 		hLog = CreateFile(LOG_FILE, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hLog == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "Failed to open log file: %d\n", GetLastError());
 		return;
 	}
 	SetFilePointer(hLog, 0, NULL, FILE_END);

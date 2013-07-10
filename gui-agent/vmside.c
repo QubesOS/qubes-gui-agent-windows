@@ -18,6 +18,9 @@ HANDLE g_hCleanupFinishedEvent;
 ULONG g_uScreenWidth = 0;
 ULONG g_uScreenHeight = 0;
 
+/* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
+ * struct.
+ */
 ULONG PrepareShmCmd(
 	HWND hWnd,
 	struct shm_cmd ** ppShmCmd
