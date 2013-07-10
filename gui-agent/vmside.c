@@ -288,7 +288,8 @@ ULONG WatchForEvents(
 			case 1:
 
 				logprintf("Damage %d\n", uDamage++);
-				send_window_damage_event(NULL, 0, 0, g_uScreenWidth, g_uScreenHeight);
+				if (bVchanClientConnected)
+					send_window_damage_event(NULL, 0, 0, g_uScreenWidth, g_uScreenHeight);
 				break;
 
 			case 2:
