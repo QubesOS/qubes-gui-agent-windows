@@ -714,6 +714,7 @@ VOID APIENTRY DrvSynchronizeSurface(
 )
 {
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
+	UNREFERENCED_PARAMETER(fl);
 
 	if (!pso)
 		return;
