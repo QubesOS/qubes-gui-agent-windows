@@ -12,7 +12,7 @@ ClassGUID = {4D36E968-E325-11CE-BFC1-08002BE10318}
 Class = Display
 DriverPackageType = PlugAndPlay
 DriverVer = 06/20/2013,1.0.0.0
-;CatalogFile = QVideo.cat
+CatalogFile = QVideo.cat
 
 [DestinationDirs]
 DefaultDestDir   = 11
