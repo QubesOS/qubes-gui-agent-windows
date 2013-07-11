@@ -324,7 +324,9 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
 	uStride = (ulBitCount >> 3) * sizl.cx;
 
-	uSurfaceMemorySize = (ULONG) (uStride * sizl.cy);
+	/* FIXME: don't know why, but every 2nd line is some crap, so treat this as
+	 * twice long signle line */
+	uSurfaceMemorySize = (ULONG) (2 * uStride * sizl.cy);
 
 	DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
 
