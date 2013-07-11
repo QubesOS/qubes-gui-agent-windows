@@ -122,13 +122,23 @@ ULONG send_window_create(
 	wi.cbSize = sizeof(wi);
 	/* special case for full screen */
 	if (window == NULL) {
+		QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
+		ULONG uResult;
+
 		/* TODO: multiple screens? */
 		wi.rcWindow.left = 0;
 		wi.rcWindow.top = 0;
-		/* FIXME: error checking? */
-		/* FIXME: this code actually doesn't work */
-		wi.rcWindow.bottom = GetSystemMetrics(SM_CXSCREEN);
-		wi.rcWindow.right = GetSystemMetrics(SM_CYSCREEN);
+
+		memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
+
+		uResult = GetWindowData(window, &QvGetSurfaceDataResponse);
+		if (ERROR_SUCCESS != uResult) {
+			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			return uResult;
+		}
+
+		wi.rcWindow.right = QvGetSurfaceDataResponse.cx;
+		wi.rcWindow.bottom = QvGetSurfaceDataResponse.cy;
 	} else 	if (!GetWindowInfo(window, &wi)) {
 		uResult = GetLastError();
 		lprintf_err(uResult, "send_window_create: GetWindowInfo()");
