@@ -1,5 +1,7 @@
 @ECHO OFF
 
+copy qvideo\inf\qvideo.inf qvideo\bin\amd64
+
 IF NOT EXIST SIGN_CONFIG.BAT GOTO DONT_SIGN
 
 IF %_BUILDARCH%==x86 (SET BUILDDIR=i386) ELSE (SET BUILDDIR=amd64)
