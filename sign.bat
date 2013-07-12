@@ -1,6 +1,6 @@
 @ECHO OFF
 
-copy qvideo\inf\qvideo.inf qvideo\bin\amd64
+copy qvideo\inf\qvideo.inf.version qvideo\bin\amd64\qvideo.inf
 
 IF NOT EXIST SIGN_CONFIG.BAT GOTO DONT_SIGN
 

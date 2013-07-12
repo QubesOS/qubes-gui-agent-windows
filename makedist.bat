@@ -32,6 +32,8 @@ IF EXIST %CERT_FILENAME% GOTO :DONT_SIGN
 certutil -exportpfx -user -privatekey %CERT_PASSWORD_FLAG% PrivateCertStore "GPLPV Test Cert" "%CERT_FILENAME%
 :DONT_SIGN
 
+powershell -ExecutionPolicy RemoteSigned -File set_version.ps1
+
 rem cmd /C "pushd . && %DDK_PATH%\bin\setenv.bat %DDK_PATH%\ chk WIN7 && popd && build -cZg && sign.bat && call wix.bat"
 
 cmd /C "pushd . && %DDK_PATH%\bin\setenv.bat %DDK_PATH%\ chk x64 WIN7 && popd && build -cZg && sign.bat && call wix.bat"
