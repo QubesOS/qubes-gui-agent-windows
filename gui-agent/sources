@@ -15,7 +15,7 @@ INCLUDES=$(INCLUDES); \
                     ..\..\core\win\include; \
                     ..\gui-common\include;
 
-SOURCES=vmside.c log.c txrx-vchan.c qvcontrol.c
+SOURCES=vmside.c log.c txrx-vchan.c qvcontrol.c xorg-keymap.c
 
 TARGETLIBS=\
         $(SDK_LIB_PATH)\kernel32.lib \

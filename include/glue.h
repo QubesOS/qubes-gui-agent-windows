@@ -77,3 +77,14 @@ int real_write_message(
     } while(0)
 #define write_data(x, y) write_all_vchan_ext(x, y)
 #define write_struct(x) write_data((char*)&x, sizeof(x))
+
+extern WORD X11ToVk[256];
+
+/* From X.h */
+#define KeyPress            2
+#define ButtonPress            4
+#define Button1                 1
+#define Button2                 2
+#define Button3                 3
+#define Button4                 4
+#define Button5                 5
