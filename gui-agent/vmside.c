@@ -219,47 +219,48 @@ ULONG handle_server_data(
 	_tprintf(_T(__FUNCTION__) _T("received message type %d for 0x%x\n"), hdr.type, hdr.window);
 
 	switch (hdr.type) {
-	case MSG_KEYPRESS:
-//              handle_keypress(g, hdr.window);
-		break;
-	case MSG_CONFIGURE:
-//              handle_configure(g, hdr.window);
-		break;
-	case MSG_MAP:
-//              handle_map(g, hdr.window);
-		break;
-	case MSG_BUTTON:
-//              handle_button(g, hdr.window);
-		break;
-	case MSG_MOTION:
-//              handle_motion(g, hdr.window);
-		break;
-	case MSG_CLOSE:
-//              handle_close(g, hdr.window);
-		break;
-	case MSG_CROSSING:
-//              handle_crossing(g, hdr.window);
-		break;
-	case MSG_FOCUS:
-//              handle_focus(g, hdr.window);
-		break;
-	case MSG_CLIPBOARD_REQ:
-//              handle_clipboard_req(g, hdr.window);
-		break;
-	case MSG_CLIPBOARD_DATA:
-//              handle_clipboard_data(g, hdr.window);
-		break;
-	case MSG_EXECUTE:
-//              handle_execute();
-		break;
-	case MSG_KEYMAP_NOTIFY:
-//              handle_keymap_notify(g);
-		break;
-	case MSG_WINDOW_FLAGS:
-//              handle_window_flags(g, hdr.window);
-		break;
 	default:
 		_tprintf(_T(__FUNCTION__) _T("got unknown msg type %d, ignoring\n"), hdr.type);
+	case MSG_KEYPRESS:
+//              handle_keypress(g, hdr.window);
+//		break;
+	case MSG_CONFIGURE:
+//              handle_configure(g, hdr.window);
+//		break;
+	case MSG_MAP:
+//              handle_map(g, hdr.window);
+//		break;
+	case MSG_BUTTON:
+//              handle_button(g, hdr.window);
+//		break;
+	case MSG_MOTION:
+//              handle_motion(g, hdr.window);
+//		break;
+	case MSG_CLOSE:
+//              handle_close(g, hdr.window);
+//		break;
+	case MSG_CROSSING:
+//              handle_crossing(g, hdr.window);
+//		break;
+	case MSG_FOCUS:
+//              handle_focus(g, hdr.window);
+//		break;
+	case MSG_CLIPBOARD_REQ:
+//              handle_clipboard_req(g, hdr.window);
+//		break;
+	case MSG_CLIPBOARD_DATA:
+//              handle_clipboard_data(g, hdr.window);
+//		break;
+	case MSG_EXECUTE:
+//              handle_execute();
+//		break;
+	case MSG_KEYMAP_NOTIFY:
+//              handle_keymap_notify(g);
+//		break;
+	case MSG_WINDOW_FLAGS:
+//              handle_window_flags(g, hdr.window);
+//		break;
+		/* discard unsupported message body */
 		while (hdr.untrusted_len > 0) {
 			nbRead = read_all_vchan_ext(discard, min(hdr.untrusted_len, sizeof(discard)));
 			if (nbRead <= 0)
