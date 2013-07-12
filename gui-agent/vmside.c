@@ -58,6 +58,10 @@ ULONG PrepareShmCmd(
 
 	memset(pShmCmd, 0, uShmCmdSize);
 
+	/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
+	g_uScreenWidth = QvGetSurfaceDataResponse.cx;
+	g_uScreenHeight = QvGetSurfaceDataResponse.cy;
+
 	pShmCmd->shmid = 0;
 	/* video buffer is iterlaced with some crap (double buffer?) so place it
 	 * outside of the window as a workaround (FIXME) */
@@ -95,10 +99,6 @@ void send_pixmap_mfns(
 		free(pShmCmd);
 		return;
 	}
-
-	/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
-	g_uScreenWidth = pShmCmd->width;
-	g_uScreenHeight = pShmCmd->height;
 
 	size = pShmCmd->num_mfn * sizeof(uint32_t);
 
