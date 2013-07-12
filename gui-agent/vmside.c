@@ -197,6 +197,17 @@ void send_protocol_version(
 	write_struct(version);
 }
 
+void handle_xconf(
+)
+{
+	struct msg_xconf xconf;
+
+	read_all_vchan_ext((char *)&xconf, sizeof(xconf));
+
+	/* TODO: set video device resolution */
+}
+
+
 ULONG handle_server_data(
 )
 {
@@ -384,6 +395,7 @@ ULONG WatchForEvents(
 					}
 
 					send_protocol_version();
+					handle_xconf();
 					send_window_create(NULL);
 					send_pixmap_mfns(NULL);
 
