@@ -216,7 +216,9 @@ ULONG handle_server_data(
 	int nbRead;
 	read_all_vchan_ext((char *)&hdr, sizeof(hdr));
 
+#ifdef DBG
 	_tprintf(_T(__FUNCTION__) _T("received message type %d for 0x%x\n"), hdr.type, hdr.window);
+#endif
 
 	switch (hdr.type) {
 	default:
@@ -364,7 +366,9 @@ ULONG WatchForEvents(
 			switch (dwSignaledEvent) {
 			case 1:
 
+#ifdef DBG
 				logprintf("Damage %d\n", uDamage++);
+#endif
 				if (bVchanClientConnected)
 					send_window_damage_event(NULL, 0, 0, g_uScreenWidth, g_uScreenHeight);
 				break;

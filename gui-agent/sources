@@ -7,7 +7,7 @@ UMTYPE=console
 USE_MSVCRT=1
 
 UMENTRY = wmain
-C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE /D_DBG /DDBG
+C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
