@@ -637,6 +637,44 @@ ULONG SupportVideoMode(
 	return QV_SUCCESS;
 }
 
+ULONG GetPfnList(
+	SURFOBJ * pso,
+	ULONG cjIn,
+	PQV_GET_PFN_LIST pQvGetPfnList,
+	ULONG cjOut,
+	PQV_GET_PFN_LIST_RESPONSE pQvGetPfnListResponse
+)
+{
+	PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
+	DWORD dwResult;
+	QVMINI_GET_PFN_LIST QvminiGetPfnList;
+	ULONG nbReturned;
+
+	if (cjIn < sizeof(QV_GET_PFN_LIST) || !pQvGetPfnList || cjOut < sizeof(QV_GET_PFN_LIST_RESPONSE) || !pQvGetPfnListResponse)
+		return QV_INVALID_PARAMETER;
+
+	pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) pso->dhsurf;
+	if (!pSurfaceDescriptor || !pSurfaceDescriptor->ppdev)
+		// A surface is managed by GDI
+		return QV_INVALID_PARAMETER;
+
+	QvminiGetPfnList.pVirtualAddress = pQvGetPfnList->pVirtualAddress;
+	QvminiGetPfnList.uRegionSize = pQvGetPfnList->uRegionSize;
+
+	dwResult = EngDeviceIoControl(pSurfaceDescriptor->ppdev->hDriver,
+				      IOCTL_QVMINI_GET_PFN_LIST, &QvminiGetPfnList, sizeof(QvminiGetPfnList), &pQvGetPfnListResponse->PfnArray,
+				      sizeof(PFN_ARRAY), &nbReturned);
+
+	if (0 != dwResult) {
+		DISPDBG((0, "GetPfnList(): EngDeviceIoControl(IOCTL_QVMINI_GET_PFN_LIST) failed with error %d\n", dwResult));
+		return QV_INVALID_PARAMETER;
+	}
+
+	pQvGetPfnListResponse->uMagic = QVIDEO_MAGIC;
+
+	return QV_SUCCESS;
+}
+
 ULONG GetSurfaceData(
 	SURFOBJ * pso,
 	ULONG cjOut,
@@ -816,6 +854,9 @@ ULONG APIENTRY DrvEscape(
 
 	case QVESC_STOP_WATCHING_SURFACE:
 		return StopWatchingSurface(pso);
+
+	case QVESC_GET_PFN_LIST:
+		return GetPfnList(pso, cjIn, pvIn, cjOut, pvOut);
 
 	default:
 		// 0 means "not supported"
