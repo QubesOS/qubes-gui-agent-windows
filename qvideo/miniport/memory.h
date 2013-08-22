@@ -11,6 +11,12 @@ VOID FreeMemory(
 	PVOID pMemory
 );
 
+BOOLEAN GetUserBufferPfnArrayBool(
+	PVOID pVirtualAddress,
+	ULONG uLength,
+	PPFN_ARRAY pPfnArray
+);
+
 PVOID AllocateSection(
 	ULONG uLength,
 	PHANDLE phSection,

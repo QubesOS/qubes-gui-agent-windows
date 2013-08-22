@@ -118,6 +118,9 @@ BOOLEAN QubesVideoStartIO(
 	PQVMINI_ALLOCATE_SECTION pQvminiAllocateSection = NULL;
 	PQVMINI_ALLOCATE_SECTION_RESPONSE pQvminiAllocateSectionResponse = NULL;
 	PQVMINI_FREE_SECTION pQvminiFreeSection = NULL;
+	PQVMINI_GET_PFN_LIST pQvminiGetPfnList = NULL;
+	PQVMINI_GET_PFN_LIST_RESPONSE pQvminiGetPfnListResponse = NULL;
+
 	ULONG uLength;
 
 	UNREFERENCED_PARAMETER(HwDeviceExtension);
@@ -239,6 +242,33 @@ BOOLEAN QubesVideoStartIO(
 		RequestPacket->StatusBlock->Information = 0;
 		break;
 
+	case IOCTL_QVMINI_GET_PFN_LIST:
+
+		if (RequestPacket->InputBufferLength < sizeof(QVMINI_GET_PFN_LIST)) {
+			RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+			RequestPacket->StatusBlock->Information = sizeof(QVMINI_GET_PFN_LIST);
+			break;
+		}
+
+		if (RequestPacket->OutputBufferLength < sizeof(QVMINI_GET_PFN_LIST_RESPONSE)) {
+			RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+			RequestPacket->StatusBlock->Information = 0;
+			break;
+		}
+
+		pQvminiGetPfnList = RequestPacket->InputBuffer;
+		pQvminiGetPfnListResponse = RequestPacket->OutputBuffer;
+
+		// The specified buffer will be probed in the UserMode access mode.
+		if (!GetUserBufferPfnArrayBool(pQvminiGetPfnList->pVirtualAddress, pQvminiGetPfnList->uRegionSize, &pQvminiGetPfnListResponse->PfnArray)) {
+			RequestPacket->StatusBlock->Status = ERROR_INVALID_PARAMETER;
+			RequestPacket->StatusBlock->Information = 0;
+		} else {
+			RequestPacket->StatusBlock->Status = NO_ERROR;
+			RequestPacket->StatusBlock->Information = sizeof(QVMINI_GET_PFN_LIST_RESPONSE);
+		}
+		break;
+
 	default:
 		RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
 		break;
@@ -287,4 +317,4 @@ ULONG DriverEntry(
 
 	return initializationStatus;
 
-}				// end DriverEntry()
+}
