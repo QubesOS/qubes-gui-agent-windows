@@ -64,7 +64,7 @@ typedef struct _SURFACE_DESCRIPTOR
 	PVOID pMdl;
 	PFN_ARRAY PfnArray;
 
-	BITMAP_HEADER BitmapHeader;
+//      BITMAP_HEADER BitmapHeader;
 
 } SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
 
