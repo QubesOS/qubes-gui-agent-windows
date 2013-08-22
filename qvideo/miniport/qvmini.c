@@ -115,6 +115,9 @@ BOOLEAN QubesVideoStartIO(
 	PQVMINI_ALLOCATE_MEMORY pQvminiAllocateMemory = NULL;
 	PQVMINI_ALLOCATE_MEMORY_RESPONSE pQvminiAllocateMemoryResponse = NULL;
 	PQVMINI_FREE_MEMORY pQvminiFreeMemory = NULL;
+	PQVMINI_ALLOCATE_SECTION pQvminiAllocateSection = NULL;
+	PQVMINI_ALLOCATE_SECTION_RESPONSE pQvminiAllocateSectionResponse = NULL;
+	PQVMINI_FREE_SECTION pQvminiFreeSection = NULL;
 	ULONG uLength;
 
 	UNREFERENCED_PARAMETER(HwDeviceExtension);
@@ -122,7 +125,7 @@ BOOLEAN QubesVideoStartIO(
 	RequestPacket->StatusBlock->Status = 0;
 	RequestPacket->StatusBlock->Information = 0;
 
-	VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
+//      VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
 
 	switch (RequestPacket->IoControlCode) {
 	case IOCTL_QVMINI_ALLOCATE_MEMORY:
@@ -154,7 +157,7 @@ BOOLEAN QubesVideoStartIO(
 			RequestPacket->StatusBlock->Information = 0;
 		} else {
 
-			VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
+//                      VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
 
 			RequestPacket->StatusBlock->Status = NO_ERROR;
 			RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
@@ -171,12 +174,69 @@ BOOLEAN QubesVideoStartIO(
 
 		pQvminiFreeMemory = RequestPacket->InputBuffer;
 
-		VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
+//              VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
 
 		FreeMemory(pQvminiFreeMemory->pVirtualAddress);
 
 		RequestPacket->StatusBlock->Status = NO_ERROR;
 		RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
+		break;
+
+	case IOCTL_QVMINI_ALLOCATE_SECTION:
+
+		if (RequestPacket->InputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION)) {
+			RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+			RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION);
+			break;
+		}
+
+		if (RequestPacket->OutputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE)) {
+			RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+			RequestPacket->StatusBlock->Information = 0;
+			break;
+		}
+
+		pQvminiAllocateSection = RequestPacket->InputBuffer;
+		pQvminiAllocateSectionResponse = RequestPacket->OutputBuffer;
+
+		uLength = pQvminiAllocateSection->uLength;
+
+		pQvminiAllocateSectionResponse->pVirtualAddress =
+			AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
+					&pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
+					&pQvminiAllocateSectionResponse->PfnArray);
+
+		if (!pQvminiAllocateSectionResponse->pVirtualAddress) {
+
+			VideoDebugPrint((0, "AllocateSection(%d) failed.\n", uLength));
+
+			RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
+			RequestPacket->StatusBlock->Information = 0;
+		} else {
+
+//                      VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
+
+			RequestPacket->StatusBlock->Status = NO_ERROR;
+			RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE);
+		}
+		break;
+
+	case IOCTL_QVMINI_FREE_SECTION:
+
+		if (RequestPacket->InputBufferLength < sizeof(QVMINI_FREE_SECTION)) {
+			RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+			RequestPacket->StatusBlock->Information = sizeof(QVMINI_FREE_SECTION);
+			break;
+		}
+
+		pQvminiFreeSection = RequestPacket->InputBuffer;
+
+//              VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
+
+		FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject, pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress);
+
+		RequestPacket->StatusBlock->Status = NO_ERROR;
+		RequestPacket->StatusBlock->Information = 0;
 		break;
 
 	default:
