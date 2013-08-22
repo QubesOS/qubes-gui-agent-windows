@@ -197,7 +197,7 @@ VOID APIENTRY DrvDisablePDEV(
 	EngFreeMem(ppdev);
 }
 
-ULONG AllocateSurfaceData(
+ULONG AllocateMemory(
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor,
 	ULONG uLength
 )
@@ -207,11 +207,9 @@ ULONG AllocateSurfaceData(
 	ULONG nbReturned;
 	DWORD dwResult;
 
-	// Ask our miniport to allocate a surface memory buffer and return a sequence of physical pages addresses for this buffer.
-
 	pQvminiAllocateMemoryResponse = (PQVMINI_ALLOCATE_MEMORY_RESPONSE) EngAllocMem(FL_ZERO_MEMORY, sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE), ALLOC_TAG);
 	if (!pQvminiAllocateMemoryResponse) {
-		RIP("AllocateSurfaceData(): EngAllocMem(QVMINI_ALLOCATE_MEMORY_RESPONSE) failed\n");
+		RIP("AllocateMemory(): EngAllocMem(QVMINI_ALLOCATE_MEMORY_RESPONSE) failed\n");
 		return STATUS_NO_MEMORY;
 	}
 
@@ -223,7 +221,7 @@ ULONG AllocateSurfaceData(
 				      sizeof(QvminiAllocateMemory), pQvminiAllocateMemoryResponse, sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE), &nbReturned);
 
 	if (0 != dwResult) {
-		DISPDBG((0, "AllocateSurfaceData(): EngDeviceIoControl(IOCTL_QVMINI_ALLOCATE_MEMORY) failed with error %d\n", dwResult));
+		DISPDBG((0, "AllocateMemory(): EngDeviceIoControl(IOCTL_QVMINI_ALLOCATE_MEMORY) failed with error %d\n", dwResult));
 		EngFreeMem(pQvminiAllocateMemoryResponse);
 		return STATUS_NO_MEMORY;
 	}
@@ -233,12 +231,63 @@ ULONG AllocateSurfaceData(
 
 	EngFreeMem(pQvminiAllocateMemoryResponse);
 
-	DISPDBG((0, "AllocateSurfaceData(%d) succeeded: %p\n", uLength, pSurfaceDescriptor->pSurfaceData));
+	return 0;
+}
+
+ULONG AllocateSection(
+	PSURFACE_DESCRIPTOR pSurfaceDescriptor,
+	ULONG uLength
+)
+{
+	PQVMINI_ALLOCATE_SECTION_RESPONSE pQvminiAllocateSectionResponse = NULL;
+	QVMINI_ALLOCATE_SECTION QvminiAllocateSection;
+	ULONG nbReturned;
+	DWORD dwResult;
+
+	pQvminiAllocateSectionResponse = (PQVMINI_ALLOCATE_SECTION_RESPONSE) EngAllocMem(FL_ZERO_MEMORY, sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE), ALLOC_TAG);
+	if (!pQvminiAllocateSectionResponse) {
+		RIP("AllocateSurfaceData(): EngAllocMem(QVMINI_ALLOCATE_SECTION_RESPONSE) failed\n");
+		return STATUS_NO_MEMORY;
+	}
+
+	QvminiAllocateSection.uLength = uLength;
+
+	dwResult = EngDeviceIoControl(pSurfaceDescriptor->ppdev->hDriver,
+				      IOCTL_QVMINI_ALLOCATE_SECTION,
+				      &QvminiAllocateSection,
+				      sizeof(QvminiAllocateSection), pQvminiAllocateSectionResponse, sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE), &nbReturned);
+
+	if (0 != dwResult) {
+		DISPDBG((0, "AllocateSurfaceData(): EngDeviceIoControl(IOCTL_QVMINI_ALLOCATE_SECTION) failed with error %d\n", dwResult));
+		EngFreeMem(pQvminiAllocateSectionResponse);
+		return STATUS_NO_MEMORY;
+	}
+
+	pSurfaceDescriptor->pSurfaceData = pQvminiAllocateSectionResponse->pVirtualAddress;
+	pSurfaceDescriptor->hSection = pQvminiAllocateSectionResponse->hSection;
+	pSurfaceDescriptor->SectionObject = pQvminiAllocateSectionResponse->SectionObject;
+	pSurfaceDescriptor->pMdl = pQvminiAllocateSectionResponse->pMdl;
+
+	memcpy(&pSurfaceDescriptor->PfnArray, &pQvminiAllocateSectionResponse->PfnArray, sizeof(PFN_ARRAY));
+
+	EngFreeMem(pQvminiAllocateSectionResponse);
 
 	return 0;
 }
 
-VOID FreeSurfaceData(
+ULONG AllocateSurfaceData(
+	BOOLEAN bSurface,
+	PSURFACE_DESCRIPTOR pSurfaceDescriptor,
+	ULONG uLength
+)
+{
+	if (bSurface)
+		return AllocateSection(pSurfaceDescriptor, uLength);
+	else
+		return AllocateMemory(pSurfaceDescriptor, uLength);
+}
+
+VOID FreeMemory(
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor
 )
 {
@@ -258,10 +307,45 @@ VOID FreeSurfaceData(
 	}
 }
 
+VOID FreeSection(
+	PSURFACE_DESCRIPTOR pSurfaceDescriptor
+)
+{
+	DWORD dwResult;
+	QVMINI_FREE_SECTION QvminiFreeSection;
+	ULONG nbReturned;
+
+	DISPDBG((0, "FreeSection(%p)\n", pSurfaceDescriptor->pSurfaceData));
+
+	QvminiFreeSection.pVirtualAddress = pSurfaceDescriptor->pSurfaceData;
+	QvminiFreeSection.hSection = pSurfaceDescriptor->hSection;
+	QvminiFreeSection.SectionObject = pSurfaceDescriptor->SectionObject;
+	QvminiFreeSection.pMdl = pSurfaceDescriptor->pMdl;
+
+	dwResult = EngDeviceIoControl(pSurfaceDescriptor->ppdev->hDriver,
+				      IOCTL_QVMINI_FREE_SECTION, &QvminiFreeSection, sizeof(QvminiFreeSection), NULL, 0, &nbReturned);
+
+	if (0 != dwResult) {
+		DISPDBG((0, "FreeSection(): EngDeviceIoControl(IOCTL_QVMINI_FREE_SECTION) failed with error %d\n", dwResult));
+	}
+}
+
+VOID FreeSurfaceData(
+	PSURFACE_DESCRIPTOR pSurfaceDescriptor
+)
+{
+	if (pSurfaceDescriptor->bIsScreen)
+		FreeSection(pSurfaceDescriptor);
+	else
+		FreeMemory(pSurfaceDescriptor);
+}
+
 VOID FreeSurfaceDescriptor(
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor
 )
 {
+	if (!pSurfaceDescriptor)
+		return;
 
 	if (pSurfaceDescriptor->hDriverObj)
 		// Require a cleanup callback to be called.
@@ -290,7 +374,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 	HSURF hsurf;
 	DHSURF dhsurf;
 	ULONG uResult;
-	BITMAP_HEADER BitmapHeader = { {0x4D42, 0, 0, 0, 0x8A}
+/*	BITMAP_HEADER BitmapHeader = { {0x4D42, 0, 0, 0, 0x8A}
 	,
 	{0x7C, 0, 0, 1, 32, 3, 0, 0, 0, 0, 0,
 	 0x0FF0000, 0x0FF00, 0x0FF, 0x0FF000000, 0x73524742,
@@ -301,7 +385,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 	 ,
 	 0, 0, 0, 4, 0, 0, 0}
 	};
-
+*/
 	if (!hdev || !pHsurf || !ppSurfaceDescriptor)
 		return STATUS_INVALID_PARAMETER;
 
@@ -328,7 +412,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 	 * twice long signle line */
 	uSurfaceMemorySize = (ULONG) (2 * uStride * sizl.cy);
 
-	DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
+//      DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
 
 	pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) EngAllocMem(FL_ZERO_MEMORY, sizeof(SURFACE_DESCRIPTOR), ALLOC_TAG);
 	if (!pSurfaceDescriptor) {
@@ -340,7 +424,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
 	// pSurfaceDescriptor->ppdev must be set before calling this,
 	// because we query our miniport through EngDeviceIoControl().
-	uResult = AllocateSurfaceData(pSurfaceDescriptor, uSurfaceMemorySize);
+	uResult = AllocateSurfaceData(bSurface, pSurfaceDescriptor, uSurfaceMemorySize);
 	if (0 != uResult) {
 		DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): AllocateSurfaceData(%d) failed with error %d\n", uSurfaceMemorySize, uResult));
 		EngFreeMem(pSurfaceDescriptor);
@@ -372,16 +456,18 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 	pSurfaceDescriptor->cy = sizl.cy;
 	pSurfaceDescriptor->lDelta = uStride;
 	pSurfaceDescriptor->ulBitCount = ulBitCount;
-
+/*
 	memcpy(&pSurfaceDescriptor->BitmapHeader, &BitmapHeader, sizeof(BitmapHeader));
 	pSurfaceDescriptor->BitmapHeader.FileHeader.bfSize = sizl.cx * sizl.cy * 4 + sizeof(BitmapHeader);
 	pSurfaceDescriptor->BitmapHeader.V5Header.bV5Width = sizl.cx;
 	pSurfaceDescriptor->BitmapHeader.V5Header.bV5Height = -(LONG) sizl.cy;
 	pSurfaceDescriptor->BitmapHeader.V5Header.bV5SizeImage = sizl.cx * sizl.cy * 4;
-
+*/
 	if (sizl.cx > 50) {
-		DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
-			 &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
+//              DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
+//                       &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
+//                       pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
+		DISPDBG((0, "Surface %dx%d, data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy, pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
 			 pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
 		DISPDBG((0, "First phys pages: 0x%x, 0x%x, 0x%x\n", pSurfaceDescriptor->PfnArray.Pfn[0], pSurfaceDescriptor->PfnArray.Pfn[1],
 			 pSurfaceDescriptor->PfnArray.Pfn[2]));
@@ -455,9 +541,9 @@ VOID APIENTRY DrvDisableSurface(
 	// deallocate SURFACE_DESCRIPTOR structure.
 
 	FreeSurfaceDescriptor(ppdev->pScreenSurfaceDescriptor);
+	ppdev->pScreenSurfaceDescriptor = NULL;
 }
 
-/*
 HBITMAP APIENTRY DrvCreateDeviceBitmap(
 	IN DHPDEV dhpdev,
 	IN SIZEL sizl,
@@ -513,7 +599,7 @@ VOID APIENTRY DrvDeleteDeviceBitmap(
 
 	FreeSurfaceDescriptor(pSurfaceDescriptor);
 }
-*/
+
 BOOL APIENTRY DrvAssertMode(
 	DHPDEV dhpdev,
 	BOOL bEnable
@@ -558,15 +644,43 @@ ULONG GetSurfaceData(
 )
 {
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
+//      PSURFACE_DESCRIPTOR pScreenSurfaceDescriptor = NULL;
+//      ULONG uResult;
+//      ULONG uSurfaceMemorySize;
 
 	if (!pso || cjOut < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !pQvGetSurfaceDataResponse)
 		return QV_INVALID_PARAMETER;
 
 	pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) pso->dhsurf;
-	if (!pSurfaceDescriptor)
+	if (!pSurfaceDescriptor || !pSurfaceDescriptor->ppdev)
 		// A surface is managed by GDI
 		return QV_INVALID_PARAMETER;
 
+/*
+	if (!pSurfaceDescriptor->bIsScreen) {
+
+		if (pSurfaceDescriptor->pSurfaceData)
+			FreeSurfaceData(pSurfaceDescriptor);
+
+		pScreenSurfaceDescriptor = pSurfaceDescriptor->ppdev->pScreenSurfaceDescriptor;
+		if (!pScreenSurfaceDescriptor) {
+			DISPDBG((0, "GetSurfaceData(): pScreenSurfaceDescriptor is NULL\n"));
+			return QV_INVALID_PARAMETER;
+		}
+
+		// FIXME: don't know why, but every 2nd line is some crap, so treat this as
+		// twice long signle line 
+		uSurfaceMemorySize = (ULONG) (2 * pScreenSurfaceDescriptor->lDelta * pScreenSurfaceDescriptor->cy);
+
+		uResult = AllocateSurfaceData(pSurfaceDescriptor, uSurfaceMemorySize);
+		if (0 != uResult) {
+			DISPDBG((0, "GetSurfaceData(%p): AllocateSurfaceData(%d) failed with error %d\n", pso, uSurfaceMemorySize, uResult));
+			return uResult;
+		}
+
+		DISPDBG((0, "GetSurfaceData(%p): New surface data at %p, size %d\n", pso, uSurfaceMemorySize));
+	}
+*/
 	pQvGetSurfaceDataResponse->uMagic = QVIDEO_MAGIC;
 
 	pQvGetSurfaceDataResponse->cx = pSurfaceDescriptor->cx;

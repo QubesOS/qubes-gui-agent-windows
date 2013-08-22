@@ -59,6 +59,9 @@ typedef struct _SURFACE_DESCRIPTOR
 	PEVENT pDamageNotificationEvent;
 
 	PVOID pSurfaceData;
+	HANDLE hSection;
+	PVOID SectionObject;
+	PVOID pMdl;
 	PFN_ARRAY PfnArray;
 
 	BITMAP_HEADER BitmapHeader;
