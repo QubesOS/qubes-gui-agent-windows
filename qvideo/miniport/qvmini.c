@@ -182,7 +182,7 @@ BOOLEAN QubesVideoStartIO(
 		FreeMemory(pQvminiFreeMemory->pVirtualAddress);
 
 		RequestPacket->StatusBlock->Status = NO_ERROR;
-		RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
+		RequestPacket->StatusBlock->Information = 0;
 		break;
 
 	case IOCTL_QVMINI_ALLOCATE_SECTION:
