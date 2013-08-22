@@ -12,6 +12,16 @@ typedef struct _WATCHED_DC
 	HWND hWnd;
 	HDC hDC;
 	ULONG uModifications;
+
+	RECT	rcWindow;
+	LIST_ENTRY	le;
+
+	LONG	MaxWidth;
+	LONG	MaxHeight;
+	PUCHAR	pCompositionBuffer;
+	ULONG	uCompositionBufferSize;
+	PFN_ARRAY	PfnArray;
+
 } WATCHED_DC, *PWATCHED_DC;
 
 ULONG GetWindowData(
@@ -26,4 +36,10 @@ ULONG RegisterWatchedDC(
 
 ULONG UnregisterWatchedDC(
 	HDC hDC
+);
+
+ULONG GetPfnList(
+	PVOID pVirtualAddress,
+	ULONG uRegionSize,
+	PPFN_ARRAY pPfnArray
 );

@@ -1,3 +1,5 @@
+#pragma once
+
 // Enough to describe 20480000 4-byte pixels, which is roughly 4525x4525.
 #define	MAX_RETURNED_PFNS	20000
 
@@ -22,6 +24,7 @@ typedef struct _PFN_ARRAY
 #define QVESC_GET_SURFACE_DATA		(QVIDEO_ESC_BASE + 1)
 #define QVESC_WATCH_SURFACE		(QVIDEO_ESC_BASE + 2)
 #define QVESC_STOP_WATCHING_SURFACE	(QVIDEO_ESC_BASE + 3)
+#define QVESC_GET_PFN_LIST		(QVIDEO_ESC_BASE + 4)
 
 #define QV_SUCCESS	1
 #define QV_INVALID_PARAMETER	2
@@ -36,6 +39,7 @@ typedef struct _PFN_ARRAY
 #define	MIN_RESOLUTION_HEIGHT	480
 
 #define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && ((uWidth) <= MAX_RESOLUTION_WIDTH) && (MIN_RESOLUTION_HEIGHT <= (uHeight)) && ((uHeight) <= MAX_RESOLUTION_HEIGHT))
+#define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
 
 typedef struct _QV_SUPPORT_MODE
 {
@@ -68,6 +72,22 @@ typedef struct _QV_GET_SURFACE_DATA_RESPONSE
 
 } QV_GET_SURFACE_DATA_RESPONSE, *PQV_GET_SURFACE_DATA_RESPONSE;
 
+typedef struct _QV_GET_PFN_LIST
+{
+	ULONG uMagic;		// must be present at the top of every QV_ structure
+
+	PVOID pVirtualAddress;
+	ULONG uRegionSize;
+} QV_GET_PFN_LIST, *PQV_GET_PFN_LIST;
+
+typedef struct _QV_GET_PFN_LIST_RESPONSE
+{
+	ULONG uMagic;		// must be present at the top of every QV_ structure
+
+	PFN_ARRAY PfnArray;
+
+} QV_GET_PFN_LIST_RESPONSE, *PQV_GET_PFN_LIST_RESPONSE;
+
 typedef struct _QV_WATCH_SURFACE
 {
 	ULONG uMagic;		// must be present at the top of every QV_ structure
@@ -89,6 +109,9 @@ typedef struct _QV_STOP_WATCHING_SURFACE
 
 #define IOCTL_QVMINI_ALLOCATE_MEMORY	(unsigned long)(CTL_CODE(QVMINI_DEVICE, 1, METHOD_BUFFERED, FILE_ANY_ACCESS))
 #define IOCTL_QVMINI_FREE_MEMORY	(unsigned long)(CTL_CODE(QVMINI_DEVICE, 2, METHOD_BUFFERED, FILE_ANY_ACCESS))
+#define IOCTL_QVMINI_ALLOCATE_SECTION	(unsigned long)(CTL_CODE(QVMINI_DEVICE, 3, METHOD_BUFFERED, FILE_ANY_ACCESS))
+#define IOCTL_QVMINI_FREE_SECTION	(unsigned long)(CTL_CODE(QVMINI_DEVICE, 4, METHOD_BUFFERED, FILE_ANY_ACCESS))
+#define IOCTL_QVMINI_GET_PFN_LIST	(unsigned long)(CTL_CODE(QVMINI_DEVICE, 5, METHOD_BUFFERED, FILE_ANY_ACCESS))
 
 typedef struct _QVMINI_ALLOCATE_MEMORY
 {
@@ -105,3 +128,36 @@ typedef struct _QVMINI_FREE_MEMORY
 {
 	PVOID pVirtualAddress;
 } QVMINI_FREE_MEMORY, *PQVMINI_FREE_MEMORY;
+
+typedef struct _QVMINI_ALLOCATE_SECTION
+{
+	ULONG uLength;
+} QVMINI_ALLOCATE_SECTION, *PQVMINI_ALLOCATE_SECTION;
+
+typedef struct _QVMINI_ALLOCATE_SECTION_RESPONSE
+{
+	PVOID pVirtualAddress;
+	PVOID SectionObject;
+	HANDLE hSection;
+	PVOID pMdl;
+	PFN_ARRAY PfnArray;
+} QVMINI_ALLOCATE_SECTION_RESPONSE, *PQVMINI_ALLOCATE_SECTION_RESPONSE;
+
+typedef struct _QVMINI_FREE_SECTION
+{
+	PVOID pVirtualAddress;
+	PVOID SectionObject;
+	HANDLE hSection;
+	PVOID pMdl;
+} QVMINI_FREE_SECTION, *PQVMINI_FREE_SECTION;
+
+typedef struct _QVMINI_GET_PFN_LIST
+{
+	PVOID pVirtualAddress;
+	ULONG uRegionSize;
+} QVMINI_GET_PFN_LIST, *PQVMINI_GET_PFN_LIST;
+
+typedef struct _QVMINI_GET_PFN_LIST_RESPONSE
+{
+	PFN_ARRAY PfnArray;
+} QVMINI_GET_PFN_LIST_RESPONSE, *PQVMINI_GET_PFN_LIST_RESPONSE;

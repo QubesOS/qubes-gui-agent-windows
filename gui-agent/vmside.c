@@ -5,6 +5,7 @@
 #include "glue.h"
 #include "log.h"
 #include "qvcontrol.h"
+#include "shell_events.h"
 
 #define lprintf_err	Lprintf_err
 #define lprintf	Lprintf
@@ -18,11 +19,13 @@ HANDLE g_hCleanupFinishedEvent;
 ULONG g_uScreenWidth = 0;
 ULONG g_uScreenHeight = 0;
 
+BOOLEAN	g_bVchanClientConnected = FALSE;
+
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
  * struct.
  */
 ULONG PrepareShmCmd(
-	HWND hWnd,
+	PWATCHED_DC pWatchedDC,
 	struct shm_cmd ** ppShmCmd
 )
 {
@@ -30,25 +33,61 @@ ULONG PrepareShmCmd(
 	ULONG uResult;
 	ULONG uShmCmdSize = 0;
 	struct shm_cmd *pShmCmd = NULL;
+	PPFN_ARRAY	pPfnArray = NULL;
+	HWND	hWnd = 0;
+	ULONG	uWidth;
+	ULONG	uHeight;
+	ULONG	ulBitCount;
+	BOOLEAN	bIsScreen;
 
 	if (!ppShmCmd)
 		return ERROR_INVALID_PARAMETER;
 	*ppShmCmd = NULL;
 
-	memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
+	if (!pWatchedDC) {
 
-	uResult = GetWindowData(hWnd, &QvGetSurfaceDataResponse);
-	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
-		return uResult;
+		memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
+
+		uResult = GetWindowData(hWnd, &QvGetSurfaceDataResponse);
+		if (ERROR_SUCCESS != uResult) {
+			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			return uResult;
+		}
+
+		/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
+		g_uScreenWidth = QvGetSurfaceDataResponse.cx;
+		g_uScreenHeight = QvGetSurfaceDataResponse.cy;
+
+		/* video buffer is iterlaced with some crap (double buffer?) so place it
+		 * outside of the window as a workaround (FIXME) */
+		uWidth = QvGetSurfaceDataResponse.cx * 2;
+		uHeight = QvGetSurfaceDataResponse.cy;
+		ulBitCount = QvGetSurfaceDataResponse.ulBitCount;
+
+		bIsScreen = TRUE;
+
+		pPfnArray = &QvGetSurfaceDataResponse.PfnArray;
+
+	} else {
+
+		hWnd = pWatchedDC->hWnd;
+
+		uWidth = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
+		uHeight = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
+		ulBitCount = 32;
+
+		bIsScreen = FALSE;
+
+		pPfnArray = &pWatchedDC->PfnArray;
 	}
 
-	_tprintf(_T(__FUNCTION__) _T("Window %dx%d, %d bpp, screen: %d\n"), QvGetSurfaceDataResponse.cx, QvGetSurfaceDataResponse.cy,
-		 QvGetSurfaceDataResponse.ulBitCount, QvGetSurfaceDataResponse.bIsScreen);
-	_tprintf(_T(__FUNCTION__) _T("PFNs: %d; 0x%x, 0x%x, 0x%x\n"), QvGetSurfaceDataResponse.PfnArray.uNumberOf4kPages,
-		 QvGetSurfaceDataResponse.PfnArray.Pfn[0], QvGetSurfaceDataResponse.PfnArray.Pfn[1], QvGetSurfaceDataResponse.PfnArray.Pfn[2]);
 
-	uShmCmdSize = sizeof(struct shm_cmd) + QvGetSurfaceDataResponse.PfnArray.uNumberOf4kPages * sizeof(uint32_t);
+	_tprintf(_T(__FUNCTION__) _T("Window %dx%d, %d bpp, screen: %d\n"), uWidth, uHeight,
+		 ulBitCount, bIsScreen);
+	_tprintf(_T(__FUNCTION__) _T("PFNs: %d; 0x%x, 0x%x, 0x%x\n"), pPfnArray->uNumberOf4kPages,
+		 pPfnArray->Pfn[0], pPfnArray->Pfn[1], pPfnArray->Pfn[2]);
+
+	uShmCmdSize = sizeof(struct shm_cmd) + pPfnArray->uNumberOf4kPages * sizeof(uint32_t);
 
 	pShmCmd = malloc(uShmCmdSize);
 	if (!pShmCmd) {
@@ -58,21 +97,16 @@ ULONG PrepareShmCmd(
 
 	memset(pShmCmd, 0, uShmCmdSize);
 
-	/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
-	g_uScreenWidth = QvGetSurfaceDataResponse.cx;
-	g_uScreenHeight = QvGetSurfaceDataResponse.cy;
 
 	pShmCmd->shmid = 0;
-	/* video buffer is iterlaced with some crap (double buffer?) so place it
-	 * outside of the window as a workaround (FIXME) */
-	pShmCmd->width = QvGetSurfaceDataResponse.cx * 2;
-	pShmCmd->height = QvGetSurfaceDataResponse.cy;
-	pShmCmd->bpp = QvGetSurfaceDataResponse.ulBitCount;
+	pShmCmd->width = uWidth;
+	pShmCmd->height = uHeight;
+	pShmCmd->bpp = ulBitCount;
 	pShmCmd->off = 0;
-	pShmCmd->num_mfn = QvGetSurfaceDataResponse.PfnArray.uNumberOf4kPages;
+	pShmCmd->num_mfn = pPfnArray->uNumberOf4kPages;
 	pShmCmd->domid = 0;
 
-	memcpy(&pShmCmd->mfns, &QvGetSurfaceDataResponse.PfnArray.Pfn, QvGetSurfaceDataResponse.PfnArray.uNumberOf4kPages * sizeof(uint32_t));
+	memcpy(&pShmCmd->mfns, &pPfnArray->Pfn, pPfnArray->uNumberOf4kPages * sizeof(uint32_t));
 
 	*ppShmCmd = pShmCmd;
 
@@ -80,15 +114,19 @@ ULONG PrepareShmCmd(
 }
 
 void send_pixmap_mfns(
-	HWND hWnd
+	PWATCHED_DC pWatchedDC
 )
 {
 	ULONG uResult;
 	struct shm_cmd *pShmCmd = NULL;
 	struct msg_hdr hdr;
 	int size;
+	HWND	hWnd = 0;
 
-	uResult = PrepareShmCmd(hWnd, &pShmCmd);
+	if (pWatchedDC)
+		hWnd = pWatchedDC->hWnd;
+
+	uResult = PrepareShmCmd(pWatchedDC, &pShmCmd);
 	if (ERROR_SUCCESS != uResult) {
 		_tprintf(_T(__FUNCTION__) _T("PrepareShmCmd() failed with error %d\n"), uResult);
 		return;
@@ -112,7 +150,7 @@ void send_pixmap_mfns(
 }
 
 ULONG send_window_create(
-	HWND window
+	PWATCHED_DC	pWatchedDC
 )
 {
 	WINDOWINFO wi;
@@ -123,7 +161,7 @@ ULONG send_window_create(
 
 	wi.cbSize = sizeof(wi);
 	/* special case for full screen */
-	if (window == NULL) {
+	if (pWatchedDC == NULL) {
 		QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
 		ULONG uResult;
 
@@ -133,7 +171,7 @@ ULONG send_window_create(
 
 		memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
 
-		uResult = GetWindowData(window, &QvGetSurfaceDataResponse);
+		uResult = GetWindowData(NULL, &QvGetSurfaceDataResponse);
 		if (ERROR_SUCCESS != uResult) {
 			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
 			return uResult;
@@ -141,14 +179,15 @@ ULONG send_window_create(
 
 		wi.rcWindow.right = QvGetSurfaceDataResponse.cx;
 		wi.rcWindow.bottom = QvGetSurfaceDataResponse.cy;
-	} else 	if (!GetWindowInfo(window, &wi)) {
-		uResult = GetLastError();
-		lprintf_err(uResult, "send_window_create: GetWindowInfo()");
-		return uResult;
+
+		hdr.window = 0;
+
+	} else {
+		hdr.window = (uint32_t)pWatchedDC->hWnd;
+		wi.rcWindow = pWatchedDC->rcWindow;
 	}
 
 	hdr.type = MSG_CREATE;
-	hdr.window = (uint32_t) window;
 
 	mc.x = wi.rcWindow.left;
 	mc.y = wi.rcWindow.top;
@@ -169,6 +208,70 @@ ULONG send_window_create(
 
 	return ERROR_SUCCESS;
 }
+
+ULONG send_window_destroy(
+	HWND window
+)
+{
+	struct msg_hdr hdr;
+
+
+	hdr.type = MSG_DESTROY;
+	hdr.window = (uint32_t)window;
+	hdr.untrusted_len = 0;
+	write_struct(hdr);
+
+	return ERROR_SUCCESS;
+}
+
+ULONG send_window_unmap(
+	HWND window
+)
+{
+	struct msg_hdr hdr;
+
+
+	hdr.type = MSG_UNMAP;
+	hdr.window = (uint32_t)window;
+	hdr.untrusted_len = 0;
+	write_struct(hdr);
+
+	return ERROR_SUCCESS;
+}
+
+ULONG send_window_configure(
+	PWATCHED_DC	pWatchedDC
+)
+{
+	ULONG uResult;
+	struct msg_hdr hdr;
+	struct msg_configure mc;
+	struct msg_map_info mmi;
+
+
+	hdr.window = (uint32_t)pWatchedDC->hWnd;
+
+	hdr.type = MSG_CONFIGURE;
+
+	mc.x = pWatchedDC->rcWindow.left;
+	mc.y = pWatchedDC->rcWindow.top;
+	mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
+	mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
+	mc.override_redirect = 0;
+
+	write_message(hdr, mc);
+
+	/* FIXME: for now, all windows are imediately mapped, but this should be
+	 * changed to reflect real window visibility */
+	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+	mmi.override_redirect = 0;
+
+	hdr.type = MSG_MAP;
+	write_message(hdr, mmi);
+
+	return ERROR_SUCCESS;
+}
+
 
 void send_window_damage_event(
 	HWND window,
@@ -385,11 +488,14 @@ ULONG WatchForEvents(
 	BOOLEAN bVchanIoInProgress;
 	ULONG uResult;
 	BOOLEAN bVchanReturnedError;
-	BOOLEAN bVchanClientConnected;
+//	BOOLEAN bVchanClientConnected;
 	HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
 	HANDLE hWindowDamageEvent;
 	HDC hDC;
 	ULONG uDamage = 0;
+
+	HWND	hWnd;
+	struct shm_cmd *pShmCmd = NULL;
 
 	hDC = GetDC(NULL);
 
@@ -417,7 +523,7 @@ ULONG WatchForEvents(
 	memset(&ol, 0, sizeof(ol));
 	ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	bVchanClientConnected = FALSE;
+	g_bVchanClientConnected = FALSE;
 	bVchanIoInProgress = FALSE;
 	bVchanReturnedError = FALSE;
 
@@ -469,12 +575,13 @@ ULONG WatchForEvents(
 #ifdef DBG
 				logprintf("Damage %d\n", uDamage++);
 #endif
-				if (bVchanClientConnected)
+				if (g_bVchanClientConnected) {
 					send_window_damage_event(NULL, 0, 0, g_uScreenWidth, g_uScreenHeight);
+					ProcessUpdatedWindows(TRUE);
+				}
 				break;
 
 			case 2:
-
 				// the following will never block; we need to do this to
 				// clear libvchan_fd pending state
 				//
@@ -487,7 +594,7 @@ ULONG WatchForEvents(
 
 				bVchanIoInProgress = FALSE;
 
-				if (!bVchanClientConnected) {
+				if (!g_bVchanClientConnected) {
 
 					lprintf("WatchForEvents(): A vchan client has connected\n");
 
@@ -504,7 +611,7 @@ ULONG WatchForEvents(
 					send_window_create(NULL);
 					send_pixmap_mfns(NULL);
 
-					bVchanClientConnected = TRUE;
+					g_bVchanClientConnected = TRUE;
 					break;
 				}
 
@@ -562,11 +669,11 @@ ULONG WatchForEvents(
 			// OVERLAPPED structure.
 			WaitForSingleObject(ol.hEvent, INFINITE);
 
-	if (!bVchanClientConnected)
+	if (!g_bVchanClientConnected)
 		// Remove the xenstore device/vchan/N entry.
 		libvchan_server_handle_connected(ctrl);
 
-	if (bVchanClientConnected)
+	if (g_bVchanClientConnected)
 		libvchan_close(ctrl);
 
 	// This is actually CloseHandle(evtchn)
@@ -607,9 +714,42 @@ BOOL WINAPI CtrlHandler(
 	CloseHandle(g_hStopServiceEvent);
 	CloseHandle(g_hCleanupFinishedEvent);
 
+	StopShellEventsThread();
+
 	Lprintf("CtrlHandler(): Shutdown complete\n");
 	ExitProcess(0);
 	return TRUE;
+}
+
+
+ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)
+{
+	SIZE_T	uMinimumWorkingSetSize = 0;
+	SIZE_T	uMaximumWorkingSetSize = 0;
+	ULONG	uResult;
+
+
+	if (!GetProcessWorkingSetSize(GetCurrentProcess(), &uMinimumWorkingSetSize, &uMaximumWorkingSetSize)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "IncreaseProcessWorkingSetSize(): GetProcessWorkingSetSize() failed, error %d\n", uResult);
+		return uResult;
+	}
+
+	if (!SetProcessWorkingSetSize(GetCurrentProcess(), uNewMinimumWorkingSetSize, uNewMaximumWorkingSetSize)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "IncreaseProcessWorkingSetSize(): SetProcessWorkingSetSize() failed, error %d\n", uResult);
+		return uResult;
+	}
+
+	if (!GetProcessWorkingSetSize(GetCurrentProcess(), &uMinimumWorkingSetSize, &uMaximumWorkingSetSize)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "IncreaseProcessWorkingSetSize(): GetProcessWorkingSetSize() failed, error %d\n", uResult);
+		return uResult;
+	}
+
+	logprintf("IncreaseProcessWorkingSetSize(): New working set size: %d pages\n", uMaximumWorkingSetSize >> 12);
+
+	return ERROR_SUCCESS;
 }
 
 // This is the entry point for a console application (BUILD_AS_SERVICE not defined).
@@ -620,11 +760,20 @@ int __cdecl _tmain(
 {
 	ULONG uResult;
 
+
+	uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
+	if (ERROR_SUCCESS != uResult) {
+		lprintf_err(uResult, " IncreaseProcessWorkingSetSize() failed, error %d\n", uResult);
+		// try to continue
+	}
+
+
 	uResult = CheckForXenInterface();
 	if (ERROR_SUCCESS != uResult) {
 		Lprintf_err(uResult, "Init(): CheckForXenInterface()");
 		return ERROR_NOT_SUPPORTED;
 	}
+
 	// Manual reset, initial state is not signaled
 	g_hStopServiceEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!g_hStopServiceEvent) {
@@ -642,6 +791,8 @@ int __cdecl _tmain(
 	}
 
 	SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE);
+
+	RunShellEventsThread();
 
 	uResult = WatchForEvents();
 	if (ERROR_SUCCESS != uResult) {

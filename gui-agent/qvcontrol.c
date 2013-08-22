@@ -120,6 +120,63 @@ ULONG GetWindowData(
 	return ERROR_SUCCESS;
 }
 
+ULONG GetPfnList(
+	PVOID pVirtualAddress,
+	ULONG uRegionSize,
+	PPFN_ARRAY pPfnArray
+)
+{
+	HDC hDC;
+	QV_GET_PFN_LIST QvGetPfnList;
+	PQV_GET_PFN_LIST_RESPONSE pQvGetPfnListResponse = NULL;
+	int iRet;
+
+	if (!pVirtualAddress || !uRegionSize || !pPfnArray)
+		return ERROR_INVALID_PARAMETER;
+
+	pQvGetPfnListResponse = malloc(sizeof(QV_GET_PFN_LIST_RESPONSE));
+	if (!pQvGetPfnListResponse)
+		return ERROR_NOT_ENOUGH_MEMORY;
+
+	hDC = GetDC(0);
+	if (!hDC) {
+		_tprintf(_T(__FUNCTION__)
+			 _T("(): Could not get a device context\n"));
+		free(pQvGetPfnListResponse);
+		return ERROR_FILE_NOT_FOUND;
+	}
+
+	QvGetPfnList.uMagic = QVIDEO_MAGIC;
+	QvGetPfnList.pVirtualAddress = pVirtualAddress;
+	QvGetPfnList.uRegionSize = uRegionSize;
+
+	memset(pQvGetPfnListResponse, 0, sizeof(QV_GET_PFN_LIST_RESPONSE));
+
+	iRet = ExtEscape(hDC,
+			 QVESC_GET_PFN_LIST, sizeof(QV_GET_PFN_LIST), (LPCSTR) & QvGetPfnList, sizeof(QV_GET_PFN_LIST_RESPONSE), (LPSTR) pQvGetPfnListResponse);
+
+	ReleaseDC(0, hDC);
+
+	if (iRet <= 0) {
+		_tprintf(_T(__FUNCTION__)
+			 _T("(): ExtEscape(QVESC_GET_PFN_LIST) failed, error %d\n\n"), iRet);
+		free(pQvGetPfnListResponse);
+		return ERROR_NOT_SUPPORTED;
+	}
+
+	if (QVIDEO_MAGIC != pQvGetPfnListResponse->uMagic) {
+		_tprintf(_T(__FUNCTION__)
+			 _T("(): The response to QVESC_GET_PFN_LIST is not valid\n\n"));
+		free(pQvGetPfnListResponse);
+		return ERROR_NOT_SUPPORTED;
+	}
+
+	memcpy(pPfnArray, &pQvGetPfnListResponse->PfnArray, sizeof(PFN_ARRAY));
+
+	free(pQvGetPfnListResponse);
+	return ERROR_SUCCESS;
+}
+
 ULONG ChangeVideoMode(
 	LPTSTR ptszDeviceName,
 	ULONG uWidth,
