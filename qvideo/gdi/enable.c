@@ -16,7 +16,9 @@ static DRVFN g_DrvFunctions[] = {
 	{INDEX_DrvEscape, (PFN) DrvEscape}
 };
 
+#if DBG
 LONG g_lCounter = 0;
+#endif
 
 ULONG g_uWidth = 800;
 ULONG g_uHeight = 600;
@@ -871,6 +873,7 @@ VOID APIENTRY DrvSynchronizeSurface(
 )
 {
 	PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
+	UNREFERENCED_PARAMETER(prcl);
 	UNREFERENCED_PARAMETER(fl);
 
 	if (!pso)
@@ -886,13 +889,13 @@ VOID APIENTRY DrvSynchronizeSurface(
 		return;
 
 	EngSetEvent(pSurfaceDescriptor->pDamageNotificationEvent);
-
+#if DBG
 	if (!(InterlockedIncrement(&g_lCounter) % 10)) {
 		if (prcl)
 			DISPDBG((0, "DrvSynchronizeSurface(%p), %dx%d - %dx%d, fl: %d, %d\n", pso, prcl->left, prcl->top, prcl->right, prcl->bottom, fl,
 				 g_lCounter));
 		else
-			DISPDBG((0, "DrvSynchronizeSurface(%p), fl: %d, %d\n", pso, fl, g_lCounter));
+			DISPDBG((0, "DrvSynchronizeSurface(%p), fl: %d, %d, iuniq %d\n", pso, fl, g_lCounter, pso->iUniq));
 	}
-
+#endif
 }
