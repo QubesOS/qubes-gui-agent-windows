@@ -8,7 +8,7 @@ PVOID AllocateMemory(
 );
 
 VOID FreeMemory(
-	PVOID pMemory
+	__in __drv_freesMem(Mem) PVOID pMemory
 );
 
 BOOLEAN GetUserBufferPfnArrayBool(
