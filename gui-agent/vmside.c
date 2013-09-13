@@ -58,9 +58,7 @@ ULONG PrepareShmCmd(
 		g_uScreenWidth = QvGetSurfaceDataResponse.cx;
 		g_uScreenHeight = QvGetSurfaceDataResponse.cy;
 
-		/* video buffer is iterlaced with some crap (double buffer?) so place it
-		 * outside of the window as a workaround (FIXME) */
-		uWidth = QvGetSurfaceDataResponse.cx * 2;
+		uWidth = QvGetSurfaceDataResponse.cx;
 		uHeight = QvGetSurfaceDataResponse.cy;
 		ulBitCount = QvGetSurfaceDataResponse.ulBitCount;
 
