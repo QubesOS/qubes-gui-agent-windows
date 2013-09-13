@@ -39,6 +39,7 @@ ULONG PrepareShmCmd(
 	ULONG	uHeight;
 	ULONG	ulBitCount;
 	BOOLEAN	bIsScreen;
+	ULONG	i;
 
 	if (!ppShmCmd)
 		return ERROR_INVALID_PARAMETER;
@@ -104,7 +105,8 @@ ULONG PrepareShmCmd(
 	pShmCmd->num_mfn = pPfnArray->uNumberOf4kPages;
 	pShmCmd->domid = 0;
 
-	memcpy(&pShmCmd->mfns, &pPfnArray->Pfn, pPfnArray->uNumberOf4kPages * sizeof(uint32_t));
+	for (i = 0; i < pPfnArray->uNumberOf4kPages; i++)
+		pShmCmd->mfns[i] = (uint32_t)pPfnArray->Pfn[i];
 
 	*ppShmCmd = pShmCmd;
 
