@@ -35,5 +35,6 @@ VOID logprintf(
 
 # define Lprintf(...)
 # define Lprintf_err(...)
+# define logprintf(...)
 
 #endif
