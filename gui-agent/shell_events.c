@@ -99,7 +99,7 @@ ULONG CopyScreenData(
 	uScreenStride = g_ScreenWidth * 4;
 
 	pDestLine = pCompositionBuffer;
-	pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left;
+	pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left * 4;
 
 	for (Line = pRect->top; Line < pRect->bottom; Line++) {
 
