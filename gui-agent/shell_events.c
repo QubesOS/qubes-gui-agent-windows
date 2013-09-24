@@ -99,7 +99,7 @@ ULONG CopyScreenData(
 	uScreenStride = g_ScreenWidth * 4;
 
 	pDestLine = pCompositionBuffer;
-	pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left;
+	pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left * 4;
 
 	for (Line = pRect->top; Line < pRect->bottom; Line++) {
 
@@ -119,6 +119,7 @@ ULONG CheckWatchedWindowUpdates(
 )
 {
 	WINDOWINFO wi;
+	BOOLEAN	bResizingDetected;
 
 	if (!pWatchedDC)
 		return ERROR_INVALID_PARAMETER;
@@ -132,10 +133,16 @@ ULONG CheckWatchedWindowUpdates(
 
 	SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
 
-	if (bDamageDetected ||
-		wi.rcWindow.left != pWatchedDC->rcWindow.left ||
+	bDamageDetected |= wi.rcWindow.left != pWatchedDC->rcWindow.left ||
 		wi.rcWindow.top != pWatchedDC->rcWindow.top ||
-		wi.rcWindow.right != pWatchedDC->rcWindow.right || wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom) {
+		wi.rcWindow.right != pWatchedDC->rcWindow.right || wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
+
+
+	bResizingDetected = (wi.rcWindow.right - wi.rcWindow.left != pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left) ||
+		(wi.rcWindow.bottom - wi.rcWindow.top != pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
+
+
+	if (bDamageDetected || bResizingDetected) {
 
 //		_tprintf(_T("hwnd: %x, left: %d top: %d right: %d bottom %d\n"), pWatchedDC->hWnd, wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right,
 //			 wi.rcWindow.bottom);
@@ -145,6 +152,10 @@ ULONG CheckWatchedWindowUpdates(
 
 		if (g_bVchanClientConnected) {
 			send_window_configure(pWatchedDC);
+
+			if (bResizingDetected)
+				send_pixmap_mfns(pWatchedDC);
+
 			send_window_damage_event(pWatchedDC->hWnd, 0, 0, pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
 		}
 	}
