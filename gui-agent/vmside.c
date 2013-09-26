@@ -338,10 +338,14 @@ void handle_keypress(HWND window)
 
 void handle_button(HWND window)
 {
-    struct msg_button key;
+	struct msg_button button;
 	INPUT inputEvent;
+	RECT	rect = {0};
 
-    read_all_vchan_ext((char *) &key, sizeof(key));
+	read_all_vchan_ext((char *) &button, sizeof(button));
+
+	if (window)
+		GetWindowRect(window, &rect);
 
 	/* TODO: send to correct window */
 
@@ -351,28 +355,28 @@ void handle_button(HWND window)
 	inputEvent.mi.dwExtraInfo = 0;
 	/* pointer coordinates must be 0..65535, which covers the whole screen -
 	 * regardless of resolution */
-	inputEvent.mi.dx = key.x*65535/g_uScreenWidth;
-	inputEvent.mi.dy = key.y*65535/g_uScreenHeight;
-	switch (key.button) {
+	inputEvent.mi.dx = (button.x + rect.left) * 65535 / g_uScreenWidth;
+	inputEvent.mi.dy = (button.y + rect.top) * 65535 / g_uScreenHeight;
+	switch (button.button) {
 		case Button1:
 			inputEvent.mi.dwFlags =
-				(key.type == ButtonPress) ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+				(button.type == ButtonPress) ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
 			break;
 		case Button2:
 			inputEvent.mi.dwFlags =
-				(key.type == ButtonPress) ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+				(button.type == ButtonPress) ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
 			break;
 		case Button3:
 			inputEvent.mi.dwFlags =
-				(key.type == ButtonPress) ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+				(button.type == ButtonPress) ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
 			break;
 		case Button4:
 		case Button5:
 			inputEvent.mi.dwFlags = MOUSEEVENTF_WHEEL;
-			inputEvent.mi.mouseData = (key.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
+			inputEvent.mi.mouseData = (button.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
 			break;
 		default:
-			_tprintf(_T(__FUNCTION__) _T("unknown button pressed/released 0x%x\n"), key.button);
+			_tprintf(_T(__FUNCTION__) _T("unknown button pressed/released 0x%x\n"), button.button);
 	}
 	if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
 		lprintf_err(GetLastError(), "handle_keypress: SendInput()");
@@ -382,17 +386,21 @@ void handle_button(HWND window)
 
 void handle_motion(HWND window)
 {
-    struct msg_motion key;
+	struct msg_motion motion;
 	INPUT inputEvent;
+	RECT	rect = {0};
 
-    read_all_vchan_ext((char *) &key, sizeof(key));
+	read_all_vchan_ext((char *) &motion, sizeof(motion));
+
+	if (window)
+		GetWindowRect(window, &rect);
 
 	inputEvent.type = INPUT_MOUSE;
 	inputEvent.mi.time = 0;
 	/* pointer coordinates must be 0..65535, which covers the whole screen -
 	 * regardless of resolution */
-	inputEvent.mi.dx = key.x*65535/g_uScreenWidth;
-	inputEvent.mi.dy = key.y*65535/g_uScreenHeight;
+	inputEvent.mi.dx = (motion.x + rect.left) * 65535 / g_uScreenWidth;
+	inputEvent.mi.dy = (motion.y + rect.top) * 65535 / g_uScreenHeight;
 	inputEvent.mi.mouseData = 0;
 	inputEvent.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_ABSOLUTE;
 	inputEvent.mi.dwExtraInfo = 0;
