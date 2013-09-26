@@ -307,6 +307,8 @@ void handle_xconf(
 
 	read_all_vchan_ext((char *)&xconf, sizeof(xconf));
 
+	printf("host resolution: %xx%x, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
+
 	/* TODO: set video device resolution */
 }
 
@@ -401,14 +403,30 @@ void handle_motion(HWND window)
 	}
 }
 
+void handle_configure(HWND window)
+{
+	struct msg_configure configure;
+
+	read_all_vchan_ext((char *) &configure, sizeof(configure));
+	SetWindowPos(window, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+}
+
 void handle_focus(HWND window)
 {
-    struct msg_focus key;
+	struct msg_focus focus;
 
-    read_all_vchan_ext((char *) &key, sizeof(key));
+	read_all_vchan_ext((char *) &focus, sizeof(focus));
 
-	/* TODO */
+	BringWindowToTop(window);
+	SetForegroundWindow(window);
+        SetActiveWindow(window);
+	SetFocus(window);
 
+}
+
+void handle_close(HWND window)
+{
+	PostMessage(window, WM_SYSCOMMAND, SC_CLOSE, 0);
 }
 
 ULONG handle_server_data(
@@ -433,22 +451,23 @@ ULONG handle_server_data(
 	case MSG_MOTION:
 		handle_motion((HWND)hdr.window);
 		break;
+	case MSG_CONFIGURE:
+		handle_configure((HWND)hdr.window);
+		break;
+	case MSG_FOCUS:
+		handle_focus((HWND)hdr.window);
+		break;
+	case MSG_CLOSE:
+		handle_close((HWND)hdr.window);
+		break;
 	default:
 		_tprintf(_T(__FUNCTION__) _T("got unknown msg type %d, ignoring\n"), hdr.type);
-	case MSG_CONFIGURE:
-//              handle_configure(g, hdr.window);
-//		break;
+
 	case MSG_MAP:
 //              handle_map(g, hdr.window);
 //		break;
-	case MSG_CLOSE:
-//              handle_close(g, hdr.window);
-//		break;
 	case MSG_CROSSING:
 //              handle_crossing(g, hdr.window);
-//		break;
-	case MSG_FOCUS:
-//              handle_focus(g, hdr.window);
 //		break;
 	case MSG_CLIPBOARD_REQ:
 //              handle_clipboard_req(g, hdr.window);
@@ -760,6 +779,7 @@ int __cdecl _tmain(
 {
 	ULONG uResult;
 
+        SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
 	uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
 	if (ERROR_SUCCESS != uResult) {
