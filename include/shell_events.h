@@ -41,6 +41,9 @@ ULONG send_window_unmap(
 	HWND window
 );
 
+ULONG OpenScreenSection(
+);
+
 
 #define InitializeListHead(ListHead) (\
     (ListHead)->Flink = (ListHead)->Blink = (ListHead))

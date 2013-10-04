@@ -43,3 +43,21 @@ ULONG GetPfnList(
 	ULONG uRegionSize,
 	PPFN_ARRAY pPfnArray
 );
+
+ULONG FindQubesDisplayDevice(
+	PDISPLAY_DEVICE pQubesDisplayDevice
+);
+
+ULONG SupportVideoMode(
+	LPTSTR ptszQubesDeviceName,
+	ULONG uWidth,
+	ULONG uHeight,
+	ULONG uBpp
+);
+
+ULONG ChangeVideoMode(
+	LPTSTR ptszDeviceName,
+	ULONG uWidth,
+	ULONG uHeight,
+	ULONG uBpp
+);

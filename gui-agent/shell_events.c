@@ -11,23 +11,26 @@ CRITICAL_SECTION g_csWatchedWindows;
 LONG g_ScreenHeight = 0;
 LONG g_ScreenWidth = 0;
 PUCHAR g_pScreenData = NULL;
+HANDLE g_hSection;
 
 extern	BOOLEAN	g_bVchanClientConnected;
 
 ULONG OpenScreenSection(
 )
 {
-	HANDLE hSection;
 	ULONG uResult;
+	TCHAR	SectionName[100];
 
-	hSection = OpenFileMapping(FILE_MAP_READ, FALSE, _T("Global\\QubesSharedMemory"));
-	if (!hSection) {
+	StringCchPrintf(SectionName, _countof(SectionName), _T("Global\\QubesSharedMemory_%x"), g_ScreenHeight * g_ScreenWidth * 4);
+
+	g_hSection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
+	if (!g_hSection) {
 		uResult = GetLastError();
 		_tprintf(_T(__FUNCTION__) _T(": OpenFileMapping() failed with error %d\n"), uResult);
 		return uResult;
 	}
 
-	g_pScreenData = MapViewOfFile(hSection, FILE_MAP_READ, 0, 0, 0);
+	g_pScreenData = MapViewOfFile(g_hSection, FILE_MAP_READ, 0, 0, 0);
 	if (!g_pScreenData) {
 		uResult = GetLastError();
 		_tprintf(_T(__FUNCTION__) _T(": MapViewOfFile() failed with error %d\n"), uResult);
@@ -36,6 +39,7 @@ ULONG OpenScreenSection(
 
 	return ERROR_SUCCESS;
 }
+
 
 PWATCHED_DC FindWindowByHwnd(
 	HWND hWnd
@@ -371,12 +375,6 @@ LRESULT CALLBACK WndProc(
 	WINDOWINFO wiScreen;
 
 	if (uMsg == g_uShellHookMessage) {
-
-		wiScreen.cbSize = sizeof(wiScreen);
-		if (GetWindowInfo(GetDesktopWindow(), &wiScreen)) {
-			g_ScreenWidth = wiScreen.rcWindow.right;
-			g_ScreenHeight = wiScreen.rcWindow.bottom;
-		}
 
 		switch (wParam) {
 		case HSHELL_WINDOWCREATED:
