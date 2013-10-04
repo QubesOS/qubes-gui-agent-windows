@@ -1,4 +1,5 @@
 #include "ddk_video.h"
+#include "ntstrsafe.h"
 #include "memory.h"
 
 NTSTATUS CreateAndMapSection(
@@ -16,6 +17,7 @@ NTSTATUS CreateAndMapSection(
 	UNICODE_STRING usSectionName;
 	LARGE_INTEGER Size;
 	PVOID SectionObject;
+	WCHAR	SectionName[100];
 
 	if (!uSize || !phSection || !pSectionObject || !pBaseAddress)
 		return STATUS_INVALID_PARAMETER;
@@ -23,7 +25,9 @@ NTSTATUS CreateAndMapSection(
 	*pSectionObject = NULL;
 	*pBaseAddress = NULL;
 
-	RtlInitUnicodeString(&usSectionName, L"\\BaseNamedObjects\\QubesSharedMemory");
+	RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QubesSharedMemory_%x", uSize);
+
+	RtlInitUnicodeString(&usSectionName, SectionName);
 	InitializeObjectAttributes(&ObjectAttributes, &usSectionName, OBJ_KERNEL_HANDLE, NULL, NULL);
 
 	Size.HighPart = 0;

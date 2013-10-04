@@ -16,8 +16,11 @@ HANDLE g_hCleanupFinishedEvent;
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
-ULONG g_uScreenWidth = 0;
-ULONG g_uScreenHeight = 0;
+extern LONG g_ScreenWidth;
+extern LONG g_ScreenHeight;
+
+extern HANDLE g_hSection;
+extern PUCHAR g_pScreenData;
 
 BOOLEAN	g_bVchanClientConnected = FALSE;
 
@@ -54,10 +57,6 @@ ULONG PrepareShmCmd(
 			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
 			return uResult;
 		}
-
-		/* FIXME: only if QvGetSurfaceDataResponse.bIsScreen == 1 ? */
-		g_uScreenWidth = QvGetSurfaceDataResponse.cx;
-		g_uScreenHeight = QvGetSurfaceDataResponse.cy;
 
 		uWidth = QvGetSurfaceDataResponse.cx;
 		uHeight = QvGetSurfaceDataResponse.cy;
@@ -300,16 +299,64 @@ void send_protocol_version(
 	write_struct(version);
 }
 
+ULONG SetVideoMode(uWidth, uHeight, uBpp)
+{
+	ULONG uResult;
+	LPTSTR ptszDeviceName = NULL;
+	DISPLAY_DEVICE DisplayDevice;
+
+	if (!IS_RESOLUTION_VALID(uWidth, uHeight)) {
+		_tprintf(_T("Resolution is invalid: %dx%d\n"), uWidth, uHeight);
+		return ERROR_INVALID_PARAMETER;
+	}
+
+	_tprintf(_T("New resolution: %dx%d bpp %d\n"), uWidth, uHeight, uBpp);
+
+	uResult = FindQubesDisplayDevice(&DisplayDevice);
+	if (ERROR_SUCCESS != uResult) {
+		_tprintf(_T("FindQubesDisplayDevice() failed with error %d\n"), uResult);
+		return uResult;
+	}
+	ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
+
+	_tprintf(_T("DeviceName: %s\n\n"), ptszDeviceName);
+
+	uResult = SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
+	if (ERROR_SUCCESS != uResult) {
+		_tprintf(_T("SupportVideoMode() failed with error %d\n"), uResult);
+		return uResult;
+	}
+
+	uResult = ChangeVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
+	if (ERROR_SUCCESS != uResult) {
+		_tprintf(_T("ChangeVideoMode() failed with error %d\n"), uResult);
+		return uResult;
+	}
+
+	_tprintf(_T("Video mode changed successfully.\n"));
+	return ERROR_SUCCESS;
+}
+
 void handle_xconf(
 )
 {
 	struct msg_xconf xconf;
+	ULONG	uResult;
 
 	read_all_vchan_ext((char *)&xconf, sizeof(xconf));
 
-	printf("host resolution: %xx%x, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
+	printf("host resolution: %dx%d, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
 
-	/* TODO: set video device resolution */
+	uResult = SetVideoMode(xconf.w, xconf.h, 32);
+	if (ERROR_SUCCESS != uResult) {
+		lprintf_err(uResult, "handle_xconf: SetVideoMode()");
+	} else {
+
+		g_ScreenWidth = xconf.w;
+		g_ScreenHeight = xconf.h;
+
+		RunShellEventsThread();
+	}
 }
 
 
@@ -355,8 +402,8 @@ void handle_button(HWND window)
 	inputEvent.mi.dwExtraInfo = 0;
 	/* pointer coordinates must be 0..65535, which covers the whole screen -
 	 * regardless of resolution */
-	inputEvent.mi.dx = (button.x + rect.left) * 65535 / g_uScreenWidth;
-	inputEvent.mi.dy = (button.y + rect.top) * 65535 / g_uScreenHeight;
+	inputEvent.mi.dx = (button.x + rect.left) * 65535 / g_ScreenWidth;
+	inputEvent.mi.dy = (button.y + rect.top) * 65535 / g_ScreenHeight;
 	switch (button.button) {
 		case Button1:
 			inputEvent.mi.dwFlags =
@@ -399,8 +446,8 @@ void handle_motion(HWND window)
 	inputEvent.mi.time = 0;
 	/* pointer coordinates must be 0..65535, which covers the whole screen -
 	 * regardless of resolution */
-	inputEvent.mi.dx = (motion.x + rect.left) * 65535 / g_uScreenWidth;
-	inputEvent.mi.dy = (motion.y + rect.top) * 65535 / g_uScreenHeight;
+	inputEvent.mi.dx = (motion.x + rect.left) * 65535 / g_ScreenWidth;
+	inputEvent.mi.dy = (motion.y + rect.top) * 65535 / g_ScreenHeight;
 	inputEvent.mi.mouseData = 0;
 	inputEvent.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_ABSOLUTE;
 	inputEvent.mi.dwExtraInfo = 0;
@@ -524,18 +571,10 @@ ULONG WatchForEvents(
 	HWND	hWnd;
 	struct shm_cmd *pShmCmd = NULL;
 
-	hDC = GetDC(NULL);
+
 
 	hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	if (ERROR_SUCCESS != RegisterWatchedDC(hDC, hWindowDamageEvent)) {
-		// This DC has some problems, or it has been destroyed already.
-		// Skip it and delete from the array.
-		ReleaseDC(NULL, hDC);
-		CloseHandle(hWindowDamageEvent);
-
-		return ERROR_INVALID_PARAMETER;
-	}
 	// This will not block.
 	uResult = peer_server_init(6000);
 	if (uResult) {
@@ -603,7 +642,7 @@ ULONG WatchForEvents(
 				logprintf("Damage %d\n", uDamage++);
 #endif
 				if (g_bVchanClientConnected) {
-					send_window_damage_event(NULL, 0, 0, g_uScreenWidth, g_uScreenHeight);
+					send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
 					ProcessUpdatedWindows(TRUE);
 				}
 				break;
@@ -634,7 +673,16 @@ ULONG WatchForEvents(
 					}
 
 					send_protocol_version();
+
+					// This will probably change the current video mode.
 					handle_xconf();
+
+					// The desktop DC should be opened only after the resolution changes.
+					hDC = GetDC(NULL);
+					uResult = RegisterWatchedDC(hDC, hWindowDamageEvent);
+					if (ERROR_SUCCESS != uResult)
+						lprintf_err(uResult, "WatchForEvents(): RegisterWatchedDC()");
+
 					send_window_create(NULL);
 					send_pixmap_mfns(NULL);
 
@@ -787,7 +835,8 @@ int __cdecl _tmain(
 {
 	ULONG uResult;
 
-        SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
+
+	SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
 	uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
 	if (ERROR_SUCCESS != uResult) {
@@ -819,8 +868,6 @@ int __cdecl _tmain(
 	}
 
 	SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE);
-
-	RunShellEventsThread();
 
 	uResult = WatchForEvents();
 	if (ERROR_SUCCESS != uResult) {
