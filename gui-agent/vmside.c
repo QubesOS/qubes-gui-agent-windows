@@ -642,7 +642,7 @@ ULONG WatchForEvents(
 				logprintf("Damage %d\n", uDamage++);
 #endif
 				if (g_bVchanClientConnected) {
-					send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
+//					send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
 					ProcessUpdatedWindows(TRUE);
 				}
 				break;
@@ -683,8 +683,8 @@ ULONG WatchForEvents(
 					if (ERROR_SUCCESS != uResult)
 						lprintf_err(uResult, "WatchForEvents(): RegisterWatchedDC()");
 
-					send_window_create(NULL);
-					send_pixmap_mfns(NULL);
+//					send_window_create(NULL);
+//					send_pixmap_mfns(NULL);
 
 					g_bVchanClientConnected = TRUE;
 					break;
