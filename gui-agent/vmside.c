@@ -1,3 +1,4 @@
+#define OEMRESOURCE 
 #include <windows.h>
 #include "tchar.h"
 #include "qubes-gui-protocol.h"
@@ -6,6 +7,7 @@
 #include "log.h"
 #include "qvcontrol.h"
 #include "shell_events.h"
+#include "resource.h"
 
 #define lprintf_err	Lprintf_err
 #define lprintf	Lprintf
@@ -827,6 +829,65 @@ ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNe
 	return ERROR_SUCCESS;
 }
 
+
+ULONG HideCursors()
+{
+	HCURSOR	hBlankCursor;
+	HCURSOR	hBlankCursorCopy;
+	ULONG	uResult;
+	UCHAR	i;
+	ULONG	CursorsToHide[] = {
+		OCR_APPSTARTING,	// Standard arrow and small hourglass
+		OCR_NORMAL,		// Standard arrow
+		OCR_CROSS,		// Crosshair
+		OCR_HAND,		// Hand
+		OCR_IBEAM,		// I-beam
+		OCR_NO,			// Slashed circle
+		OCR_SIZEALL,		// Four-pointed arrow pointing north, south, east, and west
+		OCR_SIZENESW,		// Double-pointed arrow pointing northeast and southwest
+		OCR_SIZENS,		// Double-pointed arrow pointing north and south
+		OCR_SIZENWSE,		// Double-pointed arrow pointing northwest and southeast
+		OCR_SIZEWE,		// Double-pointed arrow pointing west and east
+		OCR_UP,			// Vertical arrow
+		OCR_WAIT		// Hourglass
+	};
+
+	hBlankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
+	if (!hBlankCursor) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "HideCursors(): LoadImage() failed, error %d\n", uResult);
+		return uResult;
+	}
+
+	for (i = 0; i < RTL_NUMBER_OF(CursorsToHide); i++) {
+
+		// The system destroys hcur by calling the DestroyCursor function. 
+		// Therefore, hcur cannot be a cursor loaded using the LoadCursor function. 
+		// To specify a cursor loaded from a resource, copy the cursor using 
+		// the CopyCursor function, then pass the copy to SetSystemCursor.
+		hBlankCursorCopy = CopyCursor(hBlankCursor);
+		if (!hBlankCursorCopy) {
+			uResult = GetLastError();
+			lprintf_err(uResult, "HideCursors(): CopyCursor() failed, error %d\n", uResult);
+			return uResult;
+		}
+
+		if (!SetSystemCursor(hBlankCursorCopy, CursorsToHide[i])) {
+			uResult = GetLastError();
+			lprintf_err(uResult, "HideCursors(): SetSystemCursor(%d) failed, error %d\n", CursorsToHide[i], uResult);
+			return uResult;
+		}
+	}
+
+	if (!DestroyCursor(hBlankCursor)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "HideCursors(): DestroyCursor() failed, error %d\n", uResult);
+	}
+
+	return ERROR_SUCCESS;	
+}
+
+
 // This is the entry point for a console application (BUILD_AS_SERVICE not defined).
 int __cdecl _tmain(
 	ULONG argc,
@@ -837,6 +898,8 @@ int __cdecl _tmain(
 
 
 	SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
+
+	HideCursors();
 
 	uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
 	if (ERROR_SUCCESS != uResult) {
