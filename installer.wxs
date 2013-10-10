@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+  <?if $(env._BUILDARCH) = x86 ?>
+    <?define ARCHDIR = i386 ?>
+    <?define PFILESDIR = ProgramFilesFolder ?>
+  <?elseif $(env._BUILDARCH) = AMD64 ?>
+    <?define ARCHDIR = amd64 ?>
+    <?define PFILESDIR = ProgramFiles64Folder ?>
+  <?endif ?>
+
+  <Module  Id='guiAgentWindows'
+    Language='1033' Codepage='1252' Version='$(env.VERSION)'>
+
+    <Package Id='{99FAD33F-658E-4F04-966C-52061AC0BC45}' Keywords='Installer' Description="Qubes Gui Agent for Windows"
+      Comments='no comment' Manufacturer='Invisible Things Lab' InstallScope='perMachine'
+      InstallerVersion='200' Languages='1033' SummaryCodepage='1252'
+      InstallPrivileges="elevated" />
+
+    <Directory Id='TARGETDIR' Name='SourceDir'>
+      <Directory Id='$(var.PFILESDIR)'>
+        <Directory Id='ITLProgramFilesDir' Name='Invisible Things Lab'>
+          <Directory Id='QubesProgramFilesDir' Name='Qubes'>
+            <Directory Id='BinDir' Name='bin'>
+              <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
+                <File Id='wga.exe' DiskId='1' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
+                <!--
+                <ServiceInstall
+                Id="ServiceInstaller"
+                Type="ownProcess"
+                Vital="yes"
+                Name="GUIAgent"
+                DisplayName="Qubes GUI Agent"
+                Description="Qubes GUI agent"
+                Start="auto"
+                Account="LocalSystem"
+                ErrorControl="ignore"
+                Interactive="no"
+                />
+                <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
+                -->
+              </Component>
+              <Component Id='qvcontrol' Guid='{91D5C552-737F-4DD4-9953-5D66C78467B7}'>
+                <File Id='qvcontrol.exe' DiskId='1' Source='misc\qvcontrol\bin\$(var.ARCHDIR)\qvcontrol.exe' KeyPath="yes"/>
+              </Component>
+            </Directory>
+            <Directory Id='DriversDir' Name='drivers'>
+              <Component Id='qvgdi' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
+                <File Id='qvgdi.dll' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvgdi.dll' KeyPath="yes"/>
+              </Component>
+              <Component Id='qvmini' Guid='{EEA48D9E-93FA-4224-9FB9-5206D9DD8CC9}'>
+                <File Id='qvmini.sys' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvmini.sys' KeyPath="yes"/>
+              </Component>
+              <Component Id='qvideo.cat' Guid='{68F5783F-85D1-492F-99A3-DA2C8D576119}'>
+                <File Id='qvideo.cat' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.cat' KeyPath="yes"/>
+              </Component>
+              <Component Id='qvideo.inf' Guid='{A1193BA8-787B-4D6F-9ED8-006A9FE075D6}'>
+                <File Id='qvideo.inf' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.inf' KeyPath="yes"/>
+              </Component>
+            </Directory>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+  </Module>
+</Wix>
