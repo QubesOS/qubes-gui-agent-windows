@@ -351,14 +351,29 @@ void handle_xconf(
 
 	uResult = SetVideoMode(xconf.w, xconf.h, 32);
 	if (ERROR_SUCCESS != uResult) {
-		lprintf_err(uResult, "handle_xconf: SetVideoMode()");
+		QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
+
+		_tprintf(_T("handle_xconf: SetVideoMode(): %d\n"), uResult);
+
+		memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
+
+		uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
+		if (ERROR_SUCCESS != uResult) {
+			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			return;
+		}
+
+		g_ScreenWidth = QvGetSurfaceDataResponse.cx;
+		g_ScreenHeight = QvGetSurfaceDataResponse.cy;
+
+		_tprintf(_T("handle_xconf: keeping original %dx%d\n"), g_ScreenWidth, g_ScreenHeight);
 	} else {
 
 		g_ScreenWidth = xconf.w;
 		g_ScreenHeight = xconf.h;
 
-		RunShellEventsThread();
 	}
+	RunShellEventsThread();
 }
 
 
