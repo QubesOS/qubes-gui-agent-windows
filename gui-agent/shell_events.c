@@ -124,6 +124,7 @@ ULONG CheckWatchedWindowUpdates(
 {
 	WINDOWINFO wi;
 	BOOLEAN	bResizingDetected;
+	BOOLEAN bMoveDetected;
 
 	if (!pWatchedDC)
 		return ERROR_INVALID_PARAMETER;
@@ -137,14 +138,14 @@ ULONG CheckWatchedWindowUpdates(
 
 	SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
 
-	bDamageDetected |= wi.rcWindow.left != pWatchedDC->rcWindow.left ||
+	bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
 		wi.rcWindow.top != pWatchedDC->rcWindow.top ||
 		wi.rcWindow.right != pWatchedDC->rcWindow.right || wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
 
+	bDamageDetected |= bMoveDetected;
 
 	bResizingDetected = (wi.rcWindow.right - wi.rcWindow.left != pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left) ||
 		(wi.rcWindow.bottom - wi.rcWindow.top != pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
-
 
 	if (bDamageDetected || bResizingDetected) {
 
@@ -155,7 +156,8 @@ ULONG CheckWatchedWindowUpdates(
 		CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
 
 		if (g_bVchanClientConnected) {
-			send_window_configure(pWatchedDC);
+			if (bMoveDetected || bResizingDetected)
+				send_window_configure(pWatchedDC);
 
 			if (bResizingDetected)
 				send_pixmap_mfns(pWatchedDC);
