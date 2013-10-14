@@ -1,5 +1,6 @@
 #define OEMRESOURCE 
 #include <windows.h>
+#include <lmcons.h>
 #include "tchar.h"
 #include "qubes-gui-protocol.h"
 #include "libvchan.h"
@@ -8,6 +9,7 @@
 #include "qvcontrol.h"
 #include "shell_events.h"
 #include "resource.h"
+#include "service.h"
 
 #define lprintf_err	Lprintf_err
 #define lprintf	Lprintf
@@ -793,26 +795,6 @@ static ULONG CheckForXenInterface(
 	return ERROR_SUCCESS;
 }
 
-BOOL WINAPI CtrlHandler(
-	DWORD fdwCtrlType
-)
-{
-	Lprintf("CtrlHandler(): Got shutdown signal\n");
-
-	SetEvent(g_hStopServiceEvent);
-
-	WaitForSingleObject(g_hCleanupFinishedEvent, 2000);
-
-	CloseHandle(g_hStopServiceEvent);
-	CloseHandle(g_hCleanupFinishedEvent);
-
-	StopShellEventsThread();
-
-	Lprintf("CtrlHandler(): Shutdown complete\n");
-	ExitProcess(0);
-	return TRUE;
-}
-
 
 ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)
 {
@@ -903,6 +885,145 @@ ULONG HideCursors()
 }
 
 
+#ifdef BUILD_AS_SERVICE
+
+ULONG WINAPI ServiceExecutionThread(PVOID pParam)
+{
+	ULONG	uResult;
+	HANDLE	hTriggerEventsThread;
+
+
+	lprintf("ServiceExecutionThread(): Service started\n");
+
+
+	for (;;) {
+
+		uResult = WatchForEvents();
+		if (ERROR_SUCCESS != uResult)
+			lprintf_err(uResult, "ServiceExecutionThread(): WatchForEvents()");
+
+		if (!WaitForSingleObject(g_hStopServiceEvent, 0))
+			break;
+
+		Sleep(1000);
+	}
+
+	WaitForSingleObject(g_hCleanupFinishedEvent, 2000);
+
+	CloseHandle(g_hStopServiceEvent);
+	CloseHandle(g_hCleanupFinishedEvent);
+
+	StopShellEventsThread();
+
+	lprintf("ServiceExecutionThread(): Shutting down\n");
+
+	return ERROR_SUCCESS;
+}
+
+ULONG Init(HANDLE *phServiceThread)
+{
+	ULONG	uResult;
+	HANDLE	hThread;
+	ULONG	uClientNumber;
+
+
+	*phServiceThread = INVALID_HANDLE_VALUE;
+
+	uResult = CheckForXenInterface();
+	if (ERROR_SUCCESS != uResult) {
+		lprintf_err(uResult, "Init(): CheckForXenInterface()");
+		return ERROR_NOT_SUPPORTED;
+	}
+
+	hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ServiceExecutionThread, NULL, 0, NULL);
+	if (!hThread) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "StartServiceThread(): CreateThread()");
+		return uResult;
+	}
+
+	*phServiceThread = hThread;
+
+	return ERROR_SUCCESS;
+}
+
+
+
+// This is the entry point for a service module (BUILD_AS_SERVICE defined).
+int __cdecl _tmain(ULONG argc, PTCHAR argv[])
+{
+
+	TCHAR	szUserName[UNLEN + 1];
+	DWORD	nSize;
+	ULONG	uResult;
+
+	SERVICE_TABLE_ENTRY	ServiceTable[] = {
+		{SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain},
+		{NULL,NULL}
+	};
+
+
+
+	memset(szUserName, 0, sizeof(szUserName));
+	nSize = RTL_NUMBER_OF(szUserName);
+	if (!GetUserName(szUserName, &nSize)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "main(): GetUserName()");
+		return uResult;
+	}
+
+
+	if ((1 == argc) && _tcscmp(szUserName, TEXT("SYSTEM"))) {
+		lprintf("main(): must be run as SYSTEM");
+		return ERROR_INVALID_PARAMETER;
+	}
+
+	if (1 == argc) {
+
+		lprintf("main(): Running as SYSTEM\n");
+
+		uResult = ERROR_SUCCESS;
+		if (!StartServiceCtrlDispatcher(ServiceTable)) {
+			uResult = GetLastError();
+			lprintf_err(uResult, "main(): StartServiceCtrlDispatcher()");
+		}
+
+		lprintf("main(): Exiting\n");
+		return uResult;
+	}
+
+	lprintf("main(): Invalid parameters\n");
+	return ERROR_INVALID_PARAMETER;
+}
+
+#else
+
+// Is not called when built without BUILD_AS_SERVICE definition.
+ULONG Init(HANDLE *phServiceThread)
+{
+	return ERROR_SUCCESS;
+}
+
+BOOL WINAPI CtrlHandler(
+	DWORD fdwCtrlType
+)
+{
+	Lprintf("CtrlHandler(): Got shutdown signal\n");
+
+	SetEvent(g_hStopServiceEvent);
+
+	WaitForSingleObject(g_hCleanupFinishedEvent, 2000);
+
+	CloseHandle(g_hStopServiceEvent);
+	CloseHandle(g_hCleanupFinishedEvent);
+
+	StopShellEventsThread();
+
+	Lprintf("CtrlHandler(): Shutdown complete\n");
+	ExitProcess(0);
+	return TRUE;
+}
+
 // This is the entry point for a console application (BUILD_AS_SERVICE not defined).
 int __cdecl _tmain(
 	ULONG argc,
@@ -955,3 +1076,4 @@ int __cdecl _tmain(
 
 	return ERROR_SUCCESS;
 }
+#endif

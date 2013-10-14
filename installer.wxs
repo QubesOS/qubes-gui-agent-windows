@@ -23,9 +23,8 @@
             <Directory Id='BinDir' Name='bin'>
               <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
                 <File Id='wga.exe' DiskId='1' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
-                <!--
                 <ServiceInstall
-                Id="ServiceInstaller"
+                Id="GuiServiceInstaller"
                 Type="ownProcess"
                 Vital="yes"
                 Name="GUIAgent"
@@ -34,10 +33,9 @@
                 Start="auto"
                 Account="LocalSystem"
                 ErrorControl="ignore"
-                Interactive="no"
+                Interactive="yes"
                 />
-                <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
-                -->
+                <ServiceControl Id="GuiStartService" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
               </Component>
               <Component Id='qvcontrol' Guid='{91D5C552-737F-4DD4-9953-5D66C78467B7}'>
                 <File Id='qvcontrol.exe' DiskId='1' Source='misc\qvcontrol\bin\$(var.ARCHDIR)\qvcontrol.exe' KeyPath="yes"/>
