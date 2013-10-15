@@ -318,12 +318,12 @@ ULONG SetVideoMode(uWidth, uHeight, uBpp)
 
 	uResult = FindQubesDisplayDevice(&DisplayDevice);
 	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T("FindQubesDisplayDevice() failed with error %d\n"), uResult);
+		Lprintf_err(uResult, "FindQubesDisplayDevice() failed with error\n");
 		return uResult;
 	}
 	ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
 
-	_tprintf(_T("DeviceName: %s\n\n"), ptszDeviceName);
+	Lprintf("DeviceName: %s\n\n", ptszDeviceName);
 
 	uResult = SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
 	if (ERROR_SUCCESS != uResult) {

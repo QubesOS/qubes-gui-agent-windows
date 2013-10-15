@@ -1,4 +1,5 @@
 #include "qvcontrol.h"
+#include "log.h"
 
 #define QUBES_DRIVER_NAME	_T("Qubes Video Driver")
 
@@ -17,7 +18,7 @@ ULONG FindQubesDisplayDevice(
 	iDevNum = 0;
 	while ((bResult = EnumDisplayDevices(NULL, iDevNum, &DisplayDevice, 0)) == TRUE) {
 
-		_tprintf(_T("DevNum:%d\nName:%s\nString:%s\nID:%s\nKey:%s\n\n"),
+		Lprintf("DevNum:%d\nName:%S\nString:%S\nID:%S\nKey:%S\n\n",
 			 iDevNum, &DisplayDevice.DeviceName[0], &DisplayDevice.DeviceString[0], &DisplayDevice.DeviceID[0], &DisplayDevice.DeviceKey[0]);
 
 		if (_tcscmp(&DisplayDevice.DeviceString[0], QUBES_DRIVER_NAME) == 0)
@@ -27,7 +28,7 @@ ULONG FindQubesDisplayDevice(
 	}
 
 	if (!bResult) {
-		_tprintf(_T(__FUNCTION__) _T("(): No '%s' found.\n"), QUBES_DRIVER_NAME);
+		Lprintf(__FUNCTION__ "(): No '%S' found.\n", QUBES_DRIVER_NAME);
 		return ERROR_FILE_NOT_FOUND;
 	}
 
