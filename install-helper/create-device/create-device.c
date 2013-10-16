@@ -1,15 +1,9 @@
 #include <windows.h>
 #include <tchar.h>
-//#include <stdlib.h>
 #include <stdio.h>
 #include <setupapi.h>
-//#include <regstr.h>
-//#include <infstr.h>
 #include <cfgmgr32.h>
-//#include <string.h>
-//#include <malloc.h>
-//#include <newdev.h>
-//#include <objbase.h>
+#include <devpkey.h>
 #include <strsafe.h>
 
 void usage(LPCTSTR self) {
@@ -28,8 +22,12 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
     GUID ClassGUID;
     TCHAR ClassName[MAX_CLASS_NAME_LEN];
     TCHAR hwIdList[LINE_LEN+4];
+    TCHAR hwIdList2[LINE_LEN+4];
+    LPCTSTR currentHwId = NULL;
     LPCTSTR hwid = NULL;
     LPCTSTR inf = NULL;
+	DWORD DeviceIndex;
+	ULONG DevicePropertyType;
 	int retcode = 1;
 
     if (argc<2) {
@@ -59,6 +57,43 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 		retcode = 5;
         goto cleanup;
 	}
+
+    // List devices of given enumerator
+    DeviceInfoSet = SetupDiGetClassDevs(&ClassGUID, TEXT("ROOT"), NULL, DIGCF_PRESENT );
+    if (DeviceInfoSet == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "GetLastError: %d\n", GetLastError());
+		retcode = 6;
+        goto cleanup;
+	}
+
+    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+	DeviceIndex = 0;
+	while (SetupDiEnumDeviceInfo(DeviceInfoSet, DeviceIndex, &DeviceInfoData)) {
+		if (!SetupDiGetDeviceProperty(DeviceInfoSet,
+					&DeviceInfoData,
+					&DEVPKEY_Device_HardwareIds,
+					&DevicePropertyType,
+					(LPBYTE)hwIdList2,
+					sizeof(hwIdList2),
+					NULL,
+					0)) {
+			DeviceIndex++;
+			continue;
+		}
+		currentHwId = hwIdList2;
+		while (currentHwId[0]) {
+			if (_tcscmp(currentHwId, hwid)) {
+				fprintf(stderr, "Device already exists\n");
+				retcode = 0;
+				goto cleanup;
+			}
+			currentHwId += _tcslen(currentHwId)+1;
+		}
+		DeviceIndex++;
+	}
+
+	// reuse the same variable for new device
+	SetupDiDestroyDeviceInfoList(DeviceInfoSet);
 
     // Create the container for the to-be-created Device Information Element.
     DeviceInfoSet = SetupDiCreateDeviceInfoList(&ClassGUID,0);
