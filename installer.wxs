@@ -83,13 +83,20 @@
 	</CustomTable>
 
 	<Binary Id="CreateDeviceHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\create-device.exe"/>
+	<Binary Id="DisableDevHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\disable-device.exe"/>
 
 	<CustomAction Id="RegisterVideoDevice" Return="check" Impersonate="no" Execute="deferred"
 		BinaryKey="CreateDeviceHelper"
 		ExeCommand='"[DriversDir]qvideo.inf" ITL_QubesVideo'/>
 
+	<!-- Disable all PCI Display devices. Our device is ROOT device -->
+	<CustomAction Id="DisableSVGADevice" Return="ignore" Impersonate="no" Execute="deferred"
+		BinaryKey="DisableDevHelper"
+		ExeCommand='Display'/>
+
 	<InstallExecuteSequence>
 	  <Custom Action="RegisterVideoDevice" After="InstallFiles"/>
+	  <Custom Action="DisableSVGADevice" Before="InstallFinalize"/>
 	</InstallExecuteSequence>
 
 

@@ -1,6 +1,6 @@
 TARGETNAME=create-device
 TARGETTYPE=PROGRAM
-TARGETPATH=bin
+TARGETPATH=..\bin
 
 UMTYPE=console
 UMENTRY=wmain
