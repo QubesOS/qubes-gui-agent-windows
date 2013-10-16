@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='windows-1252'?>
-<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi' xmlns:difx='http://schemas.microsoft.com/wix/DifxAppExtension'>
   <?if $(env._BUILDARCH) = x86 ?>
     <?define ARCHDIR = i386 ?>
     <?define PFILESDIR = ProgramFilesFolder ?>
@@ -38,28 +38,67 @@
                 />
                 <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
                 -->
+                <RegistryKey Root='HKLM' Key='Software\Microsoft\Windows\CurrentVersion\Run'>
+                    <RegistryValue Type='string' Name='Qubes GUI Agent' Value='[BinDir]wga.exe'/>
+                </RegistryKey>
               </Component>
               <Component Id='qvcontrol' Guid='{91D5C552-737F-4DD4-9953-5D66C78467B7}'>
                 <File Id='qvcontrol.exe' DiskId='1' Source='misc\qvcontrol\bin\$(var.ARCHDIR)\qvcontrol.exe' KeyPath="yes"/>
               </Component>
             </Directory>
             <Directory Id='DriversDir' Name='drivers'>
-              <Component Id='qvgdi' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
-                <File Id='qvgdi.dll' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvgdi.dll' KeyPath="yes"/>
-              </Component>
-              <Component Id='qvmini' Guid='{EEA48D9E-93FA-4224-9FB9-5206D9DD8CC9}'>
-                <File Id='qvmini.sys' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvmini.sys' KeyPath="yes"/>
-              </Component>
-              <Component Id='qvideo.cat' Guid='{68F5783F-85D1-492F-99A3-DA2C8D576119}'>
-                <File Id='qvideo.cat' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.cat' KeyPath="yes"/>
-              </Component>
-              <Component Id='qvideo.inf' Guid='{A1193BA8-787B-4D6F-9ED8-006A9FE075D6}'>
-                <File Id='qvideo.inf' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.inf' KeyPath="yes"/>
+              <Component Id='qvideo' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
+                <File Id='qvideo.cat' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.cat'/>
+                <File Id='qvgdi.dll' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvgdi.dll'/>
+                <File Id='qvmini.sys' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvmini.sys'/>
+                <File Id='qvideo.inf' DiskId='1' Source='qvideo\bin\$(var.ARCHDIR)\qvideo.inf'/>
+				<!-- moved to custom table below -->
+				<!-- <difx:Driver Sequence='10' Legacy='yes' PlugAndPlayPrompt='no' ForceInstall='yes'/>-->
               </Component>
             </Directory>
           </Directory>
         </Directory>
       </Directory>
     </Directory>
-  </Module>
+	<!-- cannot use difx:Drive element because it requires difx lib linked with
+	this module, which causes conflict with vmm-xen-windows-drivers (which also
+	uses DIFx extension). This basically means that only one merge module
+	can use DIFx extention (see http://sourceforge.net/p/wix/feature-requests/432/).
+	But this also means that final MSI will already have all necesary steps to
+	install the drivers. So just append our driver to the MsiDriverPackage
+	table, to be also installed. -->
+	<!-- Table schema here: http://msdn.microsoft.com/en-us/library/windows/hardware/ff549362%28v=vs.85%29.aspx -->
+	<CustomTable Id="MsiDriverPackages">
+	  <Column Id="Component" Modularize="Column" Nullable="no" Type="string" Width="255"
+	      Description="An identifier that represents a driver package" PrimaryKey="yes"/>
+	  <Column Id="Flags" Nullable="no" Type="int" Width="4"
+	      Description="DIFxApp configuration flags"/>
+	  <Column Id="Sequence" Nullable="yes" Type="int" Width="4"
+	      Description="Installation sequence number"/>
+	  <Row>
+		<Data Column="Component">qvideo</Data>
+		<Data Column="Flags">11</Data>
+		<Data Column="Sequence">1</Data>
+	  </Row>
+	</CustomTable>
+
+	<Binary Id="CreateDeviceHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\create-device.exe"/>
+	<Binary Id="DisableDevHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\disable-device.exe"/>
+
+	<CustomAction Id="RegisterVideoDevice" Return="check" Impersonate="no" Execute="deferred"
+		BinaryKey="CreateDeviceHelper"
+		ExeCommand='"[DriversDir]qvideo.inf" ITL_QubesVideo'/>
+
+	<!-- Disable all PCI Display devices. Our device is ROOT device -->
+	<CustomAction Id="DisableSVGADevice" Return="ignore" Impersonate="no" Execute="deferred"
+		BinaryKey="DisableDevHelper"
+		ExeCommand='Display'/>
+
+	<InstallExecuteSequence>
+	  <Custom Action="RegisterVideoDevice" After="InstallFiles"/>
+	  <Custom Action="DisableSVGADevice" Before="InstallFinalize"/>
+	</InstallExecuteSequence>
+
+
+	</Module>
 </Wix>

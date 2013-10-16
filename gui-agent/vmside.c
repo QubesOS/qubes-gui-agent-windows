@@ -316,12 +316,12 @@ ULONG SetVideoMode(uWidth, uHeight, uBpp)
 
 	uResult = FindQubesDisplayDevice(&DisplayDevice);
 	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T("FindQubesDisplayDevice() failed with error %d\n"), uResult);
+		Lprintf_err(uResult, "FindQubesDisplayDevice() failed with error\n");
 		return uResult;
 	}
 	ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
 
-	_tprintf(_T("DeviceName: %s\n\n"), ptszDeviceName);
+	Lprintf("DeviceName: %s\n\n", ptszDeviceName);
 
 	uResult = SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
 	if (ERROR_SUCCESS != uResult) {
@@ -928,6 +928,9 @@ int __cdecl _tmain(
 		Lprintf_err(uResult, "Init(): CheckForXenInterface()");
 		return ERROR_NOT_SUPPORTED;
 	}
+
+	// hide console window, all logging should go to the log file (or event log)
+	FreeConsole();
 
 	// Manual reset, initial state is not signaled
 	g_hStopServiceEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
