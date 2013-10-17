@@ -321,7 +321,7 @@ ULONG SetVideoMode(uWidth, uHeight, uBpp)
 	}
 	ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
 
-	Lprintf("DeviceName: %s\n\n", ptszDeviceName);
+	Lprintf("DeviceName: %S\n\n", ptszDeviceName);
 
 	uResult = SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
 	if (ERROR_SUCCESS != uResult) {
