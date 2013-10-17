@@ -82,7 +82,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 		}
 		currentHwId = hwIdList2;
 		while (currentHwId[0]) {
-			if (_tcscmp(currentHwId, hwid)) {
+			if (_tcscmp(currentHwId, hwid)==0) {
 				fprintf(stderr, "Device already exists\n");
 				retcode = 0;
 				goto cleanup;
@@ -109,23 +109,29 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 				NULL,
 				0,
 				DICD_GENERATE_ID,
-				&DeviceInfoData))
+				&DeviceInfoData)) {
+		fprintf(stderr, "SetupDiCreateDeviceInfo GetLastError: %d\n", GetLastError());
         goto cleanup;
+	}
 
     // Add the HardwareID to the Device's HardwareID property.
 	if (!SetupDiSetDeviceRegistryProperty(DeviceInfoSet,
 				&DeviceInfoData,
 				SPDRP_HARDWAREID,
 				(LPBYTE)hwIdList,
-				(lstrlen(hwIdList)+1+1)*sizeof(TCHAR)))
+				(lstrlen(hwIdList)+1+1)*sizeof(TCHAR))) {
+		fprintf(stderr, "SetupDiSetDeviceRegistryProperty GetLastError: %d\n", GetLastError());
 		goto cleanup;
+	}
 
     // Transform the registry element into an actual devnode
     // in the PnP HW tree.
 	if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE,
 				DeviceInfoSet,
-				&DeviceInfoData))
+				&DeviceInfoData)) {
+		fprintf(stderr, "SetupDiCallClassInstaller GetLastError: %d\n", GetLastError());
         goto cleanup;
+	}
 
 	retcode = 0;
 
