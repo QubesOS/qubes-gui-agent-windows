@@ -49,9 +49,6 @@
                     <RegistryValue Type='string' Name='Qubes GUI Agent' Value='[BinDir]wga.exe'/>
                 </RegistryKey>
               </Component>
-              <Component Id='qvcontrol' Guid='{91D5C552-737F-4DD4-9953-5D66C78467B7}'>
-                <File Id='qvcontrol.exe' DiskId='1' Source='misc\qvcontrol\bin\$(var.ARCHDIR)\qvcontrol.exe' KeyPath="yes"/>
-              </Component>
             </Directory>
             <Directory Id='DriversDir' Name='drivers'>
               <Component Id='qvideo' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
