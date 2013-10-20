@@ -20,8 +20,8 @@ static DRVFN g_DrvFunctions[] = {
 LONG g_lCounter = 0;
 #endif
 
-ULONG g_uWidth = 800;
-ULONG g_uHeight = 600;
+ULONG g_uWidth = 1600;
+ULONG g_uHeight = 900;
 ULONG g_uBpp = 32;
 
 #define flGlobalHooks HOOK_SYNCHRONIZE
