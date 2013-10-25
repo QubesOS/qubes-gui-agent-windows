@@ -14,6 +14,7 @@
 
 HANDLE g_hStopServiceEvent;
 HANDLE g_hCleanupFinishedEvent;
+CRITICAL_SECTION    g_VchanCriticalSection;
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
@@ -144,8 +145,11 @@ void send_pixmap_mfns(
 	hdr.type = MSG_MFNDUMP;
 	hdr.window = (uint32_t) hWnd;
 	hdr.untrusted_len = sizeof(struct shm_cmd) + size;
+
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_struct(hdr);
 	write_data(pShmCmd, sizeof(struct shm_cmd) + size);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	free(pShmCmd);
 }
@@ -197,6 +201,7 @@ ULONG send_window_create(
 	mc.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
 	mc.override_redirect = 0;
 
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mc);
 
 	/* FIXME: for now, all windows are imediately mapped, but this should be
@@ -206,6 +211,7 @@ ULONG send_window_create(
 
 	hdr.type = MSG_MAP;
 	write_message(hdr, mmi);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
 }
@@ -220,7 +226,9 @@ ULONG send_window_destroy(
 	hdr.type = MSG_DESTROY;
 	hdr.window = (uint32_t)window;
 	hdr.untrusted_len = 0;
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_struct(hdr);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
 }
@@ -235,7 +243,9 @@ ULONG send_window_unmap(
 	hdr.type = MSG_UNMAP;
 	hdr.window = (uint32_t)window;
 	hdr.untrusted_len = 0;
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_struct(hdr);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
 }
@@ -260,6 +270,7 @@ ULONG send_window_configure(
 	mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
 	mc.override_redirect = 0;
 
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mc);
 
 	/* FIXME: for now, all windows are imediately mapped, but this should be
@@ -269,6 +280,7 @@ ULONG send_window_configure(
 
 	hdr.type = MSG_MAP;
 	write_message(hdr, mmi);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
 }
@@ -291,7 +303,9 @@ void send_window_damage_event(
 	mx.y = y;
 	mx.width = width;
 	mx.height = height;
+	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mx);
+	LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
 void send_protocol_version(
@@ -672,11 +686,11 @@ ULONG WatchForEvents(
 				// sure that we clear pending state _only_
 				// when handling vchan data in this loop iteration (not any
 				// other process)
-				libvchan_wait(ctrl);
-
-				bVchanIoInProgress = FALSE;
-
 				if (!g_bVchanClientConnected) {
+
+					libvchan_wait(ctrl);
+
+					bVchanIoInProgress = FALSE;
 
 					lprintf("WatchForEvents(): A vchan client has connected\n");
 
@@ -708,8 +722,8 @@ ULONG WatchForEvents(
 
 				if (!GetOverlappedResult(evtchn, &ol, &i, FALSE)) {
 					if (GetLastError() == ERROR_IO_DEVICE) {
-						// in case of ring overflow, above libvchan_wait
-						// already reseted the evtchn ring, so ignore this
+						// in case of ring overflow, libvchan_wait
+						// will reset the evtchn ring, so ignore this
 						// error as already handled
 						//
 						// Overflow can happen when below loop ("while
@@ -730,6 +744,11 @@ ULONG WatchForEvents(
 					}
 				}
 
+				EnterCriticalSection(&g_VchanCriticalSection);
+				libvchan_wait(ctrl);
+
+				bVchanIoInProgress = FALSE;
+
 				if (libvchan_is_eof(ctrl)) {
 					bVchanReturnedError = TRUE;
 					break;
@@ -743,6 +762,7 @@ ULONG WatchForEvents(
 						break;
 					}
 				}
+				LeaveCriticalSection(&g_VchanCriticalSection);
 
 				break;
 
@@ -944,12 +964,15 @@ int __cdecl _tmain(
 		return uResult;
 	}
 
+	InitializeCriticalSection(&g_VchanCriticalSection);
+
 	SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE);
 
 	uResult = WatchForEvents();
 	if (ERROR_SUCCESS != uResult) {
 		Lprintf_err(uResult, "ServiceExecutionThread(): WatchForEvents()");
 	}
+	DeleteCriticalSection(&g_VchanCriticalSection);
 	SetEvent(g_hCleanupFinishedEvent);
 
 	return ERROR_SUCCESS;
