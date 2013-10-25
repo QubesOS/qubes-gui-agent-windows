@@ -929,9 +929,6 @@ int __cdecl _tmain(
 		return ERROR_NOT_SUPPORTED;
 	}
 
-	// hide console window, all logging should go to the log file (or event log)
-	FreeConsole();
-
 	// Manual reset, initial state is not signaled
 	g_hStopServiceEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!g_hStopServiceEvent) {
