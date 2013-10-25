@@ -3,7 +3,7 @@ TARGETTYPE=PROGRAM
 TARGETPATH=bin
 
 
-UMTYPE=console
+UMTYPE=windows
 USE_MSVCRT=1
 
 UMENTRY = wmain
