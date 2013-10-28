@@ -23,6 +23,8 @@
     <Substitution Table="Directory" Column="Directory_Parent"
       Row="DriversDir" Value="[=ProductFolder]"/>
 
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" SuppressModularization="yes"/>
+
     <Directory Id='TARGETDIR' Name='SourceDir'>
       <Directory Id='$(var.PFILESDIR)'>
         <Directory Id='ITLProgramFilesDir' Name='Invisible Things Lab'>
