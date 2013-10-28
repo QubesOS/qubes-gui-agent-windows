@@ -81,7 +81,7 @@
 	      Description="Installation sequence number"/>
 	  <Row>
 		<Data Column="Component">qvideo</Data>
-		<Data Column="Flags">11</Data>
+		<Data Column="Flags">15</Data>
 		<Data Column="Sequence">1</Data>
 	  </Row>
 	</CustomTable>
