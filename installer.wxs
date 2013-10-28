@@ -94,13 +94,30 @@
 		ExeCommand='"[DriversDir]qvideo.inf" ITL_QubesVideo'/>
 
 	<!-- Disable all PCI Display devices. Our device is ROOT device -->
-	<CustomAction Id="DisableSVGADevice" Return="ignore" Impersonate="no" Execute="deferred"
+	<CustomAction Id="DisableSVGA" Return="ignore" Impersonate="no" Execute="deferred"
 		BinaryKey="DisableDevHelper"
-		ExeCommand='Display'/>
+		ExeCommand='-d Display'/>
+
+	<CustomAction Id="RollbackDisableSVGA" Return="ignore" Impersonate="no" Execute="rollback"
+		BinaryKey="DisableDevHelper"
+		ExeCommand='-e Display'/>
+
+	<CustomAction Id="EnableSVGA" Return="ignore" Impersonate="no" Execute="deferred"
+		BinaryKey="DisableDevHelper"
+		ExeCommand='-e Display'/>
 
 	<InstallExecuteSequence>
-	  <Custom Action="RegisterVideoDevice" After="InstallFiles"/>
-	  <Custom Action="DisableSVGADevice" Before="InstallFinalize"/>
+	  <Custom Action="RegisterVideoDevice" After="InstallFiles">
+        NOT Installed
+      </Custom>
+	  <Custom Action="RollbackDisableSVGA" Before="DisableSVGA"/>
+	  <Custom Action="DisableSVGA" Before="InstallFinalize">
+        NOT Installed
+      </Custom>
+	  <!-- enable it back on uninstall -->
+	  <Custom Action="EnableSVGA" Before="InstallFinalize">
+        REMOVE="ALL"
+      </Custom>
 	</InstallExecuteSequence>
 
 

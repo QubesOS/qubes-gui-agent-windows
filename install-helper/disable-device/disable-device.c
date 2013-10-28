@@ -8,11 +8,11 @@
 #include <strsafe.h>
 
 void usage(LPCTSTR self) {
-	fprintf(stderr, "Usage: %S class-name [enumerator] [hwID]\n", self);
+	fprintf(stderr, "Usage: %S -e|-d class-name [enumerator] [hwID]\n", self);
 	fprintf(stderr, "Enumerator defaults to \"PCI\"\n");
 	fprintf(stderr, "Error codes: \n");
 	fprintf(stderr, "  1 - other error\n");
-	fprintf(stderr, "  2 - not enough parameters\n");
+	fprintf(stderr, "  2 - invalid parameters\n");
 	fprintf(stderr, "  3 - empty class-name\n");
 	fprintf(stderr, "  4 - cannot get device list\n");
 	fprintf(stderr, "  5 - failed to get class GUID\n");
@@ -35,23 +35,33 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 	BOOL match;
 	SP_PROPCHANGE_PARAMS PropchangeParams;
 	int retcode = 1;
+	int action;
 
-    if (argc<2) {
+    if (argc<3) {
 		usage(argv[0]);
 		return 2;
     }
 
-    ClassName = argv[1];
+	if (_tcscmp(argv[1], TEXT("-e"))==0)
+		action = DICS_ENABLE;
+	else if (_tcscmp(argv[1], TEXT("-d"))==0)
+		action = DICS_DISABLE;
+	else {
+		usage(argv[0]);
+		return 2;
+	}
+
+    ClassName = argv[2];
     if (!ClassName[0]) {
 		usage(argv[0]);
         return 3;
     }
 
-	if (argc >= 3 && argv[2][0])
-		Enumerator = argv[2];
-
 	if (argc >= 4 && argv[3][0])
-		ExpectedHwId = argv[3];
+		Enumerator = argv[3];
+
+	if (argc >= 5 && argv[4][0])
+		ExpectedHwId = argv[4];
 
 	if (!SetupDiClassGuidsFromName(ClassName, &ClassGUID, 1, &requiredSize)) {
 		fprintf(stderr, "GetLastError: %d\n", GetLastError());
@@ -98,7 +108,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 		if (match) {
 			PropchangeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
 			PropchangeParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
-			PropchangeParams.StateChange = DICS_DISABLE;
+			PropchangeParams.StateChange = action;
 			PropchangeParams.Scope = DICS_FLAG_CONFIGSPECIFIC;
 			PropchangeParams.HwProfile = 0;
 			if(!SetupDiSetClassInstallParams(DeviceInfoSet,
