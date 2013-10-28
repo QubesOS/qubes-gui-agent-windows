@@ -20,6 +20,7 @@ ECHO BUILDDIR=%BUILDDIR%
 ECHO SIGN_OS=%SIGN_OS%
 
 %SIGNTOOL% sign /v %CERT_CROSS_CERT_FLAG% /f %CERT_FILENAME% %CERT_PASSWORD_FLAG% /t http://timestamp.verisign.com/scripts/timestamp.dll qvideo\bin\%BUILDDIR%\qvmini.sys
+%SIGNTOOL% sign /v %CERT_CROSS_CERT_FLAG% /f %CERT_FILENAME% %CERT_PASSWORD_FLAG% /t http://timestamp.verisign.com/scripts/timestamp.dll qvideo\bin\%BUILDDIR%\qvgdi.dll
 %DDK_PATH%\bin\selfsign\inf2cat /driver:qvideo\bin\%BUILDDIR% /os:%SIGN_OS%
 %SIGNTOOL% sign /v %CERT_CROSS_CERT_FLAG% /f %CERT_FILENAME% %CERT_PASSWORD_FLAG% /t http://timestamp.verisign.com/scripts/timestamp.dll qvideo\bin\%BUILDDIR%\qvideo.cat
 
