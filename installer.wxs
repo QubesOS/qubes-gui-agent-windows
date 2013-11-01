@@ -48,7 +48,7 @@
                 <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
                 -->
                 <RegistryKey Root='HKLM' Key='Software\Microsoft\Windows\CurrentVersion\Run'>
-                    <RegistryValue Type='string' Name='Qubes GUI Agent' Value='[BinDir]wga.exe'/>
+                    <RegistryValue Type='string' Name='Qubes GUI Agent' Value='"[BinDir]wga.exe"'/>
                 </RegistryKey>
               </Component>
             </Directory>
