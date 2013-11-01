@@ -188,6 +188,7 @@ ULONG ChangeVideoMode(
 	DEVMODE DevMode;
 	ULONG uResult;
 	DWORD iModeNum;
+	BOOL bFound = FALSE;
 
 	if (!ptszDeviceName)
 		return ERROR_INVALID_PARAMETER;
@@ -208,19 +209,21 @@ ULONG ChangeVideoMode(
 	// Without this, win32k will try to match a specified mode in the cache,
 	// will fail and return DISP_CHANGE_BADMODE.
 	iModeNum = 0;
-	while (EnumDisplaySettings(ptszDeviceName, iModeNum, &DevMode))
+	while (EnumDisplaySettings(ptszDeviceName, iModeNum, &DevMode)) {
+		Lprintf(__FUNCTION__ "(): %d mode %dx%d@%d\n", iModeNum, DevMode.dmPelsWidth, DevMode.dmPelsHeight, DevMode.dmBitsPerPel);
+		if (DevMode.dmPelsWidth == uWidth &&
+				DevMode.dmPelsHeight == uHeight &&
+				DevMode.dmBitsPerPel == uBpp) {
+			bFound = TRUE;
+			break;
+		}
 		iModeNum++;
-
-	if (!iModeNum) {
-		// Couldn't find a single supported video mode.
-		Lprintf(__FUNCTION__ "(): EnumDisplaySettings() failed\n");
-		return ERROR_INVALID_FUNCTION;
 	}
 
-	DevMode.dmPelsWidth = uWidth;
-	DevMode.dmPelsHeight = uHeight;
-	DevMode.dmBitsPerPel = 32;
-	DevMode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
+	if (!bFound) {
+		Lprintf(__FUNCTION__ "(): EnumDisplaySettings() didn't returned expected mode\n");
+		return ERROR_INVALID_FUNCTION;
+	}
 
 	uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
 	if (DISP_CHANGE_SUCCESSFUL != uResult) {
