@@ -26,6 +26,7 @@ extern HANDLE g_hSection;
 extern PUCHAR g_pScreenData;
 
 BOOLEAN	g_bVchanClientConnected = FALSE;
+BOOLEAN	g_bFullScreenMode = FALSE;
 
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
  * struct.
@@ -379,15 +380,14 @@ void handle_xconf(
 
 		g_ScreenWidth = QvGetSurfaceDataResponse.cx;
 		g_ScreenHeight = QvGetSurfaceDataResponse.cy;
+		g_bFullScreenMode = TRUE;
 
 		Lprintf("handle_xconf: keeping original %dx%d\n", g_ScreenWidth, g_ScreenHeight);
 	} else {
-
 		g_ScreenWidth = xconf.w;
 		g_ScreenHeight = xconf.h;
-
+		RunShellEventsThread();
 	}
-	RunShellEventsThread();
 }
 
 
@@ -672,8 +672,10 @@ ULONG WatchForEvents(
 				logprintf("Damage %d\n", uDamage++);
 #endif
 				if (g_bVchanClientConnected) {
-//					send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
-					ProcessUpdatedWindows(TRUE);
+					if (g_bFullScreenMode)
+						send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
+					else
+						ProcessUpdatedWindows(TRUE);
 				}
 				break;
 
@@ -713,8 +715,10 @@ ULONG WatchForEvents(
 					if (ERROR_SUCCESS != uResult)
 						lprintf_err(uResult, "WatchForEvents(): RegisterWatchedDC()");
 
-//					send_window_create(NULL);
-//					send_pixmap_mfns(NULL);
+					if (g_bFullScreenMode) {
+						send_window_create(NULL);
+						send_pixmap_mfns(NULL);
+					}
 
 					g_bVchanClientConnected = TRUE;
 					break;
