@@ -195,6 +195,14 @@ ULONG ChangeVideoMode(
 	memset(&DevMode, 0, sizeof(DEVMODE));
 	DevMode.dmSize = sizeof(DEVMODE);
 
+	if (EnumDisplaySettings(ptszDeviceName, ENUM_CURRENT_SETTINGS, &DevMode)) {
+		if (DevMode.dmPelsWidth == uWidth &&
+				DevMode.dmPelsHeight == uHeight &&
+				DevMode.dmBitsPerPel == uBpp) {
+			/* the current mode is good */
+			return ERROR_SUCCESS;
+		}
+	}
 	// Iterate to get all the available modes of the driver;
 	// this will flush the mode cache and force win32k to call our DrvGetModes().
 	// Without this, win32k will try to match a specified mode in the cache,
