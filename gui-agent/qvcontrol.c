@@ -18,8 +18,8 @@ ULONG FindQubesDisplayDevice(
 	iDevNum = 0;
 	while ((bResult = EnumDisplayDevices(NULL, iDevNum, &DisplayDevice, 0)) == TRUE) {
 
-		Lprintf("DevNum:%d\nName:%S\nString:%S\nID:%S\nKey:%S\n\n",
-			 iDevNum, &DisplayDevice.DeviceName[0], &DisplayDevice.DeviceString[0], &DisplayDevice.DeviceID[0], &DisplayDevice.DeviceKey[0]);
+		Lprintf("DevNum:%d\nName:%S\nString:%S\nFlags:%x\nID:%S\nKey:%S\n\n",
+			 iDevNum, &DisplayDevice.DeviceName[0], &DisplayDevice.DeviceString[0], DisplayDevice.StateFlags, &DisplayDevice.DeviceID[0], &DisplayDevice.DeviceKey[0]);
 
 		if (_tcscmp(&DisplayDevice.DeviceString[0], QUBES_DRIVER_NAME) == 0)
 			break;
@@ -56,8 +56,8 @@ ULONG SupportVideoMode(
 
 	hControlDC = CreateDC(NULL, ptszQubesDeviceName, NULL, NULL);
 	if (!hControlDC) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): Could not create a device context\n"));
+		Lprintf(__FUNCTION__
+			 "(): Could not create a device context\n");
 		return ERROR_FILE_NOT_FOUND;
 	}
 
@@ -70,8 +70,8 @@ ULONG SupportVideoMode(
 	DeleteDC(hControlDC);
 
 	if (iRet <= 0) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ExtEscape(QVESC_SUPPORT_MODE) failed, error %d\n\n"), iRet);
+		Lprintf(__FUNCTION__
+			 "(): ExtEscape(QVESC_SUPPORT_MODE) failed, error %d\n\n", iRet);
 		return ERROR_NOT_SUPPORTED;
 	}
 
@@ -92,8 +92,8 @@ ULONG GetWindowData(
 
 	hDC = GetDC(hWnd);
 	if (!hDC) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): Could not get a device context\n"));
+		Lprintf(__FUNCTION__
+			 "(): Could not get a device context\n");
 		return ERROR_FILE_NOT_FOUND;
 	}
 
@@ -107,14 +107,14 @@ ULONG GetWindowData(
 	ReleaseDC(hWnd, hDC);
 
 	if (iRet <= 0) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ExtEscape(QVESC_GET_SURFACE_DATA) failed, error %d\n\n"), iRet);
+		Lprintf(__FUNCTION__
+			 "(): ExtEscape(QVESC_GET_SURFACE_DATA) failed, error %d\n\n", iRet);
 		return ERROR_NOT_SUPPORTED;
 	}
 
 	if (QVIDEO_MAGIC != pQvGetSurfaceDataResponse->uMagic) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): The response to QVESC_GET_SURFACE_DATA is not valid\n\n"));
+		Lprintf(__FUNCTION__
+			 "(): The response to QVESC_GET_SURFACE_DATA is not valid\n\n");
 		return ERROR_NOT_SUPPORTED;
 	}
 
@@ -141,8 +141,8 @@ ULONG GetPfnList(
 
 	hDC = GetDC(0);
 	if (!hDC) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): Could not get a device context\n"));
+		Lprintf(__FUNCTION__
+			 "(): Could not get a device context\n");
 		free(pQvGetPfnListResponse);
 		return ERROR_FILE_NOT_FOUND;
 	}
@@ -159,15 +159,15 @@ ULONG GetPfnList(
 	ReleaseDC(0, hDC);
 
 	if (iRet <= 0) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ExtEscape(QVESC_GET_PFN_LIST) failed, error %d\n\n"), iRet);
+		Lprintf(__FUNCTION__
+			 "(): ExtEscape(QVESC_GET_PFN_LIST) failed, error %d\n\n", iRet);
 		free(pQvGetPfnListResponse);
 		return ERROR_NOT_SUPPORTED;
 	}
 
 	if (QVIDEO_MAGIC != pQvGetPfnListResponse->uMagic) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): The response to QVESC_GET_PFN_LIST is not valid\n\n"));
+		Lprintf(__FUNCTION__
+			 "(): The response to QVESC_GET_PFN_LIST is not valid\n\n");
 		free(pQvGetPfnListResponse);
 		return ERROR_NOT_SUPPORTED;
 	}
@@ -205,7 +205,7 @@ ULONG ChangeVideoMode(
 
 	if (!iModeNum) {
 		// Couldn't find a single supported video mode.
-		_tprintf(_T(__FUNCTION__) _T("(): EnumDisplaySettings() failed\n"));
+		Lprintf(__FUNCTION__ "(): EnumDisplaySettings() failed\n");
 		return ERROR_INVALID_FUNCTION;
 	}
 
@@ -216,15 +216,15 @@ ULONG ChangeVideoMode(
 
 	uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
 	if (DISP_CHANGE_SUCCESSFUL != uResult) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ChangeDisplaySettingsEx(CDS_TEST) returned %d\n"), uResult);
+		Lprintf(__FUNCTION__
+			 "(): ChangeDisplaySettingsEx(CDS_TEST) returned %d\n", uResult);
 		return ERROR_NOT_SUPPORTED;
 	}
 
 	uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, 0, NULL);
 	if (DISP_CHANGE_SUCCESSFUL != uResult) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ChangeDisplaySettingsEx() returned %d\n"), uResult);
+		Lprintf(__FUNCTION__
+			 "(): ChangeDisplaySettingsEx() returned %d\n", uResult);
 		return ERROR_NOT_SUPPORTED;
 	}
 
@@ -245,8 +245,8 @@ ULONG RegisterWatchedDC(
 	iRet = ExtEscape(hDC, QVESC_WATCH_SURFACE, sizeof(QV_WATCH_SURFACE), (LPCSTR) & QvWatchSurface, 0, NULL);
 
 	if (iRet <= 0) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ExtEscape(QVESC_WATCH_SURFACE) failed, error %d\n\n"), iRet);
+		Lprintf(__FUNCTION__
+			 "(): ExtEscape(QVESC_WATCH_SURFACE) failed, error %d\n\n", iRet);
 		return ERROR_NOT_SUPPORTED;
 	}
 
@@ -266,8 +266,8 @@ ULONG UnregisterWatchedDC(
 	iRet = ExtEscape(hDC, QVESC_STOP_WATCHING_SURFACE, sizeof(QV_STOP_WATCHING_SURFACE), (LPCSTR) & QvStopWatchingSurface, 0, NULL);
 
 	if (iRet <= 0) {
-		_tprintf(_T(__FUNCTION__)
-			 _T("(): ExtEscape(QVESC_STOP_WATCHING_SURFACE) failed, error %d\n\n"), iRet);
+		Lprintf(__FUNCTION__
+				"(): ExtEscape(QVESC_STOP_WATCHING_SURFACE) failed, error %d\n\n", iRet);
 		return ERROR_NOT_SUPPORTED;
 	}
 

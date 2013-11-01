@@ -57,7 +57,7 @@ ULONG PrepareShmCmd(
 
 		uResult = GetWindowData(hWnd, &QvGetSurfaceDataResponse);
 		if (ERROR_SUCCESS != uResult) {
-			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			Lprintf(__FUNCTION__ "GetWindowData() failed with error %d\n", uResult);
 			return uResult;
 		}
 
@@ -83,16 +83,16 @@ ULONG PrepareShmCmd(
 	}
 
 
-	_tprintf(_T(__FUNCTION__) _T("Window %dx%d, %d bpp, screen: %d\n"), uWidth, uHeight,
+	Lprintf(__FUNCTION__ "Window %dx%d, %d bpp, screen: %d\n", uWidth, uHeight,
 		 ulBitCount, bIsScreen);
-	_tprintf(_T(__FUNCTION__) _T("PFNs: %d; 0x%x, 0x%x, 0x%x\n"), pPfnArray->uNumberOf4kPages,
+	Lprintf(__FUNCTION__ "PFNs: %d; 0x%x, 0x%x, 0x%x\n", pPfnArray->uNumberOf4kPages,
 		 pPfnArray->Pfn[0], pPfnArray->Pfn[1], pPfnArray->Pfn[2]);
 
 	uShmCmdSize = sizeof(struct shm_cmd) + pPfnArray->uNumberOf4kPages * sizeof(uint32_t);
 
 	pShmCmd = malloc(uShmCmdSize);
 	if (!pShmCmd) {
-		_tprintf(_T(__FUNCTION__) _T("Failed to allocate %d bytes for shm_cmd for window 0x%x\n"), uShmCmdSize, hWnd);
+		Lprintf(__FUNCTION__ "Failed to allocate %d bytes for shm_cmd for window 0x%x\n", uShmCmdSize, hWnd);
 		return ERROR_NOT_ENOUGH_MEMORY;
 	}
 
@@ -130,12 +130,12 @@ void send_pixmap_mfns(
 
 	uResult = PrepareShmCmd(pWatchedDC, &pShmCmd);
 	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T(__FUNCTION__) _T("PrepareShmCmd() failed with error %d\n"), uResult);
+		Lprintf(__FUNCTION__ "PrepareShmCmd() failed with error %d\n", uResult);
 		return;
 	}
 
 	if (pShmCmd->num_mfn == 0 || pShmCmd->num_mfn > MAX_MFN_COUNT) {
-		_tprintf(_T(__FUNCTION__) _T("got num_mfn=0x%x for window 0x%x\n"), pShmCmd->num_mfn, (int)hWnd);
+		Lprintf(__FUNCTION__ "got num_mfn=0x%x for window 0x%x\n", pShmCmd->num_mfn, (int)hWnd);
 		free(pShmCmd);
 		return;
 	}
@@ -178,7 +178,7 @@ ULONG send_window_create(
 
 		uResult = GetWindowData(NULL, &QvGetSurfaceDataResponse);
 		if (ERROR_SUCCESS != uResult) {
-			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			Lprintf(__FUNCTION__ "GetWindowData() failed with error %d\n", uResult);
 			return uResult;
 		}
 
@@ -322,11 +322,11 @@ ULONG SetVideoMode(uWidth, uHeight, uBpp)
 	DISPLAY_DEVICE DisplayDevice;
 
 	if (!IS_RESOLUTION_VALID(uWidth, uHeight)) {
-		_tprintf(_T("Resolution is invalid: %dx%d\n"), uWidth, uHeight);
+		Lprintf("Resolution is invalid: %dx%d\n", uWidth, uHeight);
 		return ERROR_INVALID_PARAMETER;
 	}
 
-	_tprintf(_T("New resolution: %dx%d bpp %d\n"), uWidth, uHeight, uBpp);
+	Lprintf("New resolution: %dx%d bpp %d\n", uWidth, uHeight, uBpp);
 
 	uResult = FindQubesDisplayDevice(&DisplayDevice);
 	if (ERROR_SUCCESS != uResult) {
@@ -339,17 +339,17 @@ ULONG SetVideoMode(uWidth, uHeight, uBpp)
 
 	uResult = SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
 	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T("SupportVideoMode() failed with error %d\n"), uResult);
+		Lprintf("SupportVideoMode() failed with error %d\n", uResult);
 		return uResult;
 	}
 
 	uResult = ChangeVideoMode(ptszDeviceName, uWidth, uHeight, uBpp);
 	if (ERROR_SUCCESS != uResult) {
-		_tprintf(_T("ChangeVideoMode() failed with error %d\n"), uResult);
+		Lprintf("ChangeVideoMode() failed with error %d\n", uResult);
 		return uResult;
 	}
 
-	_tprintf(_T("Video mode changed successfully.\n"));
+	Lprintf("Video mode changed successfully.\n");
 	return ERROR_SUCCESS;
 }
 
@@ -367,20 +367,20 @@ void handle_xconf(
 	if (ERROR_SUCCESS != uResult) {
 		QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
 
-		_tprintf(_T("handle_xconf: SetVideoMode(): %d\n"), uResult);
+		Lprintf("handle_xconf: SetVideoMode(): %d\n", uResult);
 
 		memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
 
 		uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
 		if (ERROR_SUCCESS != uResult) {
-			_tprintf(_T(__FUNCTION__) _T("GetWindowData() failed with error %d\n"), uResult);
+			Lprintf(__FUNCTION__ "GetWindowData() failed with error %d\n", uResult);
 			return;
 		}
 
 		g_ScreenWidth = QvGetSurfaceDataResponse.cx;
 		g_ScreenHeight = QvGetSurfaceDataResponse.cy;
 
-		_tprintf(_T("handle_xconf: keeping original %dx%d\n"), g_ScreenWidth, g_ScreenHeight);
+		Lprintf("handle_xconf: keeping original %dx%d\n", g_ScreenWidth, g_ScreenHeight);
 	} else {
 
 		g_ScreenWidth = xconf.w;
@@ -454,7 +454,7 @@ void handle_button(HWND window)
 			inputEvent.mi.mouseData = (button.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
 			break;
 		default:
-			_tprintf(_T(__FUNCTION__) _T("unknown button pressed/released 0x%x\n"), button.button);
+			Lprintf(__FUNCTION__ "unknown button pressed/released 0x%x\n", button.button);
 	}
 	if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
 		lprintf_err(GetLastError(), "handle_keypress: SendInput()");
@@ -524,7 +524,7 @@ ULONG handle_server_data(
 	read_all_vchan_ext((char *)&hdr, sizeof(hdr));
 
 #ifdef DBG
-	_tprintf(_T(__FUNCTION__) _T("received message type %d for 0x%x\n"), hdr.type, hdr.window);
+	Lprintf(__FUNCTION__ "received message type %d for 0x%x\n", hdr.type, hdr.window);
 #endif
 
 	switch (hdr.type) {
@@ -547,7 +547,7 @@ ULONG handle_server_data(
 		handle_close((HWND)hdr.window);
 		break;
 	default:
-		_tprintf(_T(__FUNCTION__) _T("got unknown msg type %d, ignoring\n"), hdr.type);
+		Lprintf(__FUNCTION__ "got unknown msg type %d, ignoring\n", hdr.type);
 
 	case MSG_MAP:
 //              handle_map(g, hdr.window);
