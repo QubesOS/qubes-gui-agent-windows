@@ -3,6 +3,8 @@
 
 #define QUBES_DRIVER_NAME	_T("Qubes Video Driver")
 
+#define CHANGE_DISPLAY_MODE_TRIES 5
+
 ULONG FindQubesDisplayDevice(
 	PDISPLAY_DEVICE pQubesDisplayDevice
 )
@@ -189,6 +191,7 @@ ULONG ChangeVideoMode(
 	ULONG uResult;
 	DWORD iModeNum;
 	BOOL bFound = FALSE;
+	DWORD iTriesLeft;
 
 	if (!ptszDeviceName)
 		return ERROR_INVALID_PARAMETER;
@@ -225,17 +228,26 @@ ULONG ChangeVideoMode(
 		return ERROR_INVALID_FUNCTION;
 	}
 
-	uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
-	if (DISP_CHANGE_SUCCESSFUL != uResult) {
-		Lprintf(__FUNCTION__
-			 "(): ChangeDisplaySettingsEx(CDS_TEST) returned %d\n", uResult);
-		return ERROR_NOT_SUPPORTED;
+	/* dirty workaround for failing ChangeDisplaySettingsEx when called too
+	 * early */
+	iTriesLeft = CHANGE_DISPLAY_MODE_TRIES;
+	while (iTriesLeft--) {
+		uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
+		if (DISP_CHANGE_SUCCESSFUL != uResult) {
+			Lprintf(__FUNCTION__
+					"(): ChangeDisplaySettingsEx(CDS_TEST) returned %d, %ld\n", uResult, GetLastError());
+		} else {
+			uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, 0, NULL);
+			if (DISP_CHANGE_SUCCESSFUL != uResult) {
+				Lprintf(__FUNCTION__
+						"(): ChangeDisplaySettingsEx() returned %d\n", uResult);
+			} else {
+				break;
+			}
+		}
+		Sleep(500);
 	}
-
-	uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, 0, NULL);
 	if (DISP_CHANGE_SUCCESSFUL != uResult) {
-		Lprintf(__FUNCTION__
-			 "(): ChangeDisplaySettingsEx() returned %d\n", uResult);
 		return ERROR_NOT_SUPPORTED;
 	}
 
