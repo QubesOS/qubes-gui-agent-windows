@@ -20,8 +20,12 @@ static DRVFN g_DrvFunctions[] = {
 LONG g_lCounter = 0;
 #endif
 
-ULONG g_uWidth = 800;
-ULONG g_uHeight = 600;
+// default mode, before wga.exe connects
+ULONG g_uDefaultWidth = 800;
+ULONG g_uDefaultHeight = 600;
+// initial second mode, will be updated by wga.exe based on dom0 mode
+ULONG g_uWidth = 1280;
+ULONG g_uHeight = 800;
 ULONG g_uBpp = 32;
 
 #define flGlobalHooks HOOK_SYNCHRONIZE
@@ -139,43 +143,57 @@ ULONG APIENTRY DrvGetModes(
 	DEVMODEW * pdm
 )
 {
-	ULONG ulBytesWritten = 0, ulBytesNeeded = sizeof(DEVMODEW);
+	ULONG ulBytesWritten = 0, ulBytesNeeded = 2*sizeof(DEVMODEW);
 	ULONG ulReturnValue;
+	DWORD i;
 
 	UNREFERENCED_PARAMETER(hDriver);
 	UNREFERENCED_PARAMETER(cjSize);
 
-	DISPDBG((1, "DrvGetModes\n"));
+	DISPDBG((1, "DrvGetModes(%p, %lu), bytes needed: %lu\n", pdm, cjSize, ulBytesNeeded));
 	if (pdm == NULL) {
 		ulReturnValue = ulBytesNeeded;
+	} else if (cjSize < ulBytesNeeded) {
+		ulReturnValue = 0;
 	} else {
 
-		ulBytesWritten = sizeof(DEVMODEW);
+		ulBytesWritten = ulBytesNeeded;
 
-		memset(pdm, 0, sizeof(DEVMODEW));
-		memcpy(pdm->dmDeviceName, DLL_NAME, sizeof(DLL_NAME));
+		memset(pdm, 0, ulBytesNeeded);
+		for (i = 0; i < 2; i++) {
+			memcpy(pdm[i].dmDeviceName, DLL_NAME, sizeof(DLL_NAME));
 
-		pdm->dmSpecVersion = DM_SPECVERSION;
-		pdm->dmDriverVersion = DM_SPECVERSION;
+			pdm[i].dmSpecVersion = DM_SPECVERSION;
+			pdm[i].dmDriverVersion = DM_SPECVERSION;
 
-		pdm->dmDriverExtra = 0;
-		pdm->dmSize = sizeof(DEVMODEW);
-		pdm->dmBitsPerPel = g_uBpp;
-		pdm->dmPelsWidth = g_uWidth;
-		pdm->dmPelsHeight = g_uHeight;
-		pdm->dmDisplayFrequency = 75;
+			pdm[i].dmDriverExtra = 0;
+			pdm[i].dmSize = sizeof(DEVMODEW);
+			pdm[i].dmBitsPerPel = g_uBpp;
+			switch (i) {
+				case 0:
+					pdm[i].dmPelsWidth = g_uDefaultWidth;
+					pdm[i].dmPelsHeight = g_uDefaultHeight;
+					break;
+				case 1:
+					pdm[i].dmPelsWidth = g_uWidth;
+					pdm[i].dmPelsHeight = g_uHeight;
+					break;
+			}
+			pdm[i].dmDisplayFrequency = 75;
 
-		pdm->dmDisplayFlags = 0;
+			pdm[i].dmDisplayFlags = 0;
 
-		pdm->dmPanningWidth = pdm->dmPelsWidth;
-		pdm->dmPanningHeight = pdm->dmPelsHeight;
+			pdm[i].dmPanningWidth = pdm[i].dmPelsWidth;
+			pdm[i].dmPanningHeight = pdm[i].dmPelsHeight;
 
-		pdm->dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
+			pdm[i].dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
+		}
 
 		ulReturnValue = ulBytesWritten;
 
 	}
 
+	DISPDBG((1, "DrvGetModes(): return %d\n", ulReturnValue));
 	return ulReturnValue;
 }
 
