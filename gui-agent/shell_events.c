@@ -363,6 +363,8 @@ ULONG CheckWindowUpdates(
 
 	LeaveCriticalSection(&g_csWatchedWindows);
 
+	send_wmname(hWnd);
+
 	return ERROR_SUCCESS;
 }
 

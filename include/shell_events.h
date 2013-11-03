@@ -29,6 +29,10 @@ void send_window_damage_event(
 	int height
 );
 
+void send_wmname(
+	HWND window
+);
+
 ULONG send_window_configure(
 	PWATCHED_DC pWatchedDC
 );

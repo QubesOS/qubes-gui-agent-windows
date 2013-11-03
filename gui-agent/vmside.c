@@ -309,6 +309,23 @@ void send_window_damage_event(
 	LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
+void send_wmname(HWND window)
+{
+	struct msg_hdr hdr;
+	struct msg_wmname msg;
+
+	if (!GetWindowTextA(window, msg.data, sizeof(msg.data))) {
+		// ignore empty/non-readable captions
+		return;
+	}
+
+	hdr.window = (uint32_t)window;
+	hdr.type = MSG_WMNAME;
+	EnterCriticalSection(&g_VchanCriticalSection);
+	write_message(hdr, msg);
+	LeaveCriticalSection(&g_VchanCriticalSection);
+}
+
 void send_protocol_version(
 )
 {
