@@ -15,6 +15,13 @@ HANDLE g_hSection;
 
 extern	BOOLEAN	g_bVchanClientConnected;
 
+PWATCHED_DC AddWindowWithRect(
+	HWND hWnd,
+	RECT * pRect
+);
+
+ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
+
 ULONG OpenScreenSection(
 )
 {
@@ -116,6 +123,7 @@ ULONG CopyScreenData(
 	return ERROR_SUCCESS;
 }
 
+
 ULONG CheckWatchedWindowUpdates(
 	PWATCHED_DC pWatchedDC,
 	RECT * pRect,
@@ -169,21 +177,55 @@ ULONG CheckWatchedWindowUpdates(
 	return ERROR_SUCCESS;
 }
 
+BOOL CALLBACK EnumWindowsProc(
+    HWND hWnd,
+    LPARAM lParam
+)
+{
+	WINDOWINFO wi;
+	LONG	Style;
+
+	wi.cbSize = sizeof(wi);
+	if (!GetWindowInfo(hWnd, &wi))
+		return TRUE;
+
+	if (!IsWindowVisible(hWnd))
+		return TRUE;
+
+	Style = GetWindowLong(hWnd, GWL_STYLE);
+	if ((WS_POPUP & Style) && (!(DS_MODALFRAME & Style)))
+		return TRUE;
+
+	AddWindowWithRect(hWnd, &wi.rcWindow);
+
+	return TRUE;
+}
+
+
 ULONG ProcessUpdatedWindows(
 	BOOLEAN bUpdateEverything
 )
 {
 	PWATCHED_DC pWatchedDC;
+	PWATCHED_DC pNextWatchedDC;
 
 	EnterCriticalSection(&g_csWatchedWindows);
+
+	EnumWindows(EnumWindowsProc, (LPARAM)NULL);
 
 	pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
 	while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
 		pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
+		pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
-		CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything);
+		if (!IsWindow(pWatchedDC->hWnd)) {
+			RemoveEntryList(&pWatchedDC->le);
+			RemoveWatchedDC(pWatchedDC);
+			pWatchedDC = NULL;
+		} else
+			CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything);
 
-		pWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
+		pWatchedDC = pNextWatchedDC;
 	}
 
 	LeaveCriticalSection(&g_csWatchedWindows);
@@ -299,6 +341,34 @@ PWATCHED_DC AddWindow(
 	return pWatchedDC;
 }
 
+
+ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
+{
+	if (!pWatchedDC)
+		return ERROR_INVALID_PARAMETER;
+
+
+	VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
+	VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
+
+/*
+	uResult = UnmapAndFreePhysicalMemory(&pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
+	if (ERROR_SUCCESS != uResult)
+		_tprintf(_T(__FUNCTION__) _T("(): UnmapAndFreePhysicalMemory() failed, error %d\n"), uResult);
+
+*/
+	if (g_bVchanClientConnected) {
+		send_window_unmap(pWatchedDC->hWnd);
+		send_window_destroy(pWatchedDC->hWnd);
+	}
+
+	_tprintf(_T("destroyed: %x\n"), pWatchedDC->hWnd);
+
+	free(pWatchedDC);
+
+	return ERROR_SUCCESS;
+}
+
 ULONG RemoveWindow(
 	HWND hWnd
 )
@@ -315,24 +385,8 @@ ULONG RemoveWindow(
 	}
 
 	RemoveEntryList(&pWatchedDC->le);
-
-	VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
-	VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
-
-/*
-	uResult = UnmapAndFreePhysicalMemory(&pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
-	if (ERROR_SUCCESS != uResult)
-		_tprintf(_T(__FUNCTION__) _T("(): UnmapAndFreePhysicalMemory() failed, error %d\n"), uResult);
-
-*/
-	if (g_bVchanClientConnected) {
-		send_window_unmap(pWatchedDC->hWnd);
-		send_window_destroy(pWatchedDC->hWnd);
-	}
-
-	free(pWatchedDC);
-
-	_tprintf(_T("destroyed: %x\n"), hWnd);
+	RemoveWatchedDC(pWatchedDC);
+	pWatchedDC = NULL;
 
 	LeaveCriticalSection(&g_csWatchedWindows);
 
