@@ -149,7 +149,7 @@ ULONG CheckWatchedWindowUpdates(
 	bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
 	if (g_bVchanClientConnected) {
 		if (bCurrentlyVisible && !pWatchedDC->bVisible)
-			send_window_map(pWatchedDC->hWnd);
+			send_window_map(pWatchedDC);
 
 		if (!bCurrentlyVisible && pWatchedDC->bVisible)
 			send_window_unmap(pWatchedDC->hWnd);
@@ -190,6 +190,7 @@ ULONG CheckWatchedWindowUpdates(
 	return ERROR_SUCCESS;
 }
 
+
 BOOL CALLBACK EnumWindowsProc(
     HWND hWnd,
     LPARAM lParam
@@ -197,6 +198,8 @@ BOOL CALLBACK EnumWindowsProc(
 {
 	WINDOWINFO wi;
 	LONG	Style;
+	PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)lParam;
+	ULONG	i;
 
 	wi.cbSize = sizeof(wi);
 	if (!GetWindowInfo(hWnd, &wi))
@@ -205,9 +208,10 @@ BOOL CALLBACK EnumWindowsProc(
 	if (!IsWindowVisible(hWnd))
 		return TRUE;
 
-	Style = GetWindowLong(hWnd, GWL_STYLE);
-	if ((WS_POPUP & Style) && (!(DS_MODALFRAME & Style)))
-		return TRUE;
+	if (pBannedPopupsList)
+		for (i = 0; i < pBannedPopupsList->uNumberOfBannedPopups; i++)
+			if (pBannedPopupsList->hBannedPopupArray[i] == hWnd)
+				return TRUE;
 
 	AddWindowWithRect(hWnd, &wi.rcWindow);
 
@@ -221,10 +225,22 @@ ULONG ProcessUpdatedWindows(
 {
 	PWATCHED_DC pWatchedDC;
 	PWATCHED_DC pNextWatchedDC;
+	CHAR	BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
+	PBANNED_POPUP_WINDOWS	pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
+
+
+	pBannedPopupsList->uNumberOfBannedPopups = 4;
+	pBannedPopupsList->hBannedPopupArray[0] = GetDesktopWindow();
+	// Main Explorer window
+	pBannedPopupsList->hBannedPopupArray[1] = FindWindow(NULL, _T("Program Manager"));
+	// Taskbar and tray
+	pBannedPopupsList->hBannedPopupArray[2] = FindWindow(_T("Shell_TrayWnd"), NULL);
+	// Start button
+	pBannedPopupsList->hBannedPopupArray[3] = FindWindowEx(GetDesktopWindow(), NULL, _T("Button"), NULL);
 
 	EnterCriticalSection(&g_csWatchedWindows);
 
-	EnumWindows(EnumWindowsProc, (LPARAM)NULL);
+	EnumWindows(EnumWindowsProc, (LPARAM)pBannedPopupsList);
 
 	pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
 	while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
@@ -254,6 +270,7 @@ PWATCHED_DC AddWindowWithRect(
 {
 	PWATCHED_DC pWatchedDC = NULL;
 	ULONG uResult;
+	LONG Style;
 
 	if (!pRect)
 		return NULL;
@@ -272,9 +289,12 @@ PWATCHED_DC AddWindowWithRect(
 	if (!pWatchedDC)
 		return NULL;
 
+	memset(pWatchedDC, 0, sizeof(WATCHED_DC));
+
 	pWatchedDC->bVisible = IsWindowVisible(hWnd);
 
-	memset(pWatchedDC, 0, sizeof(WATCHED_DC));
+	Style = GetWindowLong(hWnd, GWL_STYLE);
+	pWatchedDC->bOverrideRedirect = (BOOL)(WS_POPUP & Style);
 
 	pWatchedDC->hWnd = hWnd;
 	pWatchedDC->rcWindow = *pRect;

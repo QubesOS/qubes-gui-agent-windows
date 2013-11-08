@@ -200,14 +200,14 @@ ULONG send_window_create(
 	mc.width = wi.rcWindow.right - wi.rcWindow.left;
 	mc.height = wi.rcWindow.bottom - wi.rcWindow.top;
 	mc.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-	mc.override_redirect = 0;
+	mc.override_redirect = pWatchedDC->bOverrideRedirect;
 
 	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mc);
 
 	if (pWatchedDC->bVisible) {
 		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-		mmi.override_redirect = 0;
+		mmi.override_redirect = pWatchedDC->bOverrideRedirect;
 
 		hdr.type = MSG_MAP;
 		write_message(hdr, mmi);
@@ -253,20 +253,20 @@ ULONG send_window_unmap(
 }
 
 ULONG send_window_map(
-	HWND window
+	PWATCHED_DC	pWatchedDC
 )
 {
 	struct msg_hdr hdr;
 	struct msg_map_info mmi;
 
-	Lprintf(__FUNCTION__ "(): Mapping 0x%x\n", window);
+	Lprintf(__FUNCTION__ "(): Mapping 0x%x\n", pWatchedDC->hWnd);
 
 	hdr.type = MSG_MAP;
-	hdr.window = (uint32_t)window;
+	hdr.window = (uint32_t)pWatchedDC->hWnd;
 	hdr.untrusted_len = 0;
 
 	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-	mmi.override_redirect = 0;
+	mmi.override_redirect = pWatchedDC->bOverrideRedirect;
 
 	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mmi);
@@ -300,7 +300,7 @@ ULONG send_window_configure(
 
 	if (pWatchedDC->bVisible) {
 		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-		mmi.override_redirect = 0;
+		mmi.override_redirect = pWatchedDC->bOverrideRedirect;
 
 		hdr.type = MSG_MAP;
 		write_message(hdr, mmi);
