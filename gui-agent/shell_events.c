@@ -133,6 +133,8 @@ ULONG CheckWatchedWindowUpdates(
 	WINDOWINFO wi;
 	BOOLEAN	bResizingDetected;
 	BOOLEAN bMoveDetected;
+	BOOL	bCurrentlyVisible;
+
 
 	if (!pWatchedDC)
 		return ERROR_INVALID_PARAMETER;
@@ -143,6 +145,17 @@ ULONG CheckWatchedWindowUpdates(
 			return GetLastError();
 	} else
 		wi.rcWindow = *pRect;
+
+	bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
+	if (g_bVchanClientConnected) {
+		if (bCurrentlyVisible && !pWatchedDC->bVisible)
+			send_window_map(pWatchedDC->hWnd);
+
+		if (!bCurrentlyVisible && pWatchedDC->bVisible)
+			send_window_unmap(pWatchedDC->hWnd);
+	}
+
+	pWatchedDC->bVisible = bCurrentlyVisible;
 
 	SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
 
@@ -259,6 +272,8 @@ PWATCHED_DC AddWindowWithRect(
 	if (!pWatchedDC)
 		return NULL;
 
+	pWatchedDC->bVisible = IsWindowVisible(hWnd);
+
 	memset(pWatchedDC, 0, sizeof(WATCHED_DC));
 
 	pWatchedDC->hWnd = hWnd;
@@ -330,6 +345,9 @@ PWATCHED_DC AddWindow(
 
 	wi.cbSize = sizeof(wi);
 	if (!GetWindowInfo(hWnd, &wi))
+		return NULL;
+
+	if (!IsWindowVisible(hWnd))
 		return NULL;
 
 	EnterCriticalSection(&g_csWatchedWindows);

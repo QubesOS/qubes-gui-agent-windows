@@ -205,13 +205,13 @@ ULONG send_window_create(
 	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mc);
 
-	/* FIXME: for now, all windows are imediately mapped, but this should be
-	 * changed to reflect real window visibility */
-	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-	mmi.override_redirect = 0;
+	if (pWatchedDC->bVisible) {
+		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+		mmi.override_redirect = 0;
 
-	hdr.type = MSG_MAP;
-	write_message(hdr, mmi);
+		hdr.type = MSG_MAP;
+		write_message(hdr, mmi);
+	}
 	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
@@ -240,12 +240,36 @@ ULONG send_window_unmap(
 {
 	struct msg_hdr hdr;
 
+	Lprintf(__FUNCTION__ "(): Unmapping 0x%x\n", window);
 
 	hdr.type = MSG_UNMAP;
 	hdr.window = (uint32_t)window;
 	hdr.untrusted_len = 0;
 	EnterCriticalSection(&g_VchanCriticalSection);
 	write_struct(hdr);
+	LeaveCriticalSection(&g_VchanCriticalSection);
+
+	return ERROR_SUCCESS;
+}
+
+ULONG send_window_map(
+	HWND window
+)
+{
+	struct msg_hdr hdr;
+	struct msg_map_info mmi;
+
+	Lprintf(__FUNCTION__ "(): Mapping 0x%x\n", window);
+
+	hdr.type = MSG_MAP;
+	hdr.window = (uint32_t)window;
+	hdr.untrusted_len = 0;
+
+	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+	mmi.override_redirect = 0;
+
+	EnterCriticalSection(&g_VchanCriticalSection);
+	write_message(hdr, mmi);
 	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;
@@ -274,13 +298,13 @@ ULONG send_window_configure(
 	EnterCriticalSection(&g_VchanCriticalSection);
 	write_message(hdr, mc);
 
-	/* FIXME: for now, all windows are imediately mapped, but this should be
-	 * changed to reflect real window visibility */
-	mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-	mmi.override_redirect = 0;
+	if (pWatchedDC->bVisible) {
+		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+		mmi.override_redirect = 0;
 
-	hdr.type = MSG_MAP;
-	write_message(hdr, mmi);
+		hdr.type = MSG_MAP;
+		write_message(hdr, mmi);
+	}
 	LeaveCriticalSection(&g_VchanCriticalSection);
 
 	return ERROR_SUCCESS;

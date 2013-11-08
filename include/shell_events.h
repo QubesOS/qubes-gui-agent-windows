@@ -45,6 +45,10 @@ ULONG send_window_unmap(
 	HWND window
 );
 
+ULONG send_window_map(
+	HWND window
+);
+
 ULONG OpenScreenSection(
 );
 
