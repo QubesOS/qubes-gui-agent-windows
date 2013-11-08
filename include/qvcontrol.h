@@ -16,6 +16,8 @@ typedef struct _WATCHED_DC
 	RECT	rcWindow;
 	LIST_ENTRY	le;
 
+	BOOL	bVisible;
+
 	LONG	MaxWidth;
 	LONG	MaxHeight;
 	PUCHAR	pCompositionBuffer;
