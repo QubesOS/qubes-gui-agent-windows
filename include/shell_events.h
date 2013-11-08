@@ -4,6 +4,13 @@
 #include <tchar.h>
 #include "qvcontrol.h"
 
+
+typedef struct _BANNED_POPUP_WINDOWS {
+	ULONG	uNumberOfBannedPopups;
+	HWND	hBannedPopupArray[1];
+} BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
+
+
 ULONG RunShellEventsThread(
 );
 ULONG StopShellEventsThread(
@@ -46,7 +53,7 @@ ULONG send_window_unmap(
 );
 
 ULONG send_window_map(
-	HWND window
+	PWATCHED_DC pWatchedDC
 );
 
 ULONG OpenScreenSection(

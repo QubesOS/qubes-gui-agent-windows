@@ -17,6 +17,7 @@ typedef struct _WATCHED_DC
 	LIST_ENTRY	le;
 
 	BOOL	bVisible;
+	BOOL	bOverrideRedirect;
 
 	LONG	MaxWidth;
 	LONG	MaxHeight;
