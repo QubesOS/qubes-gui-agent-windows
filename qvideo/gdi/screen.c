@@ -8,7 +8,7 @@
 // on information passed back from the miniport driver.
 
 const DEVINFO gDevInfoFrameBuffer = {
-	GCAPS_OPAQUERECT | GCAPS_MONO_DITHER | GCAPS_COLOR_DITHER | GCAPS_DITHERONREALIZE | GCAPS_ALTERNATEFILL | GCAPS_WINDINGFILL | GCAPS_GEOMETRICWIDE,	/* Graphics capabilities */
+	GCAPS_OPAQUERECT,
 	SYSTM_LOGFONT,		/* Default font description */
 	HELVE_LOGFONT,		/* ANSI variable font description */
 	COURI_LOGFONT,		/* ANSI fixed font description */
@@ -47,15 +47,15 @@ BOOL bInitPDEV(
 
 	pGdiInfo->ulVersion = GDI_DRIVER_VERSION;
 	pGdiInfo->ulTechnology = DT_RASDISPLAY;
-	pGdiInfo->ulHorzSize = 0;
-	pGdiInfo->ulVertSize = 0;
+	pGdiInfo->ulHorzSize = 320;
+	pGdiInfo->ulVertSize = 240;
 
 	pGdiInfo->ulHorzRes = ppdev->cxScreen;
 	pGdiInfo->ulVertRes = ppdev->cyScreen;
 	pGdiInfo->ulPanningHorzRes = 0;
 	pGdiInfo->ulPanningVertRes = 0;
-	pGdiInfo->cBitsPixel = 8;
-	pGdiInfo->cPlanes = 4;	//1;
+	pGdiInfo->cBitsPixel = 32;
+	pGdiInfo->cPlanes = 1;
 	pGdiInfo->ulVRefresh = 1;	// not used
 	pGdiInfo->ulBltAlignment = 1;	// We don't have accelerated screen-to-screen blts, and any window alignment is okay
 
