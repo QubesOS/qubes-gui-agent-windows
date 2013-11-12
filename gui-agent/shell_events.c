@@ -294,7 +294,8 @@ PWATCHED_DC AddWindowWithRect(
 	pWatchedDC->bVisible = IsWindowVisible(hWnd);
 
 	Style = GetWindowLong(hWnd, GWL_STYLE);
-	pWatchedDC->bOverrideRedirect = (BOOL)(WS_POPUP & Style);
+	// WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
+	pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & Style) != WS_CAPTION);
 
 	pWatchedDC->hWnd = hWnd;
 	pWatchedDC->rcWindow = *pRect;
@@ -343,6 +344,7 @@ PWATCHED_DC AddWindowWithRect(
 	if (g_bVchanClientConnected) {
 		send_window_create(pWatchedDC);
 		send_pixmap_mfns(pWatchedDC);
+		send_wmname(hWnd);
 	}
 
 	InsertTailList(&g_WatchedWindowsList, &pWatchedDC->le);
