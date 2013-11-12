@@ -344,6 +344,7 @@ PWATCHED_DC AddWindowWithRect(
 	if (g_bVchanClientConnected) {
 		send_window_create(pWatchedDC);
 		send_pixmap_mfns(pWatchedDC);
+		send_wmname(hWnd);
 	}
 
 	InsertTailList(&g_WatchedWindowsList, &pWatchedDC->le);
