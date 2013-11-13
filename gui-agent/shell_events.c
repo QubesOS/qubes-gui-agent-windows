@@ -235,8 +235,13 @@ ULONG ProcessUpdatedWindows(
 	pBannedPopupsList->hBannedPopupArray[1] = FindWindow(NULL, _T("Program Manager"));
 	// Taskbar and tray
 	pBannedPopupsList->hBannedPopupArray[2] = FindWindow(_T("Shell_TrayWnd"), NULL);
+	if (pBannedPopupsList->hBannedPopupArray[2])
+		ShowWindow(pBannedPopupsList->hBannedPopupArray[2], SW_HIDE);
+
 	// Start button
 	pBannedPopupsList->hBannedPopupArray[3] = FindWindowEx(GetDesktopWindow(), NULL, _T("Button"), NULL);
+	if (pBannedPopupsList->hBannedPopupArray[3])
+		ShowWindow(pBannedPopupsList->hBannedPopupArray[3], SW_HIDE);
 
 	EnterCriticalSection(&g_csWatchedWindows);
 
