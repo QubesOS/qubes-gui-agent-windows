@@ -1,0 +1,13 @@
+TARGETNAME=system-settings
+TARGETTYPE=PROGRAM
+TARGETPATH=..\bin
+
+UMTYPE=console
+UMENTRY=wmain
+USE_MSVCRT=1
+
+C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE
+
+SOURCES=system-settings.c
+
+TARGETLIBS = $(SDK_LIB_PATH)\user32.lib

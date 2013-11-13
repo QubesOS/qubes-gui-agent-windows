@@ -1,1 +1,1 @@
-DIRS = create-device disable-device
+DIRS = create-device disable-device system-settings

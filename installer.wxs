@@ -90,6 +90,7 @@
 
 	<Binary Id="CreateDeviceHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\create-device.exe"/>
 	<Binary Id="DisableDevHelper" SourceFile="install-helper\bin\$(var.ARCHDIR)\disable-device.exe"/>
+	<Binary Id="SystemSettings" SourceFile="install-helper\bin\$(var.ARCHDIR)\system-settings.exe"/>
 
 	<CustomAction Id="RegisterVideoDevice" Return="check" Impersonate="no" Execute="deferred"
 		BinaryKey="CreateDeviceHelper"
@@ -108,6 +109,18 @@
 		BinaryKey="DisableDevHelper"
 		ExeCommand='-e Display'/>
 
+	<CustomAction Id="ApplySysSettings" Return="check" Impersonate="no" Execute="deferred"
+		BinaryKey="SystemSettings"
+		ExeCommand='--apply'/>
+
+	<CustomAction Id="RollbackSysSettings" Return="ignore" Impersonate="no" Execute="rollback"
+		BinaryKey="SystemSettings"
+		ExeCommand='--rollback'/>
+
+	<CustomAction Id="UndoSysSettings" Return="ignore" Impersonate="no" Execute="deferred"
+		BinaryKey="SystemSettings"
+		ExeCommand='--rollback'/>
+
 	<InstallExecuteSequence>
 	  <Custom Action="RegisterVideoDevice" After="InstallFiles">
         NOT Installed
@@ -116,8 +129,13 @@
 	  <Custom Action="DisableSVGA" Before="InstallFinalize">
         NOT Installed
       </Custom>
+      <Custom Action="RollbackSysSettings" Before="ApplySysSettings"/>
+      <Custom Action="ApplySysSettings" After="InstallFiles"/>
 	  <!-- enable it back on uninstall -->
 	  <Custom Action="EnableSVGA" Before="InstallFinalize">
+        REMOVE="ALL"
+      </Custom>
+      <Custom Action="UndoSysSettings" Before="InstallFinalize">
         REMOVE="ALL"
       </Custom>
 	</InstallExecuteSequence>
