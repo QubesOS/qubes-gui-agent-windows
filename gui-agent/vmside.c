@@ -296,7 +296,12 @@ ULONG send_window_configure(
 	mc.override_redirect = 0;
 
 	EnterCriticalSection(&g_VchanCriticalSection);
-	write_message(hdr, mc);
+
+	/* don't send resize to 0x0 - this window is just hidding itself, MSG_UNMAP
+	 * will follow */
+	if (mc.width > 0 && mc.height > 0) {
+		write_message(hdr, mc);
+	}
 
 	if (pWatchedDC->bVisible) {
 		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
@@ -431,23 +436,92 @@ void handle_xconf(
 	}
 }
 
+int bitset(unsigned char *keys, int num)
+{
+	return (keys[num / 8] >> (num % 8)) & 1;
+}
+
+void handle_keymap_notify()
+{
+	int i;
+	WORD win_key;
+	unsigned char remote_keys[32];
+	INPUT inputEvent;
+	int modifier_keys[] = {
+		 50 /* VK_LSHIFT   */,
+		 37 /* VK_LCONTROL */,
+		 64 /* VK_LMENU    */,
+		 62 /* VK_RSHIFT   */,
+		105 /* VK_RCONTROL */,
+		108 /* VK_RMENU    */,
+		133 /* VK_LWIN     */,
+		134 /* VK_RWIN     */,
+		135 /* VK_APPS     */,
+		0
+	};
+
+
+    read_all_vchan_ext((char *) remote_keys, sizeof(remote_keys));
+	i=0;
+	while (modifier_keys[i]) {
+		win_key = X11ToVk[modifier_keys[i]];
+		if (!bitset(remote_keys, i) && GetAsyncKeyState(X11ToVk[modifier_keys[i]]) & 0x8000) {
+			inputEvent.type = INPUT_KEYBOARD;
+			inputEvent.ki.time = 0;
+			inputEvent.ki.wScan = 0; /* TODO? */
+			inputEvent.ki.wVk = win_key;
+			inputEvent.ki.dwFlags = KEYEVENTF_KEYUP;
+			inputEvent.ki.dwExtraInfo = 0;
+
+			if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
+				lprintf_err(GetLastError(), "handle_keymap_notify: SendInput()");
+				return;
+			}
+#ifdef DBG
+			Lprintf("handle_keymap_notify: unsetting key %d\n");
+#endif
+		}
+		i++;
+	}
+}
+
 
 void handle_keypress(HWND window)
 {
     struct msg_keypress key;
 	INPUT inputEvent;
+	int local_capslock_state;
+
     read_all_vchan_ext((char *) &key, sizeof(key));
 
 	/* ignore x, y */
 	/* TODO: send to correct window */
-	/* TODO: handle key.state */
 
 	inputEvent.type = INPUT_KEYBOARD;
 	inputEvent.ki.time = 0;
 	inputEvent.ki.wScan = 0; /* TODO? */
+	inputEvent.ki.dwExtraInfo = 0;
+
+	local_capslock_state = GetKeyState(VK_CAPITAL) & 1;
+	// check if remote CapsLock state differs from local
+	// other modifiers should be synchronized in MSG_KEYMAP_NOTIFY handler
+	if ((!local_capslock_state) ^ (!(key.state & (1<<LockMapIndex)))) {
+		// toggle CapsLock state
+		inputEvent.ki.wVk = VK_CAPITAL;
+		inputEvent.ki.dwFlags = 0;
+		if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
+			lprintf_err(GetLastError(), "handle_keypress: SendInput(VK_CAPITAL)");
+			return;
+		}
+		inputEvent.ki.dwFlags = KEYEVENTF_KEYUP;
+		if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
+			lprintf_err(GetLastError(), "handle_keypress: SendInput(VK_CAPITAL)");
+			return;
+		}
+	}
+
 	inputEvent.ki.wVk = X11ToVk[key.keycode];
 	inputEvent.ki.dwFlags = key.type == KeyPress ? 0 : KEYEVENTF_KEYUP;
-	inputEvent.ki.dwExtraInfo = 0;
 
 	if (!SendInput(1, &inputEvent, sizeof(inputEvent))) {
 		lprintf_err(GetLastError(), "handle_keypress: SendInput()");
@@ -587,6 +661,9 @@ ULONG handle_server_data(
 	case MSG_CLOSE:
 		handle_close((HWND)hdr.window);
 		break;
+	case MSG_KEYMAP_NOTIFY:
+		handle_keymap_notify();
+		break;
 	default:
 		Lprintf(__FUNCTION__ "got unknown msg type %d, ignoring\n", hdr.type);
 
@@ -604,9 +681,6 @@ ULONG handle_server_data(
 //		break;
 	case MSG_EXECUTE:
 //              handle_execute();
-//		break;
-	case MSG_KEYMAP_NOTIFY:
-//              handle_keymap_notify(g);
 //		break;
 	case MSG_WINDOW_FLAGS:
 //              handle_window_flags(g, hdr.window);
