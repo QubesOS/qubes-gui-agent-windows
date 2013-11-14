@@ -19,6 +19,9 @@ typedef struct _WATCHED_DC
 	BOOL	bVisible;
 	BOOL	bOverrideRedirect;
 
+	BOOL	bStyleChecked;
+	ULONG	uTimeAdded;
+
 	LONG	MaxWidth;
 	LONG	MaxHeight;
 	PUCHAR	pCompositionBuffer;

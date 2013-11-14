@@ -139,6 +139,8 @@ ULONG CheckWatchedWindowUpdates(
 	BOOLEAN	bResizingDetected;
 	BOOLEAN bMoveDetected;
 	BOOL	bCurrentlyVisible;
+	LONG	Style;
+	BOOL	bUpdateStyle;
 
 
 	if (!pWatchedDC)
@@ -159,6 +161,38 @@ ULONG CheckWatchedWindowUpdates(
 		if (!bCurrentlyVisible && pWatchedDC->bVisible)
 			send_window_unmap(pWatchedDC->hWnd);
 	}
+
+
+	if (!pWatchedDC->bStyleChecked && (GetTickCount() >= pWatchedDC->uTimeAdded + 500)) {
+
+		pWatchedDC->bStyleChecked = TRUE;
+
+		Style = GetWindowLong(pWatchedDC->hWnd, GWL_STYLE);
+
+		bUpdateStyle = FALSE;
+		if (Style & WS_MINIMIZEBOX) {
+			Style &= ~WS_MINIMIZEBOX;
+			bUpdateStyle = TRUE;
+			DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
+
+		}
+/*		if (Style & WS_MAXIMIZEBOX) {
+			Style &= ~WS_MAXIMIZEBOX;
+			bUpdateStyle = TRUE;
+			DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MAXIMIZE, MF_BYCOMMAND);
+		}
+*/
+		if (Style & WS_SIZEBOX) {
+			Style &= ~WS_SIZEBOX;
+			bUpdateStyle = TRUE;
+		}
+
+		if (bUpdateStyle) {
+			SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, Style);
+			DrawMenuBar(pWatchedDC->hWnd);
+		}
+	}
+
 
 	pWatchedDC->bVisible = bCurrentlyVisible;
 
@@ -314,6 +348,9 @@ PWATCHED_DC AddWindowWithRect(
 	memset(pWatchedDC, 0, sizeof(WATCHED_DC));
 
 	pWatchedDC->bVisible = IsWindowVisible(hWnd);
+
+	pWatchedDC->bStyleChecked = FALSE;
+	pWatchedDC->uTimeAdded = GetTickCount();
 
 	Style = GetWindowLong(hWnd, GWL_STYLE);
 	// WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
