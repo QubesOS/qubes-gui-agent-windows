@@ -296,7 +296,12 @@ ULONG send_window_configure(
 	mc.override_redirect = 0;
 
 	EnterCriticalSection(&g_VchanCriticalSection);
-	write_message(hdr, mc);
+
+	/* don't send resize to 0x0 - this window is just hidding itself, MSG_UNMAP
+	 * will follow */
+	if (mc.width > 0 && mc.height > 0) {
+		write_message(hdr, mc);
+	}
 
 	if (pWatchedDC->bVisible) {
 		mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
