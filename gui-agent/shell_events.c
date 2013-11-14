@@ -13,6 +13,11 @@ LONG g_ScreenWidth = 0;
 PUCHAR g_pScreenData = NULL;
 HANDLE g_hSection;
 
+HWND	g_DesktopHwnd = NULL;
+HWND	g_ExplorerHwnd = NULL;
+HWND	g_TaskbarHwnd = NULL;
+HWND	g_StartButtonHwnd = NULL;
+
 extern	BOOLEAN	g_bVchanClientConnected;
 
 PWATCHED_DC AddWindowWithRect(
@@ -229,19 +234,31 @@ ULONG ProcessUpdatedWindows(
 	PBANNED_POPUP_WINDOWS	pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
 
 
-	pBannedPopupsList->uNumberOfBannedPopups = 4;
-	pBannedPopupsList->hBannedPopupArray[0] = GetDesktopWindow();
-	// Main Explorer window
-	pBannedPopupsList->hBannedPopupArray[1] = FindWindow(NULL, _T("Program Manager"));
-	// Taskbar and tray
-	pBannedPopupsList->hBannedPopupArray[2] = FindWindow(_T("Shell_TrayWnd"), NULL);
-	if (pBannedPopupsList->hBannedPopupArray[2])
-		ShowWindow(pBannedPopupsList->hBannedPopupArray[2], SW_HIDE);
+	if (!g_DesktopHwnd)
+		g_DesktopHwnd = GetDesktopWindow();
 
-	// Start button
-	pBannedPopupsList->hBannedPopupArray[3] = FindWindowEx(GetDesktopWindow(), NULL, _T("Button"), NULL);
-	if (pBannedPopupsList->hBannedPopupArray[3])
-		ShowWindow(pBannedPopupsList->hBannedPopupArray[3], SW_HIDE);
+	if (!g_ExplorerHwnd)
+		g_ExplorerHwnd = FindWindow(NULL, _T("Program Manager"));
+
+	if (!g_TaskbarHwnd) {
+		g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
+
+		if (g_TaskbarHwnd)
+			ShowWindow(g_TaskbarHwnd, SW_HIDE);
+	}
+
+	if (!g_StartButtonHwnd) {
+		g_StartButtonHwnd = FindWindowEx(GetDesktopWindow(), NULL, _T("Button"), NULL);
+
+		if (g_StartButtonHwnd)
+			ShowWindow(g_StartButtonHwnd, SW_HIDE);
+	}
+
+	pBannedPopupsList->uNumberOfBannedPopups = 4;
+	pBannedPopupsList->hBannedPopupArray[0] = g_DesktopHwnd;
+	pBannedPopupsList->hBannedPopupArray[1] = g_ExplorerHwnd;
+	pBannedPopupsList->hBannedPopupArray[2] = g_TaskbarHwnd;
+	pBannedPopupsList->hBannedPopupArray[3] = g_StartButtonHwnd;
 
 	EnterCriticalSection(&g_csWatchedWindows);
 
