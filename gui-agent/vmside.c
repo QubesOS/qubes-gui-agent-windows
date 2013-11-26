@@ -1040,6 +1040,28 @@ ULONG HideCursors()
 	return ERROR_SUCCESS;	
 }
 
+ULONG DisableEffects()
+{
+	ANIMATIONINFO	AnimationInfo;
+	ULONG	uResult;
+
+
+	if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID)FALSE, SPIF_UPDATEINIFILE)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "DisableEffects(): SystemParametersInfo(SPI_SETDROPSHADOW) failed, error %d\n", uResult);
+	}
+
+	AnimationInfo.cbSize = sizeof(AnimationInfo);
+	AnimationInfo.iMinAnimate = FALSE;
+
+	if (!SystemParametersInfo(SPI_SETANIMATION, sizeof(AnimationInfo), &AnimationInfo, SPIF_UPDATEINIFILE)) {
+		uResult = GetLastError();
+		lprintf_err(uResult, "DisableEffects(): SystemParametersInfo(SPI_SETANIMATION) failed, error %d\n", uResult);
+	}
+
+	return ERROR_SUCCESS;
+}
+
 
 // This is the entry point for a console application (BUILD_AS_SERVICE not defined).
 int __cdecl _tmain(
@@ -1053,6 +1075,7 @@ int __cdecl _tmain(
 	SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
 	HideCursors();
+	DisableEffects();
 
 	uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
 	if (ERROR_SUCCESS != uResult) {
