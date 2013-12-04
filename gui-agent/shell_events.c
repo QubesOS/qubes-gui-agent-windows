@@ -229,6 +229,23 @@ ULONG CheckWatchedWindowUpdates(
 	return ERROR_SUCCESS;
 }
 
+BOOL ShouldAcceptWindow(HWND hWnd)
+{
+	LONG	Style, ExStyle;
+
+
+	if (!IsWindowVisible(hWnd))
+		return FALSE;
+
+	Style = GetWindowLong(hWnd, GWL_STYLE);
+	ExStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+	// If a window has a parent window, has no caption and is not a tool window, 
+	// then don't show it as a separate window.
+	if (GetParent(hWnd) && ((WS_CAPTION & Style) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & ExStyle))
+		return FALSE;
+
+	return TRUE;
+}
 
 BOOL CALLBACK EnumWindowsProc(
     HWND hWnd,
@@ -236,7 +253,6 @@ BOOL CALLBACK EnumWindowsProc(
 )
 {
 	WINDOWINFO wi;
-	LONG	Style;
 	PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)lParam;
 	ULONG	i;
 
@@ -244,7 +260,7 @@ BOOL CALLBACK EnumWindowsProc(
 	if (!GetWindowInfo(hWnd, &wi))
 		return TRUE;
 
-	if (!IsWindowVisible(hWnd))
+	if (!ShouldAcceptWindow(hWnd))
 		return TRUE;
 
 	if (pBannedPopupsList)
@@ -428,7 +444,7 @@ PWATCHED_DC AddWindow(
 	if (!GetWindowInfo(hWnd, &wi))
 		return NULL;
 
-	if (!IsWindowVisible(hWnd))
+	if (!ShouldAcceptWindow(hWnd))
 		return NULL;
 
 	EnterCriticalSection(&g_csWatchedWindows);
