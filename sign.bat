@@ -1,7 +1,5 @@
 @ECHO OFF
 
-copy qvideo\inf\qvideo.inf.version qvideo\bin\amd64\qvideo.inf
-
 IF NOT EXIST SIGN_CONFIG.BAT GOTO DONT_SIGN
 
 IF %_BUILDARCH%==x86 (SET BUILDDIR=i386) ELSE (SET BUILDDIR=amd64)
@@ -18,6 +16,8 @@ ECHO DDK_TARGET_OS=%DDK_TARGET_OS%
 ECHO _BUILDARCH=%_BUILDARCH%
 ECHO BUILDDIR=%BUILDDIR%
 ECHO SIGN_OS=%SIGN_OS%
+
+copy qvideo\inf\qvideo.inf.version qvideo\bin\%BUILDDIR%\qvideo.inf
 
 %SIGNTOOL% sign /v %CERT_CROSS_CERT_FLAG% /f %CERT_FILENAME% %CERT_PASSWORD_FLAG% /t http://timestamp.verisign.com/scripts/timestamp.dll qvideo\bin\%BUILDDIR%\qvmini.sys
 %SIGNTOOL% sign /v %CERT_CROSS_CERT_FLAG% /f %CERT_FILENAME% %CERT_PASSWORD_FLAG% /t http://timestamp.verisign.com/scripts/timestamp.dll qvideo\bin\%BUILDDIR%\qvgdi.dll
