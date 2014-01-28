@@ -1,5 +1,5 @@
 $version = (cat version);
-$date = get-date -format MM\/dd\/yyyy;
+$date = (get-date).ToUniversalTime() | get-date -format MM\/dd\/yyyy;
 # TODO: perhaps use stampinf?
 cat qvideo\inf\qvideo.inf | %{$_ -replace "^DriverVer = .*","DriverVer = $date,$version" } > qvideo\inf\qvideo.inf.version
 $version2 = %{$version -replace "\.",","}
