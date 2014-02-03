@@ -2,31 +2,30 @@ TARGETNAME=wga
 TARGETTYPE=PROGRAM
 TARGETPATH=bin
 
-
 UMTYPE=windows
 USE_MSVCRT=1
 
 UMENTRY = wmain
-C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
                     $(QUBES_INCLUDES); \
                     ..\..\core\vchan; \
                     ..\..\core\win\include; \
-                    ..\gui-common\include;
+                    ..\gui-common\include; \
 
-SOURCES=vmside.c log.c txrx-vchan.c qvcontrol.c xorg-keymap.c shell_events.c wga.rc
+SOURCES=vmside.c txrx-vchan.c qvcontrol.c xorg-keymap.c shell_events.c wga.rc
 
 TARGETLIBS=\
         $(SDK_LIB_PATH)\kernel32.lib \
         $(SDK_LIB_PATH)\user32.lib \
         $(SDK_LIB_PATH)\gdi32.lib \
         $(SDK_LIB_PATH)\setupapi.lib \
+        $(SDK_LIB_PATH)\shlwapi.lib \
+        $(SDK_LIB_PATH)\shell32.lib \
+	    $(QUBES_LIBS)\windows-utils.lib \
 	    $(QUBES_LIBS)\libvchan.lib \
 	    $(QUBES_LIBS)\gntmem.lib \
 	    $(QUBES_LIBS)\evtchn.lib \
 	    $(QUBES_LIBS)\libxs.lib \
-
-
-
