@@ -11,7 +11,7 @@
 
 HANDLE g_hStopServiceEvent;
 HANDLE g_hCleanupFinishedEvent;
-CRITICAL_SECTION    g_VchanCriticalSection;
+CRITICAL_SECTION g_VchanCriticalSection;
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
@@ -30,7 +30,7 @@ BOOLEAN	g_bFullScreenMode = FALSE;
  */
 ULONG PrepareShmCmd(
     PWATCHED_DC pWatchedDC,
-    struct shm_cmd ** ppShmCmd
+    struct shm_cmd **ppShmCmd
 )
 {
     QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
@@ -48,8 +48,11 @@ ULONG PrepareShmCmd(
     if (!ppShmCmd)
         return ERROR_INVALID_PARAMETER;
     *ppShmCmd = NULL;
+    debugf("start");
 
     if (!pWatchedDC) {
+        debugf("fullcreen capture");
+        // fullscreen capture
         memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
 
         uResult = GetWindowData(hWnd, &QvGetSurfaceDataResponse);
@@ -105,6 +108,7 @@ ULONG PrepareShmCmd(
 
     *ppShmCmd = pShmCmd;
 
+    debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -116,8 +120,9 @@ void send_pixmap_mfns(
     struct shm_cmd *pShmCmd = NULL;
     struct msg_hdr hdr;
     int size;
-    HWND	hWnd = 0;
+    HWND hWnd = 0;
 
+    debugf("start");
     if (pWatchedDC)
         hWnd = pWatchedDC->hWnd;
 
@@ -162,6 +167,7 @@ ULONG send_window_create(
         QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
         ULONG uResult;
 
+        debugf("fullscreen");
         /* TODO: multiple screens? */
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
@@ -179,6 +185,10 @@ ULONG send_window_create(
 
         hdr.window = 0;
     } else {
+        debugf("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", pWatchedDC->hWnd,
+            pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
+            pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom,
+            pWatchedDC->bOverrideRedirect);
         hdr.window = (uint32_t)pWatchedDC->hWnd;
         wi.rcWindow = pWatchedDC->rcWindow;
     }
@@ -190,14 +200,14 @@ ULONG send_window_create(
     mc.width = wi.rcWindow.right - wi.rcWindow.left;
     mc.height = wi.rcWindow.bottom - wi.rcWindow.top;
     mc.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-    mc.override_redirect = pWatchedDC->bOverrideRedirect;
+    mc.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, mc);
 
-    if (pWatchedDC->bVisible) {
+    if (pWatchedDC ? pWatchedDC->bVisible : TRUE) {
         mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
-        mmi.override_redirect = pWatchedDC->bOverrideRedirect;
+        mmi.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
 
         hdr.type = MSG_MAP;
         write_message(hdr, mmi);
@@ -208,13 +218,14 @@ ULONG send_window_create(
 }
 
 ULONG send_window_destroy(
-    HWND window
+    HWND hWnd
 )
 {
     struct msg_hdr hdr;
 
+    debugf("0x%x", hWnd);
     hdr.type = MSG_DESTROY;
-    hdr.window = (uint32_t)window;
+    hdr.window = (uint32_t)hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     write_struct(hdr);
@@ -224,15 +235,15 @@ ULONG send_window_destroy(
 }
 
 ULONG send_window_unmap(
-    HWND window
+    HWND hWnd
 )
 {
     struct msg_hdr hdr;
 
-    logf("Unmapping window 0x%x\n", window);
+    logf("Unmapping window 0x%x\n", hWnd);
 
     hdr.type = MSG_UNMAP;
-    hdr.window = (uint32_t)window;
+    hdr.window = (uint32_t)hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     write_struct(hdr);
@@ -272,6 +283,7 @@ ULONG send_window_configure(
     struct msg_configure mc;
     struct msg_map_info mmi;
 
+    debugf("0x%x", pWatchedDC->hWnd);
     hdr.window = (uint32_t)pWatchedDC->hWnd;
 
     hdr.type = MSG_CONFIGURE;
@@ -284,7 +296,7 @@ ULONG send_window_configure(
 
     EnterCriticalSection(&g_VchanCriticalSection);
 
-    /* don't send resize to 0x0 - this window is just hidding itself, MSG_UNMAP
+    /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
      * will follow */
     if (mc.width > 0 && mc.height > 0) {
         write_message(hdr, mc);
@@ -303,7 +315,7 @@ ULONG send_window_configure(
 }
 
 void send_window_damage_event(
-    HWND window,
+    HWND hWnd,
     int x,
     int y,
     int width,
@@ -313,8 +325,9 @@ void send_window_damage_event(
     struct msg_shmimage mx;
     struct msg_hdr hdr;
 
+    debugf("0x%x", hWnd);
     hdr.type = MSG_SHMIMAGE;
-    hdr.window = (uint32_t) window;
+    hdr.window = (uint32_t) hWnd;
     mx.x = x;
     mx.y = y;
     mx.width = width;
@@ -324,25 +337,25 @@ void send_window_damage_event(
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-void send_wmname(HWND window)
+void send_wmname(HWND hWnd)
 {
     struct msg_hdr hdr;
     struct msg_wmname msg;
 
-    if (!GetWindowTextA(window, msg.data, sizeof(msg.data))) {
+    if (!GetWindowTextA(hWnd, msg.data, sizeof(msg.data))) {
         // ignore empty/non-readable captions
         return;
     }
+    debugf("0x%x %S", hWnd, msg.data);
 
-    hdr.window = (uint32_t)window;
+    hdr.window = (uint32_t)hWnd;
     hdr.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, msg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-void send_protocol_version(
-)
+void send_protocol_version()
 {
     uint32_t version = QUBES_GUI_PROTOCOL_VERSION_WINDOWS;
     write_struct(version);
@@ -365,7 +378,7 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
     }
     ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
 
-    logf("DeviceName: %S\n", ptszDeviceName);
+    logf("DeviceName: %s\n", ptszDeviceName);
 
     if (ERROR_SUCCESS != SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp)) {
         return perror("SupportVideoMode");
@@ -375,16 +388,16 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
         return perror("ChangeVideoMode");
     }
 
-    logf("Video mode changed successfully.\n");
+    logf("success");
     return ERROR_SUCCESS;
 }
 
-void handle_xconf(
-)
+void handle_xconf()
 {
     struct msg_xconf xconf;
-    ULONG	uResult;
+    ULONG uResult;
 
+    debugf("start");
     read_all_vchan_ext((char *)&xconf, sizeof(xconf));
 
     logf("host resolution: %dx%d, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
@@ -393,10 +406,11 @@ void handle_xconf(
     if (ERROR_SUCCESS != uResult) {
         QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
 
-        logf("SetVideoMode(): %d\n", uResult);
+        logf("SetVideoMode() failed: %d\n", uResult);
 
         memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
 
+        // resolution change failed, use fullscreen mode at current resolution
         uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
         if (ERROR_SUCCESS != uResult) {
             errorf("GetWindowData() failed with error %d\n", uResult);
@@ -415,7 +429,7 @@ void handle_xconf(
     }
 }
 
-int bitset(unsigned char *keys, int num)
+int bitset(BYTE *keys, int num)
 {
     return (keys[num / 8] >> (num % 8)) & 1;
 }
@@ -439,6 +453,7 @@ void handle_keymap_notify()
         0
     };
 
+    debugf("start");
     read_all_vchan_ext((char *) remote_keys, sizeof(remote_keys));
     i = 0;
     while (modifier_keys[i]) {
@@ -461,12 +476,13 @@ void handle_keymap_notify()
     }
 }
 
-void handle_keypress(HWND window)
+void handle_keypress(HWND hWnd)
 {
     struct msg_keypress key;
     INPUT inputEvent;
     int local_capslock_state;
 
+    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &key, sizeof(key));
 
     /* ignore x, y */
@@ -504,16 +520,17 @@ void handle_keypress(HWND window)
     }
 }
 
-void handle_button(HWND window)
+void handle_button(HWND hWnd)
 {
     struct msg_button button;
     INPUT inputEvent;
     RECT rect = {0};
 
+    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &button, sizeof(button));
 
-    if (window)
-        GetWindowRect(window, &rect);
+    if (hWnd)
+        GetWindowRect(hWnd, &rect);
 
     /* TODO: send to correct window */
 
@@ -552,16 +569,17 @@ void handle_button(HWND window)
     }
 }
 
-void handle_motion(HWND window)
+void handle_motion(HWND hWnd)
 {
     struct msg_motion motion;
     INPUT inputEvent;
     RECT	rect = {0};
 
+    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &motion, sizeof(motion));
 
-    if (window)
-        GetWindowRect(window, &rect);
+    if (hWnd)
+        GetWindowRect(hWnd, &rect);
 
     inputEvent.type = INPUT_MOUSE;
     inputEvent.mi.time = 0;
@@ -579,37 +597,40 @@ void handle_motion(HWND window)
     }
 }
 
-void handle_configure(HWND window)
+void handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
+    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &configure, sizeof(configure));
-    SetWindowPos(window, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
 }
 
-void handle_focus(HWND window)
+void handle_focus(HWND hWnd)
 {
     struct msg_focus focus;
 
+    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &focus, sizeof(focus));
 
-    BringWindowToTop(window);
-    SetForegroundWindow(window);
-        SetActiveWindow(window);
-    SetFocus(window);
+    BringWindowToTop(hWnd);
+    SetForegroundWindow(hWnd);
+        SetActiveWindow(hWnd);
+    SetFocus(hWnd);
 }
 
-void handle_close(HWND window)
+void handle_close(HWND hWnd)
 {
-    PostMessage(window, WM_SYSCOMMAND, SC_CLOSE, 0);
+    debugf("0x%x", hWnd);
+    PostMessage(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
 }
 
-ULONG handle_server_data(
-)
+ULONG handle_server_data()
 {
     struct msg_hdr hdr;
     char discard[256];
     int nbRead;
+
     read_all_vchan_ext((char *)&hdr, sizeof(hdr));
 
     debugf("received message type %d for 0x%x\n", hdr.type, hdr.window);
@@ -680,15 +701,14 @@ ULONG WINAPI WatchForEvents(
     BOOLEAN bVchanIoInProgress;
     ULONG uResult;
     BOOLEAN bVchanReturnedError;
-//	BOOLEAN bVchanClientConnected;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
-//    HWND	hWnd;
     struct shm_cmd *pShmCmd = NULL;
 
+    debugf("start");
     hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
@@ -737,15 +757,14 @@ ULONG WINAPI WatchForEvents(
 
         dwSignaledEvent = WaitForMultipleObjects(uEventNumber, WatchedEvents, FALSE, INFINITE);
         if (dwSignaledEvent >= MAXIMUM_WAIT_OBJECTS) {
-            uResult = GetLastError();
-            perror("WaitForMultipleObjects");
+            uResult = perror("WaitForMultipleObjects");
             break;
         } else {
             if (0 == dwSignaledEvent)
                 // g_hStopServiceEvent is signaled
                 break;
 
-//                      lprintf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
+//          debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
             switch (dwSignaledEvent) {
             case 1:
 
@@ -759,7 +778,7 @@ ULONG WINAPI WatchForEvents(
                 }
                 break;
 
-            case 2:
+            case 2: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //
@@ -795,6 +814,7 @@ ULONG WINAPI WatchForEvents(
                         perror("RegisterWatchedDC");
 
                     if (g_bFullScreenMode) {
+                        debugf("init in fullscreen mode");
                         send_window_create(NULL);
                         send_pixmap_mfns(NULL);
                     }
@@ -956,6 +976,7 @@ ULONG HideCursors()
         OCR_WAIT		// Hourglass
     };
 
+    debugf("start");
     hBlankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
     if (!hBlankCursor) {
         return perror("LoadImage");
@@ -987,6 +1008,7 @@ ULONG DisableEffects()
 {
     ANIMATIONINFO AnimationInfo;
 
+    debugf("start");
     if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID)FALSE, SPIF_UPDATEINIFILE)) {
         return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
     }
@@ -1005,6 +1027,7 @@ ULONG Init()
 {
     ULONG uResult;
 
+    debugf("start");
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
     HideCursors();
@@ -1050,7 +1073,7 @@ int __cdecl _tmain(
     PTCHAR argv[]
 )
 {
-    log_init(NULL, TEXT("gui-agent"));
+    log_init(TEXT("c:\\"), TEXT("gui-agent"));
     if (ERROR_SUCCESS != Init()) {
         return perror("Init");
     }
