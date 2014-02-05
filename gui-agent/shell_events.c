@@ -374,7 +374,12 @@ PWATCHED_DC AddWindowWithRect(
 
     Style = GetWindowLong(hWnd, GWL_STYLE);
     // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
-    pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & Style) != WS_CAPTION);
+    // FIXME: better prevention of large popup windows that can obscure dom0 screen
+    // this is mainly for the logon window (which is screen-sized without caption)
+    if (pRect->right-pRect->left == g_ScreenWidth && pRect->bottom-pRect->top == g_ScreenHeight)
+        pWatchedDC->bOverrideRedirect = FALSE;
+    else
+        pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & Style) != WS_CAPTION);
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = *pRect;
