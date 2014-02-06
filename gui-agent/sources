@@ -6,7 +6,7 @@ UMTYPE=windows
 USE_MSVCRT=1
 
 UMENTRY = wmain
-C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
@@ -24,8 +24,9 @@ TARGETLIBS=\
         $(SDK_LIB_PATH)\setupapi.lib \
         $(SDK_LIB_PATH)\shlwapi.lib \
         $(SDK_LIB_PATH)\shell32.lib \
-	    $(QUBES_LIBS)\windows-utils.lib \
-	    $(QUBES_LIBS)\libvchan.lib \
-	    $(QUBES_LIBS)\gntmem.lib \
-	    $(QUBES_LIBS)\evtchn.lib \
-	    $(QUBES_LIBS)\libxs.lib \
+        $(SDK_LIB_PATH)\wtsapi32.lib \
+        $(QUBES_LIBS)\windows-utils.lib \
+        $(QUBES_LIBS)\libvchan.lib \
+        $(QUBES_LIBS)\gntmem.lib \
+        $(QUBES_LIBS)\evtchn.lib \
+        $(QUBES_LIBS)\libxs.lib \

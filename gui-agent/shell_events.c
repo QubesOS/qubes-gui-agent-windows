@@ -8,6 +8,7 @@ HANDLE g_hShellEventsThread = NULL;
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
+BOOLEAN g_Initialized = FALSE;
 
 LONG g_ScreenHeight = 0;
 LONG g_ScreenWidth = 0;
@@ -28,10 +29,13 @@ PWATCHED_DC AddWindowWithRect(
 
 ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
 
-ULONG OpenScreenSection(
-)
+ULONG OpenScreenSection()
 {
     TCHAR SectionName[100];
+
+    // already initialized
+    if (g_hSection && g_pScreenData)
+        return ERROR_SUCCESS;
 
     StringCchPrintf(SectionName, _countof(SectionName),
         _T("Global\\QubesSharedMemory_%x"), g_ScreenHeight * g_ScreenWidth * 4);
@@ -47,13 +51,11 @@ ULONG OpenScreenSection(
         return perror("MapViewOfFile");
     }
 
-    debugf("success");
+    debugf("success: section=0x%x, data=0x%x", g_hSection, g_pScreenData);
     return ERROR_SUCCESS;
 }
 
-PWATCHED_DC FindWindowByHwnd(
-    HWND hWnd
-)
+PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 {
     PWATCHED_DC pWatchedDC;
 
@@ -224,7 +226,7 @@ ULONG CheckWatchedWindowUpdates(
         }
     }
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -232,7 +234,7 @@ BOOL ShouldAcceptWindow(HWND hWnd)
 {
     LONG Style, ExStyle;
 
-    debugf("0x%x", hWnd);
+    //debugf("0x%x", hWnd);
     if (!IsWindowVisible(hWnd))
         return FALSE;
 
@@ -246,7 +248,7 @@ BOOL ShouldAcceptWindow(HWND hWnd)
     return TRUE;
 }
 
-// enums top-level windows and adds them to watch list
+// Enumerate top-level windows and add them to the watch list.
 BOOL CALLBACK EnumWindowsProc(
     HWND hWnd,
     LPARAM lParam
@@ -273,32 +275,91 @@ BOOL CALLBACK EnumWindowsProc(
     return TRUE;
 }
 
-// main function that scans for updates
-ULONG ProcessUpdatedWindows(
-    BOOLEAN bUpdateEverything
-)
+// Set current thread's desktop to the current input desktop.
+ULONG AttachToInputDesktop()
+{
+    ULONG uResult = ERROR_SUCCESS;
+    HDESK desktop = 0, oldDesktop = 0;
+    TCHAR name[256];
+    DWORD needed;
+    DWORD sessionId;
+    DWORD size;
+    HANDLE currentToken;
+    HANDLE currentProcess = GetCurrentProcess();
+
+    //debugf("start");
+    desktop = OpenInputDesktop(0, FALSE,
+        DESKTOP_CREATEMENU|DESKTOP_CREATEWINDOW|DESKTOP_ENUMERATE|DESKTOP_HOOKCONTROL
+        |DESKTOP_JOURNALPLAYBACK|DESKTOP_READOBJECTS|DESKTOP_WRITEOBJECTS);
+
+    if (!desktop) {
+        uResult = perror("OpenInputDesktop");
+        goto cleanup;
+    }
+
+#ifdef DEBUG
+    if (!GetUserObjectInformation(desktop, UOI_NAME, name, sizeof(name), &needed)) {
+        perror("GetUserObjectInformation");
+    }
+    else {
+        // Get access token from ourselves.
+        OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
+        // Session ID is stored in the access token.
+        GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
+        CloseHandle(currentToken);
+        debugf("current input desktop: %s, current session: %d, console session: %d",
+            name, sessionId, WTSGetActiveConsoleSessionId());
+    }
+#endif
+
+    // Close old handle to prevent object leaks.
+    oldDesktop = GetThreadDesktop(GetCurrentThreadId());
+    if (!SetThreadDesktop(desktop)) {
+        uResult = perror("SetThreadDesktop");
+        goto cleanup;
+    }
+
+    g_DesktopHwnd = GetDesktopWindow();
+
+cleanup:
+    if (oldDesktop)
+        if (!CloseDesktop(oldDesktop))
+            perror("CloseDesktop(previous)");
+    //debugf("result: %d", uResult);
+    return uResult;
+}
+
+// Main function that scans for window updates.
+// Runs in the main thread.
+ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
 {
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
     CHAR BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
     PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
+    BOOLEAN bRecheckWindows = FALSE;
+    HWND oldDesktop = g_DesktopHwnd;
 
     debugf("update all? %d", bUpdateEverything);
-    if (!g_DesktopHwnd)
-        g_DesktopHwnd = GetDesktopWindow();
 
-    if (!g_ExplorerHwnd)
+    AttachToInputDesktop();
+    if (oldDesktop != g_DesktopHwnd) {
+        bRecheckWindows = TRUE;
+        debugf("desktop changed (old 0x%x), refreshing all windows", oldDesktop);
+    }
+
+    if (!g_ExplorerHwnd || bRecheckWindows)
         g_ExplorerHwnd = FindWindow(NULL, _T("Program Manager"));
 
-    if (!g_TaskbarHwnd) {
+    if (!g_TaskbarHwnd || bRecheckWindows) {
         g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
 
         if (g_TaskbarHwnd)
             ShowWindow(g_TaskbarHwnd, SW_HIDE);
     }
 
-    if (!g_StartButtonHwnd) {
-        g_StartButtonHwnd = FindWindowEx(GetDesktopWindow(), NULL, _T("Button"), NULL);
+    if (!g_StartButtonHwnd || bRecheckWindows) {
+        g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, _T("Button"), NULL);
 
         if (g_StartButtonHwnd)
             ShowWindow(g_StartButtonHwnd, SW_HIDE);
@@ -334,7 +395,44 @@ ULONG ProcessUpdatedWindows(
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    debugf("success");
+    //debugf("success");
+    return ERROR_SUCCESS;
+}
+
+// Reinitialize everything, called after a session switch.
+// This is executed as another thread to avoid g_hShellEventsThread killing itself without finishing the job.
+// TODO: use this with session change notification instead of AttachToInputDesktop every time?
+DWORD WINAPI ResetWatch(PVOID param)
+{
+    PWATCHED_DC pWatchedDC;
+    PWATCHED_DC pNextWatchedDC;
+
+    debugf("start");
+
+    StopShellEventsThread();
+
+    debugf("removing watches");
+    // clear the watched windows list
+    EnterCriticalSection(&g_csWatchedWindows);
+
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
+        pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
+        pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
+
+        RemoveEntryList(&pWatchedDC->le);
+        RemoveWatchedDC(pWatchedDC);
+
+        pWatchedDC = pNextWatchedDC;
+    }
+
+    LeaveCriticalSection(&g_csWatchedWindows);
+
+    // todo: wait for desktop switch - it can take some time after the session event
+
+    StartShellEventsThread();
+
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -438,13 +536,11 @@ PWATCHED_DC AddWindowWithRect(
 //	_tprintf(_T("created: %x, left: %d top: %d right: %d bottom %d\n"), hWnd, pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
 //		 pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom);
 
-    debugf("success");
+    //debugf("success");
     return pWatchedDC;
 }
 
-PWATCHED_DC AddWindow(
-    HWND hWnd
-)
+PWATCHED_DC AddWindow(HWND hWnd)
 {
     PWATCHED_DC pWatchedDC = NULL;
     WINDOWINFO wi;
@@ -466,7 +562,7 @@ PWATCHED_DC AddWindow(
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    debugf("success");
+    //debugf("success");
     return pWatchedDC;
 }
 
@@ -475,7 +571,7 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     if (!pWatchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    debugf("hwnd=0x%x, hdc=0x%c", pWatchedDC->hWnd, pWatchedDC->hDC);
+    debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
     VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
     VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
 
@@ -490,16 +586,12 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
         send_window_destroy(pWatchedDC->hWnd);
     }
 
-    logf("destroyed: %x\n", pWatchedDC->hWnd);
-
     free(pWatchedDC);
 
     return ERROR_SUCCESS;
 }
 
-ULONG RemoveWindow(
-    HWND hWnd
-)
+ULONG RemoveWindow(HWND hWnd)
 {
     PWATCHED_DC pWatchedDC;
 
@@ -518,13 +610,11 @@ ULONG RemoveWindow(
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
-ULONG CheckWindowUpdates(
-    HWND hWnd
-)
+ULONG CheckWindowUpdates(HWND hWnd)
 {
     WINDOWINFO wi;
     PWATCHED_DC pWatchedDC = NULL;
@@ -550,7 +640,7 @@ ULONG CheckWindowUpdates(
 
     send_wmname(hWnd);
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -591,10 +681,20 @@ LRESULT CALLBACK ShellHookWndProc(
     }
 
     switch (uMsg) {
+    case WM_WTSSESSION_CHANGE:
+        logf("session change: event 0x%x, session %d", wParam, lParam);
+        //if (!CreateThread(0, 0, ResetWatch, NULL, 0, NULL)) {
+        //    perror("CreateThread(ResetWatch)");
+        //}
+        break;
     case WM_CLOSE:
+        debugf("WM_CLOSE");
+        //if (!WTSUnRegisterSessionNotification(hwnd))
+        //    perror("WTSUnRegisterSessionNotification");
         DestroyWindow(hwnd);
         break;
     case WM_DESTROY:
+        debugf("WM_DESTROY");
         PostQuitMessage(0);
         break;
     default:
@@ -604,9 +704,7 @@ LRESULT CALLBACK ShellHookWndProc(
     return 0;
 }
 
-ULONG CreateShellHookWindow(
-    HWND *pHwnd
-)
+ULONG CreateShellHookWindow(HWND *pHwnd)
 {
     WNDCLASSEX wc;
     HWND hwnd;
@@ -643,17 +741,23 @@ ULONG CreateShellHookWindow(
         UnregisterClass(g_szClassName, hInstance);
         return uResult;
     }
-
+    /*
+    if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_ALL_SESSIONS)) {
+        uResult = perror("WTSRegisterSessionNotification");
+        DestroyWindow(hwnd);
+        UnregisterClass(g_szClassName, hInstance);
+        return uResult;
+    }
+    */
     g_uShellHookMessage = RegisterWindowMessage(_T("SHELLHOOK"));
 
     *pHwnd = hwnd;
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
-ULONG HookMessageLoop(
-)
+ULONG HookMessageLoop()
 {
     MSG Msg;
     HINSTANCE hInstance = GetModuleHandle(NULL);
@@ -664,63 +768,80 @@ ULONG HookMessageLoop(
         DispatchMessage(&Msg);
     }
 
-    UnregisterClass(g_szClassName, hInstance);
-
-    debugf("success");
+    debugf("exiting");
     return ERROR_SUCCESS;
 }
 
-ULONG WINAPI ShellEventsThread(
-    LPVOID pParam
-)
+ULONG WINAPI ShellEventsThread(PVOID pParam)
 {
+    ULONG uResult;
+
+    if (ERROR_SUCCESS != AttachToInputDesktop()) {
+        return perror("AttachToInputDesktop");
+    }
+
     if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWnd)) {
         return perror("CreateShellHookWindow");
     }
 
-    return HookMessageLoop();
+    if (ERROR_SUCCESS != (uResult=HookMessageLoop())) {
+        return uResult;
+    }
+
+    if (!UnregisterClass(g_szClassName, NULL))
+        return perror("UnregisterClass");
+
+    return ERROR_SUCCESS;
 }
 
-ULONG RunShellEventsThread(
-)
+ULONG StartShellEventsThread()
 {
+    DWORD threadId;
+
     debugf("start");
-    if (ERROR_SUCCESS != OpenScreenSection()) {
-        return perror("OpenScreenSection");
+
+    if (!g_Initialized)
+    {
+         if (ERROR_SUCCESS != OpenScreenSection()) {
+            return perror("OpenScreenSection");
+        }
+
+        /*
+        if (!LoggedSetLockPagesPrivilege(TRUE)) {
+            _tprintf(_T(__FUNCTION__) _T("(): LoggedSetLockPagesPrivilege() failed\n"));
+            return ERROR_PRIVILEGE_NOT_HELD;
+        }
+        */
+        InitializeListHead(&g_WatchedWindowsList);
+        InitializeCriticalSection(&g_csWatchedWindows);
+        g_Initialized = TRUE;
     }
 
-/*
-    if (!LoggedSetLockPagesPrivilege(TRUE)) {
-        _tprintf(_T(__FUNCTION__) _T("(): LoggedSetLockPagesPrivilege() failed\n"));
-        return ERROR_PRIVILEGE_NOT_HELD;
-    }
-*/
-    InitializeListHead(&g_WatchedWindowsList);
-    InitializeCriticalSection(&g_csWatchedWindows);
-
-    g_hShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, NULL);
+    g_hShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
     if (!g_hShellEventsThread) {
         return perror("CreateThread(ShellEventsThread)");
     }
 
-    debugf("success");
+    debugf("new thread ID: %d", threadId);
     return ERROR_SUCCESS;
 }
 
-ULONG StopShellEventsThread(
-)
+ULONG StopShellEventsThread()
 {
-    if (!g_hShellEventsThread)
-        return ERROR_INVALID_PARAMETER;
-
     debugf("start");
-    PostMessage(g_ShellEventsWnd, WM_DESTROY, 0, 0);
+    if (!g_hShellEventsThread)
+        return ERROR_SUCCESS;
+
+    if (!PostMessage(g_ShellEventsWnd, WM_CLOSE, 0, 0))
+        perror("PostMessage(WM_CLOSE)");
+
+    debugf("waiting for thread to exit");
     WaitForSingleObject(g_hShellEventsThread, INFINITE);
 
     CloseHandle(g_hShellEventsThread);
 
     g_hShellEventsThread = NULL;
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }

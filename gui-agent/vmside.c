@@ -108,13 +108,11 @@ ULONG PrepareShmCmd(
 
     *ppShmCmd = pShmCmd;
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
-void send_pixmap_mfns(
-    PWATCHED_DC pWatchedDC
-)
+void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
 {
     ULONG uResult;
     struct shm_cmd *pShmCmd = NULL;
@@ -152,9 +150,7 @@ void send_pixmap_mfns(
     free(pShmCmd);
 }
 
-ULONG send_window_create(
-    PWATCHED_DC	pWatchedDC
-)
+ULONG send_window_create(PWATCHED_DC pWatchedDC)
 {
     WINDOWINFO wi;
     struct msg_hdr hdr;
@@ -217,9 +213,7 @@ ULONG send_window_create(
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_destroy(
-    HWND hWnd
-)
+ULONG send_window_destroy(HWND hWnd)
 {
     struct msg_hdr hdr;
 
@@ -234,9 +228,7 @@ ULONG send_window_destroy(
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_unmap(
-    HWND hWnd
-)
+ULONG send_window_unmap(HWND hWnd)
 {
     struct msg_hdr hdr;
 
@@ -252,9 +244,7 @@ ULONG send_window_unmap(
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_map(
-    PWATCHED_DC	pWatchedDC
-)
+ULONG send_window_map(PWATCHED_DC pWatchedDC)
 {
     struct msg_hdr hdr;
     struct msg_map_info mmi;
@@ -275,9 +265,7 @@ ULONG send_window_map(
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_configure(
-    PWATCHED_DC	pWatchedDC
-)
+ULONG send_window_configure(PWATCHED_DC pWatchedDC)
 {
     struct msg_hdr hdr;
     struct msg_configure mc;
@@ -388,7 +376,7 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
         return perror("ChangeVideoMode");
     }
 
-    logf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -397,7 +385,7 @@ void handle_xconf()
     struct msg_xconf xconf;
     ULONG uResult;
 
-    debugf("start");
+    //debugf("start");
     read_all_vchan_ext((char *)&xconf, sizeof(xconf));
 
     logf("host resolution: %dx%d, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
@@ -425,7 +413,8 @@ void handle_xconf()
     } else {
         g_ScreenWidth = xconf.w;
         g_ScreenHeight = xconf.h;
-        RunShellEventsThread();
+
+        StartShellEventsThread();
     }
 }
 
@@ -690,8 +679,7 @@ ULONG handle_server_data()
     return ERROR_SUCCESS;
 }
 
-ULONG WINAPI WatchForEvents(
-)
+ULONG WINAPI WatchForEvents()
 {
     EVTCHN evtchn;
     OVERLAPPED ol;
@@ -901,8 +889,7 @@ ULONG WINAPI WatchForEvents(
     return bVchanReturnedError ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
 
-static ULONG CheckForXenInterface(
-)
+static ULONG CheckForXenInterface()
 {
     EVTCHN xc;
 
@@ -913,9 +900,7 @@ static ULONG CheckForXenInterface(
     return ERROR_SUCCESS;
 }
 
-BOOL WINAPI CtrlHandler(
-    DWORD fdwCtrlType
-)
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 {
     logf("Got shutdown signal\n");
 

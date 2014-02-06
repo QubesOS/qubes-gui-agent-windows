@@ -2,58 +2,60 @@
 
 #include <windows.h>
 #include <tchar.h>
+#include <WtsApi32.h>
 #include "qvcontrol.h"
 
 
 typedef struct _BANNED_POPUP_WINDOWS {
-	ULONG	uNumberOfBannedPopups;
-	HWND	hBannedPopupArray[1];
+    ULONG	uNumberOfBannedPopups;
+    HWND	hBannedPopupArray[1];
 } BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
 
 
-ULONG RunShellEventsThread(
+ULONG StartShellEventsThread(
 );
+
 ULONG StopShellEventsThread(
 );
+
 ULONG ProcessUpdatedWindows(
-	BOOLEAN bUpdateEverything
+    BOOLEAN bUpdateEverything
 );
 
-
 ULONG send_window_create(
-	PWATCHED_DC	pWatchedDC
+    PWATCHED_DC	pWatchedDC
 );
 
 void send_pixmap_mfns(
-	PWATCHED_DC pWatchedDC
+    PWATCHED_DC pWatchedDC
 );
 
 void send_window_damage_event(
-	HWND window,
-	int x,
-	int y,
-	int width,
-	int height
+    HWND window,
+    int x,
+    int y,
+    int width,
+    int height
 );
 
 void send_wmname(
-	HWND window
+    HWND window
 );
 
 ULONG send_window_configure(
-	PWATCHED_DC pWatchedDC
+    PWATCHED_DC pWatchedDC
 );
 
 ULONG send_window_destroy(
-	HWND window
+    HWND window
 );
 
 ULONG send_window_unmap(
-	HWND window
+    HWND window
 );
 
 ULONG send_window_map(
-	PWATCHED_DC pWatchedDC
+    PWATCHED_DC pWatchedDC
 );
 
 ULONG OpenScreenSection(

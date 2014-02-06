@@ -37,7 +37,7 @@ ULONG FindQubesDisplayDevice(
 
     memcpy(pQubesDisplayDevice, &DisplayDevice, sizeof(DISPLAY_DEVICE));
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -77,7 +77,7 @@ ULONG SupportVideoMode(
         return ERROR_NOT_SUPPORTED;
     }
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -117,7 +117,7 @@ ULONG GetWindowData(
         return ERROR_NOT_SUPPORTED;
     }
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -246,14 +246,14 @@ ULONG ChangeVideoMode(
                 break;
             }
         }
-        Sleep(5000);
+        Sleep(1000);
     }
     if (DISP_CHANGE_SUCCESSFUL != uResult) {
         uResult = ERROR_NOT_SUPPORTED;
     }
 
 cleanup:
-    debugf("end: %d", uResult);
+    //debugf("end: %d", uResult);
     SetLastError(uResult);
     return uResult;
 }
@@ -277,13 +277,11 @@ ULONG RegisterWatchedDC(
         return ERROR_NOT_SUPPORTED;
     }
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }
 
-ULONG UnregisterWatchedDC(
-    HDC hDC
-)
+ULONG UnregisterWatchedDC(HDC hDC)
 {
     QV_STOP_WATCHING_SURFACE QvStopWatchingSurface;
     int iRet;
@@ -299,6 +297,6 @@ ULONG UnregisterWatchedDC(
         return ERROR_NOT_SUPPORTED;
     }
 
-    debugf("success");
+    //debugf("success");
     return ERROR_SUCCESS;
 }

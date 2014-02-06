@@ -32,24 +32,23 @@
             <Directory Id='BinDir' Name='bin'>
               <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
                 <File Id='wga.exe' DiskId='1' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
-                <!--
-                <ServiceInstall
-                Id="ServiceInstaller"
-                Type="ownProcess"
-                Vital="yes"
-                Name="GUIAgent"
-                DisplayName="Qubes GUI Agent"
-                Description="Qubes GUI agent"
-                Start="auto"
-                Account="LocalSystem"
-                ErrorControl="ignore"
-                Interactive="no"
-                />
-                <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="GUIAgent" Wait="yes" />
-                -->
-                <RegistryKey Root='HKLM' Key='Software\Microsoft\Windows\CurrentVersion\Run'>
-                    <RegistryValue Type='string' Name='Qubes GUI Agent' Value='"[BinDir]wga.exe"'/>
-                </RegistryKey>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]wga.exe"'/>
+              </Component>
+              <Component Id='QTWHelper' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
+                <File Id='QTWHelper.exe' DiskId='1' Source='service\bin\$(var.ARCHDIR)\QTWHelper.exe' KeyPath="yes"/>
+                  <ServiceInstall
+                  Id="ServiceInstaller"
+                  Type="ownProcess"
+                  Vital="no"
+                  Name="QTWHelper"
+                  DisplayName="Qubes Tools for Windows Helper"
+                  Description="Qubes Tools for Windows Helper"
+                  Start="auto"
+                  Account="LocalSystem"
+                  ErrorControl="ignore"
+                  Interactive="no"
+                  />
+                <ServiceControl Id="StartService" Remove="uninstall" Name="QTWHelper" Wait="no" />
               </Component>
             </Directory>
             <Directory Id='DriversDir' Name='drivers'>
@@ -139,7 +138,6 @@
         REMOVE="ALL"
       </Custom>
 	</InstallExecuteSequence>
-
 
 	</Module>
 </Wix>
