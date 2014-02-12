@@ -651,21 +651,32 @@ LRESULT CALLBACK ShellHookWndProc(
     LPARAM lParam
 )
 {
+    HWND targetWindow = (HWND) lParam;
+
     if (uMsg == g_uShellHookMessage) {
         switch (wParam) {
             case HSHELL_WINDOWCREATED:
-                AddWindow((HWND) lParam);
+                AddWindow(targetWindow);
                 break;
 
             case HSHELL_WINDOWDESTROYED:
-                RemoveWindow((HWND) lParam);
+                RemoveWindow(targetWindow);
                 break;
 
             case HSHELL_REDRAW:
+                debugf("HSHELL_REDRAW");
+                goto update;
             case HSHELL_RUDEAPPACTIVATED:
+                debugf("HSHELL_RUDEAPPACTIVATED");
+                goto update;
             case HSHELL_WINDOWACTIVATED:
+                debugf("HSHELL_RUDEAPPACTIVATED");
+                goto update;
             case HSHELL_GETMINRECT:
-                CheckWindowUpdates((HWND) lParam);
+                debugf("HSHELL_GETMINRECT");
+                targetWindow = ((SHELLHOOKINFO*)lParam)->hwnd;
+update:
+                CheckWindowUpdates(targetWindow);
                 break;
             /*
             case HSHELL_WINDOWREPLACING:
@@ -784,7 +795,7 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
         return perror("CreateShellHookWindow");
     }
 
-    if (ERROR_SUCCESS != (uResult=HookMessageLoop())) {
+    if (ERROR_SUCCESS != (uResult = HookMessageLoop())) {
         return uResult;
     }
 
