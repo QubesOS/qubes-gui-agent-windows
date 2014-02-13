@@ -22,9 +22,9 @@ HWND g_StartButtonHwnd = NULL;
 
 extern BOOLEAN g_bVchanClientConnected;
 
-PWATCHED_DC AddWindowWithRect(
+PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
-    RECT *pRect
+    WINDOWINFO *pwi
 );
 
 ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
@@ -132,7 +132,7 @@ ULONG CopyScreenData(
 
 ULONG CheckWatchedWindowUpdates(
     PWATCHED_DC pWatchedDC,
-    RECT *pRect,
+    WINDOWINFO *pwi,
     BOOLEAN bDamageDetected
 )
 {
@@ -140,7 +140,6 @@ ULONG CheckWatchedWindowUpdates(
     BOOLEAN	bResizingDetected;
     BOOLEAN bMoveDetected;
     BOOL	bCurrentlyVisible;
-    LONG	Style;
     BOOL	bUpdateStyle;
 
     if (!pWatchedDC)
@@ -148,13 +147,13 @@ ULONG CheckWatchedWindowUpdates(
 
     debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
 
-    if (!pRect) {
+    if (!pwi) {
         wi.cbSize = sizeof(wi);
         if (!GetWindowInfo(pWatchedDC->hWnd, &wi)) {
             return perror("GetWindowInfo");
         }
     } else
-        wi.rcWindow = *pRect;
+        memcpy(&wi, pwi, sizeof(wi));
 
     bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
     if (g_bVchanClientConnected) {
@@ -168,11 +167,9 @@ ULONG CheckWatchedWindowUpdates(
     if (!pWatchedDC->bStyleChecked && (GetTickCount() >= pWatchedDC->uTimeAdded + 500)) {
         pWatchedDC->bStyleChecked = TRUE;
 
-        Style = GetWindowLong(pWatchedDC->hWnd, GWL_STYLE);
-
         bUpdateStyle = FALSE;
-        if (Style & WS_MINIMIZEBOX) {
-            Style &= ~WS_MINIMIZEBOX;
+        if (wi.dwStyle & WS_MINIMIZEBOX) {
+            wi.dwStyle &= ~WS_MINIMIZEBOX;
             bUpdateStyle = TRUE;
             DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
         }
@@ -182,13 +179,13 @@ ULONG CheckWatchedWindowUpdates(
             DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MAXIMIZE, MF_BYCOMMAND);
         }
 */
-        if (Style & WS_SIZEBOX) {
-            Style &= ~WS_SIZEBOX;
+        if (wi.dwStyle & WS_SIZEBOX) {
+            wi.dwStyle &= ~WS_SIZEBOX;
             bUpdateStyle = TRUE;
         }
 
         if (bUpdateStyle) {
-            SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, Style);
+            SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, wi.dwStyle);
             DrawMenuBar(pWatchedDC->hWnd);
         }
     }
@@ -230,19 +227,15 @@ ULONG CheckWatchedWindowUpdates(
     return ERROR_SUCCESS;
 }
 
-BOOL ShouldAcceptWindow(HWND hWnd)
+BOOL ShouldAcceptWindow(HWND hWnd, WINDOWINFO *pwi)
 {
-    LONG Style, ExStyle;
-
     //debugf("0x%x", hWnd);
     if (!IsWindowVisible(hWnd))
         return FALSE;
 
-    Style = GetWindowLong(hWnd, GWL_STYLE);
-    ExStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
     // If a window has a parent window, has no caption and is not a tool window,
     // then don't show it as a separate window.
-    if (GetParent(hWnd) && ((WS_CAPTION & Style) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & ExStyle))
+    if (GetParent(hWnd) && ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & pwi->dwExStyle))
         return FALSE;
 
     return TRUE;
@@ -262,7 +255,7 @@ BOOL CALLBACK EnumWindowsProc(
     if (!GetWindowInfo(hWnd, &wi))
         return TRUE;
 
-    if (!ShouldAcceptWindow(hWnd))
+    if (!ShouldAcceptWindow(hWnd, &wi))
         return TRUE;
 
     if (pBannedPopupsList)
@@ -270,7 +263,7 @@ BOOL CALLBACK EnumWindowsProc(
             if (pBannedPopupsList->hBannedPopupArray[i] == hWnd)
                 return TRUE;
 
-    AddWindowWithRect(hWnd, &wi.rcWindow);
+    AddWindowWithInfo(hWnd, &wi);
 
     return TRUE;
 }
@@ -379,7 +372,7 @@ ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
     EnumWindows(EnumWindowsProc, (LPARAM)pBannedPopupsList);
 
     pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList) {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
         pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
@@ -437,16 +430,15 @@ DWORD WINAPI ResetWatch(PVOID param)
 }
 
 // g_csWatchedWindows critical section must be entered
-PWATCHED_DC AddWindowWithRect(
+PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
-    RECT *pRect
+    WINDOWINFO *pwi
 )
 {
     PWATCHED_DC pWatchedDC = NULL;
-    LONG Style;
 
     debugf("0x%x", hWnd);
-    if (!pRect)
+    if (!pwi)
         return NULL;
 
     pWatchedDC = FindWindowByHwnd(hWnd);
@@ -454,9 +446,9 @@ PWATCHED_DC AddWindowWithRect(
         // already being watched
         return pWatchedDC;
 
-    SanitizeRect(pRect, g_ScreenHeight, g_ScreenWidth);
+    SanitizeRect(&pwi->rcWindow, g_ScreenHeight, g_ScreenWidth);
 
-    if ((pRect->top - pRect->bottom == 0) || (pRect->right - pRect->left == 0))
+    if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
 
     pWatchedDC = malloc(sizeof(WATCHED_DC));
@@ -470,17 +462,16 @@ PWATCHED_DC AddWindowWithRect(
     pWatchedDC->bStyleChecked = FALSE;
     pWatchedDC->uTimeAdded = GetTickCount();
 
-    Style = GetWindowLong(hWnd, GWL_STYLE);
     // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
-    if (pRect->right-pRect->left == g_ScreenWidth && pRect->bottom-pRect->top == g_ScreenHeight)
+    if (pwi->rcWindow.right-pwi->rcWindow.left == g_ScreenWidth && pwi->rcWindow.bottom-pwi->rcWindow.top == g_ScreenHeight)
         pWatchedDC->bOverrideRedirect = FALSE;
     else
-        pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & Style) != WS_CAPTION);
+        pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & pwi->dwStyle) != WS_CAPTION);
 
     pWatchedDC->hWnd = hWnd;
-    pWatchedDC->rcWindow = *pRect;
+    pWatchedDC->rcWindow = pwi->rcWindow;
 
     pWatchedDC->MaxHeight = g_ScreenHeight;
     pWatchedDC->MaxWidth = g_ScreenWidth;
@@ -550,15 +541,17 @@ PWATCHED_DC AddWindow(HWND hWnd)
         return NULL;
 
     wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(hWnd, &wi))
+    if (!GetWindowInfo(hWnd, &wi)) {
+        perror("GetWindowInfo");
         return NULL;
+    }
 
-    if (!ShouldAcceptWindow(hWnd))
+    if (!ShouldAcceptWindow(hWnd, &wi))
         return NULL;
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    pWatchedDC = AddWindowWithRect(hWnd, &wi.rcWindow);
+    pWatchedDC = AddWindowWithInfo(hWnd, &wi);
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
@@ -627,14 +620,14 @@ ULONG CheckWindowUpdates(HWND hWnd)
     EnterCriticalSection(&g_csWatchedWindows);
 
     // AddWindowWithRect() returns an existing pWatchedDC if the window is already on the list.
-    pWatchedDC = AddWindowWithRect(hWnd, &wi.rcWindow);
+    pWatchedDC = AddWindowWithInfo(hWnd, &wi);
     if (!pWatchedDC) {
-        logf("AddWindowWithRect returned NULL");
+        logf("AddWindowWithInfo returned NULL");
         LeaveCriticalSection(&g_csWatchedWindows);
         return ERROR_SUCCESS;
     }
 
-    CheckWatchedWindowUpdates(pWatchedDC, &wi.rcWindow, FALSE);
+    CheckWatchedWindowUpdates(pWatchedDC, &wi, FALSE);
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
@@ -760,7 +753,11 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
         return uResult;
     }
     */
-    g_uShellHookMessage = RegisterWindowMessage(_T("SHELLHOOK"));
+    if (!g_uShellHookMessage)
+        g_uShellHookMessage = RegisterWindowMessage(_T("SHELLHOOK"));
+
+    if (!g_uShellHookMessage)
+        return perror("RegisterWindowMessage");
 
     *pHwnd = hwnd;
 
