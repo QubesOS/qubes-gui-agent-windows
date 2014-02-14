@@ -117,7 +117,9 @@ ULONG GetWindowData(
         return ERROR_NOT_SUPPORTED;
     }
 
-    //debugf("success");
+    debugf("hdc 0x%0x, IsScreen %d, %dx%d@%d, delta %d", hDC, pQvGetSurfaceDataResponse->bIsScreen,
+        pQvGetSurfaceDataResponse->cx, pQvGetSurfaceDataResponse->cy,
+        pQvGetSurfaceDataResponse->ulBitCount, pQvGetSurfaceDataResponse->lDelta);
     return ERROR_SUCCESS;
 }
 

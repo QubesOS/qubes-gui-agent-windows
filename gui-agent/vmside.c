@@ -48,14 +48,14 @@ ULONG PrepareShmCmd(
     if (!ppShmCmd)
         return ERROR_INVALID_PARAMETER;
     *ppShmCmd = NULL;
-    debugf("start");
+    //debugf("start");
 
     if (!pWatchedDC) {
         debugf("fullcreen capture");
         // fullscreen capture
         memset(&QvGetSurfaceDataResponse, 0, sizeof(QvGetSurfaceDataResponse));
 
-        uResult = GetWindowData(hWnd, &QvGetSurfaceDataResponse);
+        uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
         if (ERROR_SUCCESS != uResult) {
             errorf("GetWindowData() failed with error %d\n", uResult);
             return uResult;
@@ -80,8 +80,9 @@ ULONG PrepareShmCmd(
         pPfnArray = &pWatchedDC->PfnArray;
     }
 
-    logf("Window %dx%d, %d bpp, screen: %d\n", uWidth, uHeight,
-         ulBitCount, bIsScreen);
+    logf("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", uWidth, uHeight, ulBitCount,
+        pWatchedDC ? pWatchedDC->rcWindow.left : 0,
+        pWatchedDC ? pWatchedDC->rcWindow.top : 0, bIsScreen);
     logf("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pPfnArray->uNumberOf4kPages,
          pPfnArray->Pfn[0], pPfnArray->Pfn[1], pPfnArray->Pfn[2]);
 
@@ -310,10 +311,11 @@ void send_window_damage_event(
     int height
 )
 {
+    // damage region is always the whole window now
     struct msg_shmimage mx;
     struct msg_hdr hdr;
 
-    debugf("0x%x", hWnd);
+    debugf("0x%x (%d,%d)-(%d,%d)", hWnd, x, y, x+width, y+height);
     hdr.type = MSG_SHMIMAGE;
     hdr.window = (uint32_t) hWnd;
     mx.x = x;
@@ -604,7 +606,7 @@ void handle_focus(HWND hWnd)
 
     BringWindowToTop(hWnd);
     SetForegroundWindow(hWnd);
-        SetActiveWindow(hWnd);
+    SetActiveWindow(hWnd);
     SetFocus(hWnd);
 }
 

@@ -12,7 +12,7 @@ BOOLEAN g_Initialized = FALSE;
 
 LONG g_ScreenHeight = 0;
 LONG g_ScreenWidth = 0;
-PUCHAR g_pScreenData = NULL;
+PBYTE g_pScreenData = NULL;
 HANDLE g_hSection;
 
 HWND g_DesktopHwnd = NULL;
@@ -72,13 +72,15 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 
     return NULL;
 }
-
+/*
 #define ENFORCE_LIMITS(var, min, max) \
     if (var < min) \
         var = min; \
     if (var > max) \
         var = max;
 
+// unused, caused erratic window behaviour when partially outside of screen
+// CopyScreenData handles range checking
 ULONG SanitizeRect(
     RECT *pRect,
     LONG MaxHeight,
@@ -96,8 +98,7 @@ ULONG SanitizeRect(
 
     return ERROR_SUCCESS;
 }
-
-// pRect must be sanitized
+*/
 ULONG CopyScreenData(
     BYTE *pCompositionBuffer,
     RECT *pRect
@@ -106,26 +107,44 @@ ULONG CopyScreenData(
     LONG Line;
     ULONG uWindowStride;
     ULONG uScreenStride;
-    PUCHAR pSourceLine = NULL;
-    PUCHAR pDestLine = NULL;
+    PBYTE pSourceLine = NULL;
+    PBYTE pDestLine = NULL;
+    PBYTE pScreenBufferLimit;
+    //ULONG diff = 0;
 
     if (!pCompositionBuffer || !g_pScreenData || !pRect)
         return ERROR_INVALID_PARAMETER;
 
-    debugf("buffer=%p, (%d,%d)-(%d,%d)", pCompositionBuffer, pRect->left, pRect->top, pRect->right, pRect->bottom);
-
     uWindowStride = (pRect->right - pRect->left) * 4;
     uScreenStride = g_ScreenWidth * 4;
+    // Limit of screen buffer memory.
+    pScreenBufferLimit = g_pScreenData + uScreenStride*g_ScreenHeight;
+
+    // Range checking done manually later.
+    //SanitizeRect(pRect, g_ScreenHeight, g_ScreenWidth);
+
+    debugf("buffer=%p, (%d,%d)-(%d,%d), win stride %d, screen stride %d",
+        pCompositionBuffer, pRect->left, pRect->top, pRect->right, pRect->bottom,
+        uWindowStride, uScreenStride);
+
+    if (pRect->bottom - pRect->top == 0)
+        return ERROR_SUCCESS;
 
     pDestLine = pCompositionBuffer;
     pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left * 4;
 
     for (Line = pRect->top; Line < pRect->bottom; Line++) {
-        memcpy(pDestLine, pSourceLine, uWindowStride);
-
+        if (pSourceLine >= g_pScreenData) {
+            if (pSourceLine+uScreenStride >= pScreenBufferLimit)
+                break; // end of screen buffer reached
+            //if (memcmp(pDestLine, pSourceLine, uWindowStride))
+            //    diff++;
+            memcpy(pDestLine, pSourceLine, uWindowStride);
+        }
         pDestLine += uWindowStride;
         pSourceLine += uScreenStride;
     }
+    //debugf("%d/%d lines differ (%d%%)", diff, pRect->bottom-pRect->top, 100*diff/(pRect->bottom-pRect->top));
 
     return ERROR_SUCCESS;
 }
@@ -192,7 +211,7 @@ ULONG CheckWatchedWindowUpdates(
 
     pWatchedDC->bVisible = bCurrentlyVisible;
 
-    SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
+    //SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
 
     bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
         wi.rcWindow.top != pWatchedDC->rcWindow.top ||
@@ -446,7 +465,7 @@ PWATCHED_DC AddWindowWithInfo(
         // already being watched
         return pWatchedDC;
 
-    SanitizeRect(&pwi->rcWindow, g_ScreenHeight, g_ScreenWidth);
+    //SanitizeRect(&pwi->rcWindow, g_ScreenHeight, g_ScreenWidth);
 
     if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
