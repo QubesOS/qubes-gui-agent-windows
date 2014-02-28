@@ -3,9 +3,13 @@ TARGETTYPE=GDI_DRIVER
 TARGETPATH=..\bin
 
 #LINKER_FORCE_NO_DBG_SECTION=1
-TARGETLIBS=$(DDK_LIB_PATH)\libcntpr.lib
+TARGETLIBS = $(DDK_LIB_PATH)\libcntpr.lib \
+    $(DDK_LIB_PATH)\ntoskrnl.lib \
+    $(DDK_LIB_PATH)\hal.lib
 
-INCLUDES=$(INCLUDES); ..\inc;
+INCLUDES=$(INCLUDES); ..\inc; $(DDK_INC_PATH)
+    
+C_DEFINES=/DDBG
 
 !IFNDEF MSC_WARNING_LEVEL
 MSC_WARNING_LEVEL=/W4
@@ -17,6 +21,5 @@ MSC_WARNING_LEVEL=$(MSC_WARNING_LEVEL) /WX
 SOURCES=debug.c     \
         enable.c    \
         screen.c    \
+        support.c   \
         gdi.rc
-
-

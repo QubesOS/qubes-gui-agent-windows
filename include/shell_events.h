@@ -4,22 +4,21 @@
 #include <tchar.h>
 #include <WtsApi32.h>
 #include "qvcontrol.h"
+#include "common.h"
 
-
-typedef struct _BANNED_POPUP_WINDOWS {
+typedef struct _BANNED_POPUP_WINDOWS
+{
     ULONG	uNumberOfBannedPopups;
     HWND	hBannedPopupArray[1];
 } BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
 
 
-ULONG StartShellEventsThread(
-);
+ULONG StartShellEventsThread();
 
-ULONG StopShellEventsThread(
-);
+ULONG StopShellEventsThread();
 
 ULONG ProcessUpdatedWindows(
-    BOOLEAN bUpdateEverything
+    BOOL bUpdateEverything
 );
 
 ULONG send_window_create(
@@ -58,9 +57,7 @@ ULONG send_window_map(
     PWATCHED_DC pWatchedDC
 );
 
-ULONG OpenScreenSection(
-);
-
+ULONG OpenScreenSection();
 
 #define InitializeListHead(ListHead) (\
     (ListHead)->Flink = (ListHead)->Blink = (ListHead))

@@ -6,7 +6,7 @@ TARGETPATH=..\bin
 
 TARGETLIBS=$(DDK_LIB_PATH)\videoprt.lib
 INCLUDES=$(INCLUDES); ..\inc;
-
+#C_DEFINES=/DDBG
 
 SOURCES=qvmini.c \
         memory.c \

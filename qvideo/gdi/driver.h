@@ -33,7 +33,7 @@ typedef struct _PDEV
 	ULONG cyScreen;		// Visible screen height
 
 	LONG lDeltaScreen;	// Distance from one scan to the next.
-	ULONG ulBitCount;	// # of bits per pel: 16, 24, 32 are only supported.
+    ULONG ulBitCount;	// # of bits per pel: only 16, 24, 32 are supported.
 
 	PSURFACE_DESCRIPTOR pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
 } PDEV, *PPDEV;
@@ -64,8 +64,14 @@ typedef struct _SURFACE_DESCRIPTOR
 	PVOID pMdl;
 	PFN_ARRAY PfnArray;
 
-//      BITMAP_HEADER BitmapHeader;
+    // page numbers that changed in the surface buffer since the last check
+    // this is exposed as a section so the user mode client can easily check what changed
+    PVOID DirtySectionObject;
+    HANDLE hDirtySection;
+    PQV_DIRTY_PAGES pDirtyPages;
+    LARGE_INTEGER LastCheck; // timestamp of the last dirty pages check, to limit events per second
 
+//  BITMAP_HEADER BitmapHeader;
 } SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
 
 BOOL bInitPDEV(
@@ -82,7 +88,8 @@ BOOL bInitPDEV(
 
 //#define DRIVER_EXTRA_SIZE 0
 
-#define DLL_NAME	L"QubesVideo"	// Name of the DLL in UNICODE
-#define ALLOC_TAG	'DDVQ'	// Four byte tag (characters in
-									 // reverse order) used for memory
-									 // allocations
+// Name of the DLL in UNICODE
+#define DLL_NAME	L"QubesVideo"
+
+// Four byte tag (characters in reverse order) used for memory allocations
+#define ALLOC_TAG	'DDVQ'

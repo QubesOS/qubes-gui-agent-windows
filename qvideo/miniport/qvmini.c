@@ -1,5 +1,4 @@
 #include "qvmini.h"
-
 #if DBG
 VOID QubesVideoNotImplemented(
 	__in char *s
@@ -128,7 +127,7 @@ BOOLEAN QubesVideoStartIO(
 	RequestPacket->StatusBlock->Status = 0;
 	RequestPacket->StatusBlock->Information = 0;
 
-//      VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
+//  VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
 
 	switch (RequestPacket->IoControlCode) {
 	case IOCTL_QVMINI_ALLOCATE_MEMORY:
@@ -150,17 +149,16 @@ BOOLEAN QubesVideoStartIO(
 
 		uLength = pQvminiAllocateMemory->uLength;
 
-		pQvminiAllocateMemoryResponse->pVirtualAddress = AllocateMemory(pQvminiAllocateMemory->uLength, &pQvminiAllocateMemoryResponse->PfnArray);
+        pQvminiAllocateMemoryResponse->pVirtualAddress =
+            AllocateMemory(pQvminiAllocateMemory->uLength, &pQvminiAllocateMemoryResponse->PfnArray);
 
 		if (!pQvminiAllocateMemoryResponse->pVirtualAddress) {
-
 			VideoDebugPrint((0, "AllocateMemory(%d) failed.\n", uLength));
 
 			RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
 			RequestPacket->StatusBlock->Information = 0;
 		} else {
-
-//                      VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
+//          VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
 
 			RequestPacket->StatusBlock->Status = NO_ERROR;
 			RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
@@ -177,7 +175,7 @@ BOOLEAN QubesVideoStartIO(
 
 		pQvminiFreeMemory = RequestPacket->InputBuffer;
 
-//              VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
+//      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
 
 		FreeMemory(pQvminiFreeMemory->pVirtualAddress);
 
@@ -206,18 +204,19 @@ BOOLEAN QubesVideoStartIO(
 
 		pQvminiAllocateSectionResponse->pVirtualAddress =
 			AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
-					&pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-					&pQvminiAllocateSectionResponse->PfnArray);
+			&pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
+            &pQvminiAllocateSectionResponse->PfnArray,
+            &pQvminiAllocateSectionResponse->hDirtySection,
+            &pQvminiAllocateSectionResponse->DirtySectionObject,
+            &pQvminiAllocateSectionResponse->pDirtyPages);
 
 		if (!pQvminiAllocateSectionResponse->pVirtualAddress) {
-
 			VideoDebugPrint((0, "AllocateSection(%d) failed.\n", uLength));
 
 			RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
 			RequestPacket->StatusBlock->Information = 0;
 		} else {
-
-//                      VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
+//          VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
 
 			RequestPacket->StatusBlock->Status = NO_ERROR;
 			RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE);
@@ -234,9 +233,12 @@ BOOLEAN QubesVideoStartIO(
 
 		pQvminiFreeSection = RequestPacket->InputBuffer;
 
-//              VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
+//      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
 
-		FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject, pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress);
+        FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject,
+            pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress,
+            pQvminiFreeSection->hDirtySection, pQvminiFreeSection->DirtySectionObject,
+            pQvminiFreeSection->pDirtyPages);
 
 		RequestPacket->StatusBlock->Status = NO_ERROR;
 		RequestPacket->StatusBlock->Information = 0;
@@ -282,22 +284,18 @@ ULONG DriverEntry(
 	PVOID Context2
 )
 {
-
 	VIDEO_HW_INITIALIZATION_DATA hwInitData;
 	ULONG initializationStatus;
 
 	VideoDebugPrint((0, "Qubes Video Driver VideoPort [Driver Entry]\n"));
 
 	// Zero out structure.
-
 	VideoPortZeroMemory(&hwInitData, sizeof(VIDEO_HW_INITIALIZATION_DATA));
 
 	// Specify sizes of structure and extension.
-
 	hwInitData.HwInitDataSize = sizeof(VIDEO_HW_INITIALIZATION_DATA);
 
 	// Set entry points.
-
 	hwInitData.HwFindAdapter = &QubesVideoFindAdapter;
 	hwInitData.HwInitialize = &QubesVideoInitialize;
 	hwInitData.HwStartIO = &QubesVideoStartIO;
@@ -316,5 +314,4 @@ ULONG DriverEntry(
 	initializationStatus = VideoPortInitialize(Context1, Context2, &hwInitData, NULL);
 
 	return initializationStatus;
-
 }

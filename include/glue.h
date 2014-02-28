@@ -20,60 +20,65 @@
  */
 
 int peer_server_init(
-	int port
+    int port
 );
-int read_ready_vchan_ext(
-);
+
+int read_ready_vchan_ext();
+
 int read_all_vchan_ext(
-	void *buf,
-	int size
+    void *buf,
+    int size
 );
+
 int write_all_vchan_ext(
-	void *buf,
-	int size
+    void *buf,
+    int size
 );
-int buffer_space_vchan_ext(
-);
+
+int buffer_space_vchan_ext();
 
 enum
 {
-	WRITE_STDIN_OK = 0x200,
-	WRITE_STDIN_BUFFERED,
-	WRITE_STDIN_ERROR
+    WRITE_STDIN_OK = 0x200,
+    WRITE_STDIN_BUFFERED,
+    WRITE_STDIN_ERROR
 };
 
 int flush_client_data(
-	int fd,
-	int client_id,
-	struct buffer *buffer
+    int fd,
+    int client_id,
+    struct buffer *buffer
 );
+
 int write_stdin(
-	int fd,
-	int client_id,
-	char *data,
-	int len,
-	struct buffer *buffer
+    int fd,
+    int client_id,
+    char *data,
+    int len,
+    struct buffer *buffer
 );
+
 void set_nonblock(
-	int fd
+    int fd
 );
+
 int fork_and_flush_stdin(
-	int fd,
-	struct buffer *buffer
+    int fd,
+    struct buffer *buffer
 );
 
 extern struct libvchan *ctrl;
 
 int real_write_message(
-	char *hdr,
-	int size,
-	char *data,
-	int datasize
+    char *hdr,
+    int size,
+    char *data,
+    int datasize
 );
 
 #define write_message(x,y) do {\
-	x.untrusted_len = sizeof(x); \
-	real_write_message((char*)&x, sizeof(x), (char*)&y, sizeof(y)); \
+    x.untrusted_len = sizeof(x); \
+    real_write_message((char*)&x, sizeof(x), (char*)&y, sizeof(y)); \
     } while(0)
 #define write_data(x, y) write_all_vchan_ext(x, y)
 #define write_struct(x) write_data((char*)&x, sizeof(x))

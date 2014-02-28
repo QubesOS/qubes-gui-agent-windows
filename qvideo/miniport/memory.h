@@ -19,15 +19,21 @@ BOOLEAN GetUserBufferPfnArrayBool(
 
 PVOID AllocateSection(
 	ULONG uLength,
-	PHANDLE phSection,
+    HANDLE *phSection,
 	PVOID * pSectionObject,
 	PVOID * ppMdl,
-	PPFN_ARRAY pPfnArray
+    PPFN_ARRAY pPfnArray,
+    HANDLE *phDirtySection,
+    PVOID *pDirtySectionObject,
+    PVOID *pDirtySectionMemory
 );
 
 VOID FreeSection(
 	HANDLE hSection,
-	PVOID SectionObject,
+    PVOID pSectionObject,
 	PVOID pMdl,
-	__in __drv_freesMem(Mem) PVOID BaseAddress
+    __in __drv_freesMem(Mem) PVOID BaseAddress,
+    HANDLE hDirtySection,
+    PVOID pDirtySectionObject,
+    PVOID pDirtySectionMemory
 );
