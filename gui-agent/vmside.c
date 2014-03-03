@@ -1,5 +1,6 @@
 #define OEMRESOURCE
 #include <windows.h>
+#include <aclapi.h>
 #include "tchar.h"
 #include "qubes-gui-protocol.h"
 #include "libvchan.h"
@@ -8,6 +9,8 @@
 #include "shell_events.h"
 #include "resource.h"
 #include "log.h"
+
+#define FULLSCREEN_EVENT_NAME TEXT("WGA_FULLSCREEN_SWITCH")
 
 HANDLE g_hStopServiceEvent;
 HANDLE g_hCleanupFinishedEvent;
@@ -24,6 +27,56 @@ extern PUCHAR g_pScreenData;
 
 BOOLEAN	g_bVchanClientConnected = FALSE;
 BOOLEAN	g_bFullScreenMode = FALSE;
+
+HANDLE CreateFullScreenEvent(void)
+{
+    SECURITY_ATTRIBUTES sa;
+    SECURITY_DESCRIPTOR sd;
+    EXPLICIT_ACCESS ea = {0};
+    PACL acl = NULL;
+    HANDLE hFullScreenEvent = NULL;
+
+    // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
+    ea.grfAccessMode = GRANT_ACCESS;
+    ea.grfAccessPermissions = EVENT_MODIFY_STATE|READ_CONTROL;
+    ea.grfInheritance = NO_INHERITANCE;
+    ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
+    ea.Trustee.ptstrName = TEXT("EVERYONE");
+
+    if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
+    {
+        perror("SetEntriesInAcl");
+        goto cleanup;
+    }
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        perror("InitializeSecurityDescriptor");
+        goto cleanup;
+    }
+    if (!SetSecurityDescriptorDacl(&sd, TRUE, acl, FALSE))
+    {
+        perror("SetSecurityDescriptorDacl");
+        goto cleanup;
+    }
+
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = &sd;
+    sa.bInheritHandle = FALSE;
+
+    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, FULLSCREEN_EVENT_NAME);
+
+    if (!hFullScreenEvent)
+    {
+        perror("CreateEvent(fullscreen)");
+        goto cleanup;
+    }
+
+cleanup:
+    if (acl)
+        LocalFree(acl);
+    return hFullScreenEvent;
+}
 
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
  * struct.
@@ -229,6 +282,24 @@ ULONG send_window_destroy(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
+ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
+{
+    struct msg_hdr hdr;
+    struct msg_window_flags flags;
+
+    debugf("0x%x: set 0x%x, unset 0x%x", hWnd, flags_set, flags_unset);
+    hdr.type = MSG_WINDOW_FLAGS;
+    hdr.window = (uint32_t) hWnd;
+    hdr.untrusted_len = 0;
+    flags.flags_set = flags_set;
+    flags.flags_unset = flags_unset;
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, flags);
+    LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return ERROR_SUCCESS;
+}
+
 ULONG send_window_unmap(HWND hWnd)
 {
     struct msg_hdr hdr;
@@ -416,7 +487,10 @@ void handle_xconf()
         g_ScreenWidth = xconf.w;
         g_ScreenHeight = xconf.h;
 
-        StartShellEventsThread();
+        if (ERROR_SUCCESS != StartShellEventsThread()) {
+            errorf("StartShellEventsThread failed, exiting");
+            exit(1);
+        }
     }
 }
 
@@ -693,6 +767,7 @@ ULONG WINAPI WatchForEvents()
     BOOLEAN bVchanReturnedError;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
+    HANDLE hFullScreenEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
@@ -715,6 +790,10 @@ ULONG WINAPI WatchForEvents()
     memset(&ol, 0, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
+    hFullScreenEvent = CreateFullScreenEvent();
+    if (!hFullScreenEvent)
+        return GetLastError();
+
     g_bVchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
     bVchanReturnedError = FALSE;
@@ -725,6 +804,7 @@ ULONG WINAPI WatchForEvents()
         // Order matters.
         WatchedEvents[uEventNumber++] = g_hStopServiceEvent;
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
+        WatchedEvents[uEventNumber++] = hFullScreenEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -756,19 +836,36 @@ ULONG WINAPI WatchForEvents()
 
 //          debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
             switch (dwSignaledEvent) {
-            case 1:
+            case 1: // damage event
 
                 debugf("Damage %d\n", uDamage++);
 
                 if (g_bVchanClientConnected) {
-                    if (g_bFullScreenMode)
-                        send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
-                    else
-                        ProcessUpdatedWindows(TRUE);
+                    ProcessUpdatedWindows(TRUE);
                 }
                 break;
 
-            case 2: // vchan receive
+            case 2: // fullscreen toggle event
+                g_bFullScreenMode = !g_bFullScreenMode;
+                debugf("Full screen mode changed to %d", g_bFullScreenMode);
+
+                // ResetWatch kills the shell event thread and removes all watched windows.
+                // If fullscreen is off the shell event thread is also restarted.
+                ResetWatch(NULL);
+
+                if (g_bFullScreenMode) {
+                    // map the screen as a single window
+                    send_window_create(NULL);
+                    send_pixmap_mfns(NULL);
+                    send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
+                } else {
+                    // unmap the screen
+                    send_window_destroy(NULL);
+                }
+
+                break;
+
+            case 3: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //

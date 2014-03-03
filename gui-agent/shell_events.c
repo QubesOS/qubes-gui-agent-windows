@@ -21,6 +21,7 @@ HWND g_TaskbarHwnd = NULL;
 HWND g_StartButtonHwnd = NULL;
 
 extern BOOLEAN g_bVchanClientConnected;
+extern BOOLEAN g_bFullScreenMode;
 
 PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
@@ -367,18 +368,33 @@ ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
         g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
 
         if (g_TaskbarHwnd)
-            ShowWindow(g_TaskbarHwnd, SW_HIDE);
+            if (g_bFullScreenMode)
+                ShowWindow(g_TaskbarHwnd, SW_SHOW);
+            else
+                ShowWindow(g_TaskbarHwnd, SW_HIDE);
     }
 
     if (!g_StartButtonHwnd || bRecheckWindows) {
         g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, _T("Button"), NULL);
 
         if (g_StartButtonHwnd)
-            ShowWindow(g_StartButtonHwnd, SW_HIDE);
+            if (g_bFullScreenMode)
+                ShowWindow(g_StartButtonHwnd, SW_SHOW);
+            else
+                ShowWindow(g_StartButtonHwnd, SW_HIDE);
     }
 
     debugf("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
         g_DesktopHwnd, g_ExplorerHwnd, g_TaskbarHwnd, g_StartButtonHwnd);
+
+    if (g_bFullScreenMode)
+    {
+        // just send damage event with the dirty area
+        send_window_damage_event(0, 0, 0,
+            g_ScreenWidth,
+            g_ScreenHeight);
+        return ERROR_SUCCESS;
+    }
 
     pBannedPopupsList->uNumberOfBannedPopups = 4;
     pBannedPopupsList->hBannedPopupArray[0] = g_DesktopHwnd;
@@ -440,9 +456,18 @@ DWORD WINAPI ResetWatch(PVOID param)
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
+    g_DesktopHwnd = NULL;
+    g_ExplorerHwnd = NULL;
+    g_TaskbarHwnd = NULL;
+    g_StartButtonHwnd = NULL;
+
     // todo: wait for desktop switch - it can take some time after the session event
 
-    StartShellEventsThread();
+    // don't start shell events thread if we're in fullscreen mode
+    // WatchForEvents will map the whole screen as one window
+    if (!g_bFullScreenMode) {
+        StartShellEventsThread();
+    }
 
     //debugf("success");
     return ERROR_SUCCESS;
@@ -626,6 +651,7 @@ ULONG RemoveWindow(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
+// called from shell hook proc
 ULONG CheckWindowUpdates(HWND hWnd)
 {
     WINDOWINFO wi;
