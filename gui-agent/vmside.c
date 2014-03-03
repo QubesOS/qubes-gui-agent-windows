@@ -9,6 +9,8 @@
 #include "resource.h"
 #include "log.h"
 
+#define FULLSCREEN_EVENT_NAME TEXT("WGA_FULLSCREEN_SWITCH")
+
 HANDLE g_hStopServiceEvent;
 HANDLE g_hCleanupFinishedEvent;
 CRITICAL_SECTION g_VchanCriticalSection;
@@ -24,6 +26,17 @@ extern PUCHAR g_pScreenData;
 
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
+
+HANDLE CreateFullScreenEvent(void)
+{
+    HANDLE hFullScreenEvent = CreateEvent(NULL, FALSE, FALSE, FULLSCREEN_EVENT_NAME);
+    if (!hFullScreenEvent)
+    {
+        perror("CreateEvent(fullscreen)");
+        return NULL;
+    }
+    return hFullScreenEvent;
+}
 
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
  * struct.
@@ -234,6 +247,24 @@ ULONG send_window_destroy(HWND hWnd)
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     write_struct(hdr);
+    LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return ERROR_SUCCESS;
+}
+
+ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
+{
+    struct msg_hdr hdr;
+    struct msg_window_flags flags;
+
+    debugf("0x%x: set 0x%x, unset 0x%x", hWnd, flags_set, flags_unset);
+    hdr.type = MSG_WINDOW_FLAGS;
+    hdr.window = (uint32_t) hWnd;
+    hdr.untrusted_len = 0;
+    flags.flags_set = flags_set;
+    flags.flags_unset = flags_unset;
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, flags);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -723,6 +754,7 @@ ULONG WINAPI WatchForEvents()
     BOOL bVchanReturnedError;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
+    HANDLE hFullScreenEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
@@ -746,6 +778,10 @@ ULONG WINAPI WatchForEvents()
     memset(&ol, 0, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
+    hFullScreenEvent = CreateFullScreenEvent();
+    if (!hFullScreenEvent)
+        return GetLastError();
+
     g_bVchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
     bVchanReturnedError = FALSE;
@@ -757,6 +793,7 @@ ULONG WINAPI WatchForEvents()
         // Order matters.
         WatchedEvents[uEventNumber++] = g_hStopServiceEvent;
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
+        WatchedEvents[uEventNumber++] = hFullScreenEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -794,20 +831,40 @@ ULONG WINAPI WatchForEvents()
             //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
             switch (dwSignaledEvent)
             {
-            case 1:
+            case 1: // damage event
 
                 debugf("Damage %d\n", uDamage++);
 
                 if (g_bVchanClientConnected)
                 {
-                    if (g_bFullScreenMode)
-                        send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
-                    else
-                        ProcessUpdatedWindows(TRUE);
+                    ProcessUpdatedWindows(TRUE);
                 }
                 break;
 
-            case 2: // vchan receive
+            case 2: // fullscreen toggle event
+                g_bFullScreenMode = !g_bFullScreenMode;
+                debugf("Full screen mode changed to %d", g_bFullScreenMode);
+
+                // ResetWatch kills the shell event thread and removes all watched windows.
+                // If fullscreen is off the shell event thread is also restarted.
+                ResetWatch(NULL);
+
+                if (g_bFullScreenMode)
+                {
+                    // map the screen as a single window
+                    send_window_create(NULL);
+                    send_pixmap_mfns(NULL);
+                    send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
+                }
+                else
+                {
+                    // unmap the screen
+                    send_window_destroy(NULL);
+                }
+
+                break;
+
+            case 3: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //

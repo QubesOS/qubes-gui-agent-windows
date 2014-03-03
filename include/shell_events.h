@@ -59,6 +59,8 @@ ULONG send_window_map(
 
 ULONG OpenScreenSection();
 
+DWORD WINAPI ResetWatch(PVOID param);
+
 #define InitializeListHead(ListHead) (\
     (ListHead)->Flink = (ListHead)->Blink = (ListHead))
 
