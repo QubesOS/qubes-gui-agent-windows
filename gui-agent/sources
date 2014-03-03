@@ -11,6 +11,7 @@ C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 INCLUDES=$(INCLUDES); \
                     ..\include; \
                     $(QUBES_INCLUDES); \
+                    $(DDK_INC_PATH); \
                     ..\..\core\vchan; \
                     ..\..\core\win\include; \
                     ..\gui-common\include; \

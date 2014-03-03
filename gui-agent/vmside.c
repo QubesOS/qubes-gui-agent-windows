@@ -1,5 +1,6 @@
 #define OEMRESOURCE
 #include <windows.h>
+#include <aclapi.h>
 #include "tchar.h"
 #include "qubes-gui-protocol.h"
 #include "libvchan.h"
@@ -29,12 +30,51 @@ BOOL g_bFullScreenMode = FALSE;
 
 HANDLE CreateFullScreenEvent(void)
 {
-    HANDLE hFullScreenEvent = CreateEvent(NULL, FALSE, FALSE, FULLSCREEN_EVENT_NAME);
+    SECURITY_ATTRIBUTES sa;
+    SECURITY_DESCRIPTOR sd;
+    EXPLICIT_ACCESS ea = {0};
+    PACL acl = NULL;
+    HANDLE hFullScreenEvent = NULL;
+
+    // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
+    ea.grfAccessMode = GRANT_ACCESS;
+    ea.grfAccessPermissions = EVENT_MODIFY_STATE|READ_CONTROL;
+    ea.grfInheritance = NO_INHERITANCE;
+    ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
+    ea.Trustee.ptstrName = TEXT("EVERYONE");
+
+    if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
+    {
+        perror("SetEntriesInAcl");
+        goto cleanup;
+    }
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        perror("InitializeSecurityDescriptor");
+        goto cleanup;
+    }
+    if (!SetSecurityDescriptorDacl(&sd, TRUE, acl, FALSE))
+    {
+        perror("SetSecurityDescriptorDacl");
+        goto cleanup;
+    }
+
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = &sd;
+    sa.bInheritHandle = FALSE;
+
+    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, FULLSCREEN_EVENT_NAME);
+
     if (!hFullScreenEvent)
     {
         perror("CreateEvent(fullscreen)");
-        return NULL;
+        goto cleanup;
     }
+
+cleanup:
+    if (acl)
+        LocalFree(acl);
     return hFullScreenEvent;
 }
 
