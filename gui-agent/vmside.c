@@ -100,7 +100,7 @@ ULONG PrepareShmCmd(
 
     if (!ppShmCmd)
         return ERROR_INVALID_PARAMETER;
-    
+
     *ppShmCmd = NULL;
     //debugf("start");
 
@@ -140,7 +140,7 @@ ULONG PrepareShmCmd(
     logf("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", uWidth, uHeight, ulBitCount,
         pWatchedDC ? pWatchedDC->rcWindow.left : 0,
         pWatchedDC ? pWatchedDC->rcWindow.top : 0, bIsScreen);
-    
+
     logf("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pPfnArray->uNumberOf4kPages,
         pPfnArray->Pfn[0], pPfnArray->Pfn[1], pPfnArray->Pfn[2]);
 
@@ -247,7 +247,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
             pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
             pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom,
             pWatchedDC->bOverrideRedirect);
-        
+
         hdr.window = (uint32_t) pWatchedDC->hWnd;
         wi.rcWindow = pWatchedDC->rcWindow;
     }
@@ -264,7 +264,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, mc);
 
-    if (pWatchedDC ? pWatchedDC->bVisible : TRUE)
+    if (pWatchedDC ? pWatchedDC->bVisible : FALSE)
     {
         mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
         mmi.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
@@ -331,14 +331,25 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
     struct msg_hdr hdr;
     struct msg_map_info mmi;
 
-    logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
+    //logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
+    if (pWatchedDC)
+        logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
+    else
+        logf("Mapping desktop window\n");
 
     hdr.type = MSG_MAP;
-    hdr.window = (uint32_t) pWatchedDC->hWnd;
+    if (pWatchedDC)
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
+    else
+        hdr.window = 0;
     hdr.untrusted_len = 0;
 
     mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-    mmi.override_redirect = pWatchedDC->bOverrideRedirect;
+
+    if (pWatchedDC)
+        mmi.override_redirect = pWatchedDC->bOverrideRedirect;
+    else
+        mmi.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, mmi);
@@ -891,14 +902,13 @@ ULONG WINAPI WatchForEvents()
 
                 if (g_bFullScreenMode)
                 {
-                    // map the screen as a single window
-                    send_window_create(NULL);
-                    send_pixmap_mfns(NULL);
+                    // show the screen window
+                    send_window_map(NULL);
                     send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
                 }
                 else
                 {
-                    // unmap the screen
+                    // hide the screen window
                     send_window_destroy(NULL);
                 }
 
@@ -941,11 +951,14 @@ ULONG WINAPI WatchForEvents()
                     if (ERROR_SUCCESS != uResult)
                         perror("RegisterWatchedDC");
 
+                    // send the whole screen framebuffer map
+                    send_window_create(NULL);
+                    send_pixmap_mfns(NULL);
+
                     if (g_bFullScreenMode)
                     {
                         debugf("init in fullscreen mode");
-                        send_window_create(NULL);
-                        send_pixmap_mfns(NULL);
+                        send_window_map(NULL);
                     }
 
                     g_bVchanClientConnected = TRUE;

@@ -1,6 +1,8 @@
 #include "shell_events.h"
 #include "log.h"
 
+//#define PER_WINDOW_BUFFER 1
+
 const TCHAR g_szClassName[] = _T("QubesShellHookClass");
 ULONG g_uShellHookMessage = 0;
 HWND g_ShellEventsWnd = NULL;
@@ -228,7 +230,10 @@ ULONG CheckWatchedWindowUpdates(
         //		_tprintf(_T("hwnd: %x, left: %d top: %d right: %d bottom %d\n"), pWatchedDC->hWnd, wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right,
         //			 wi.rcWindow.bottom);
         pWatchedDC->rcWindow = wi.rcWindow;
+
+#if PER_WINDOW_BUFFER
         CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
+#endif
 
         if (g_bVchanClientConnected)
         {
@@ -237,8 +242,10 @@ ULONG CheckWatchedWindowUpdates(
             if (bMoveDetected || bResizingDetected)
                 send_window_configure(pWatchedDC);
 
+#if PER_WINDOW_BUFFER
             if (bResizingDetected)
                 send_pixmap_mfns(pWatchedDC);
+#endif
 
             if (prcDamageArea == NULL)
             { // assume the whole area changed
@@ -611,6 +618,7 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->MaxHeight = g_ScreenHeight;
     pWatchedDC->MaxWidth = g_ScreenWidth;
 
+#if PER_WINDOW_BUFFER
     pWatchedDC->uCompositionBufferSize = pWatchedDC->MaxHeight * pWatchedDC->MaxWidth * 4;
 
     pWatchedDC->pCompositionBuffer =
@@ -655,11 +663,14 @@ PWATCHED_DC AddWindowWithInfo(
         pWatchedDC->PfnArray.Pfn[0], pWatchedDC->PfnArray.Pfn[1], pWatchedDC->PfnArray.Pfn[2]);
 
     CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
+#endif
 
     if (g_bVchanClientConnected)
     {
         send_window_create(pWatchedDC);
+#if PER_WINDOW_BUFFER
         send_pixmap_mfns(pWatchedDC);
+#endif
         send_wmname(hWnd);
     }
 
