@@ -1,7 +1,13 @@
 #include "shell_events.h"
 #include "log.h"
 
-//#define PER_WINDOW_BUFFER 1
+// If set, maintain each window's composition buffer separately.
+// Requires gui-daemon support for whole-screen cropping if not set.
+#define PER_WINDOW_BUFFER 0
+
+// If set, only invalidate parts of the screen that changed according to
+// qvideo's dirty page scan of surface memory buffer.
+#define USE_DIRTY_PAGES 1
 
 const TCHAR g_szClassName[] = _T("QubesShellHookClass");
 ULONG g_uShellHookMessage = 0;
@@ -17,9 +23,11 @@ LONG g_ScreenWidth = 0;
 PBYTE g_pScreenData = NULL;
 HANDLE g_hSection = NULL;
 
+#if USE_DIRTY_PAGES
 // bit array of dirty pages in the screen buffer (changed since last check)
 PQV_DIRTY_PAGES g_pDirtyPages = NULL;
 HANDLE g_hDirtySection = NULL;
+#endif
 
 HWND g_DesktopHwnd = NULL;
 HWND g_ExplorerHwnd = NULL;
@@ -57,6 +65,7 @@ ULONG OpenScreenSection()
     if (!g_pScreenData)
         return perror("MapViewOfFile(screen section)");
 
+#if USE_DIRTY_PAGES
     uLength /= PAGE_SIZE;
     StringCchPrintf(SectionName, _countof(SectionName),
         _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
@@ -70,7 +79,9 @@ ULONG OpenScreenSection()
     if (!g_pDirtyPages)
         return perror("MapViewOfFile(dirty section)");
 
-    debugf("success: dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
+    debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
+#endif
+
     return ERROR_SUCCESS;
 }
 
@@ -176,6 +187,7 @@ ULONG CheckWatchedWindowUpdates(
     bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
     if (g_bVchanClientConnected)
     {
+        // visibility change
         if (bCurrentlyVisible && !pWatchedDC->bVisible)
             send_window_map(pWatchedDC);
 
@@ -218,7 +230,8 @@ ULONG CheckWatchedWindowUpdates(
 
     bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
         wi.rcWindow.top != pWatchedDC->rcWindow.top ||
-        wi.rcWindow.right != pWatchedDC->rcWindow.right || wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
+        wi.rcWindow.right != pWatchedDC->rcWindow.right ||
+        wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
 
     bDamageDetected |= bMoveDetected;
 
@@ -277,7 +290,7 @@ BOOL ShouldAcceptWindow(HWND hWnd, WINDOWINFO *pwi)
     //debugf("0x%x", hWnd);
     if (!IsWindowVisible(hWnd))
         return FALSE;
-
+    
     // If a window has a parent window, has no caption and is not a tool window,
     // then don't show it as a separate window.
     if (GetParent(hWnd) && ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & pwi->dwExStyle))
@@ -371,6 +384,7 @@ cleanup:
     return uResult;
 }
 
+// Convert memory page number in the screen buffer to a rectangle that covers it.
 void PageToRect(ULONG uPageNumber, OUT PRECT pRect)
 {
     ULONG uStride = g_ScreenWidth * 4;
@@ -398,11 +412,12 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
     BOOL bRecheckWindows = FALSE;
     HWND hwndOldDesktop = g_DesktopHwnd;
+#if USE_DIRTY_PAGES
     ULONG uTotalPages, uPage, uDirtyPages = 0;
     RECT rcDirtyArea, rcCurrent;
     BOOL bFirst = TRUE;
     HDC hDC;
-    QV_GET_SURFACE_DATA qvgsd;
+    QV_SYNCHRONIZE qvs;
 
     uTotalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
     //debugf("update all? %d", bUpdateEverything);
@@ -425,9 +440,9 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 
     // tell qvideo that we're done reading dirty bits
     hDC = GetDC(0);
-    qvgsd.uMagic = QVIDEO_MAGIC;
-    if (ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(QVESC_GET_SURFACE_DATA), (LPCSTR) &qvgsd, 0, NULL) <= 0)
-        errorf("ExtEscape(ready) failed");
+    qvs.uMagic = QVIDEO_MAGIC;
+    if (ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(QVESC_GET_SURFACE_DATA), (LPCSTR) &qvs, 0, NULL) <= 0)
+        errorf("ExtEscape(synchronize) failed");
     ReleaseDC(0, hDC);
 
     debugf("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
@@ -435,6 +450,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 
     if (uDirtyPages == 0) // nothing changed according to qvideo
         return ERROR_SUCCESS;
+#endif
 
     AttachToInputDesktop();
     if (hwndOldDesktop != g_DesktopHwnd)
@@ -474,9 +490,15 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     if (g_bFullScreenMode)
     {
         // just send damage event with the dirty area
+#if USE_DIRTY_PAGES
         send_window_damage_event(0, rcDirtyArea.left, rcDirtyArea.top,
             rcDirtyArea.right - rcDirtyArea.left,
             rcDirtyArea.bottom - rcDirtyArea.top);
+#else
+        send_window_damage_event(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
+        // TODO? if we're not using dirty bits we could narrow the damage area
+        // by checking all windows... but it's probably not worth it.
+#endif
         return ERROR_SUCCESS;
     }
 
@@ -504,9 +526,13 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
         }
         else
         {
+#if USE_DIRTY_PAGES
             if (IntersectRect(&rcCurrent, &rcDirtyArea, &pWatchedDC->rcWindow))
                 // skip windows that aren't in the changed area
                 CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, &rcDirtyArea);
+#else
+            CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, NULL);
+#endif
         }
 
         pWatchedDC = pNextWatchedDC;
@@ -554,6 +580,7 @@ DWORD WINAPI ResetWatch(PVOID param)
     g_StartButtonHwnd = NULL;
 
     // todo: wait for desktop switch - it can take some time after the session event
+    // (if using session switch event)
 
     // don't start shell events thread if we're in fullscreen mode
     // WatchForEvents will map the whole screen as one window
@@ -583,9 +610,7 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC = FindWindowByHwnd(hWnd);
     if (pWatchedDC)
         // already being watched
-            return pWatchedDC;
-
-    //SanitizeRect(&pwi->rcWindow, g_ScreenHeight, g_ScreenWidth);
+        return pWatchedDC;
 
     if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
@@ -649,14 +674,6 @@ PWATCHED_DC AddWindowWithInfo(
             free(pWatchedDC);
             return NULL;
     }
-    /*
-    uResult = AllocateAndMapPhysicalMemory((pWatchedDC->uCompositionBufferSize + 0xfff) >> 12, &pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
-    if (ERROR_SUCCESS != uResult) {
-    _tprintf(_T(__FUNCTION__) _T("(): AllocateAndMapPhysicalMemory() failed, error %d\n"), uResult);
-    free(pWatchedDC);
-    return NULL;
-    }
-    */
 
     logf("created: %x, pages: %d: %d %d %d\n",
         hWnd, pWatchedDC->PfnArray.uNumberOf4kPages,
@@ -721,12 +738,6 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
     VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
 
-    /*
-    uResult = UnmapAndFreePhysicalMemory(&pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
-    if (ERROR_SUCCESS != uResult)
-    _tprintf(_T(__FUNCTION__) _T("(): UnmapAndFreePhysicalMemory() failed, error %d\n"), uResult);
-
-    */
     if (g_bVchanClientConnected)
     {
         send_window_unmap(pWatchedDC->hWnd);
