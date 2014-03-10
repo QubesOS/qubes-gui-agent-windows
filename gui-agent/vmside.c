@@ -909,7 +909,7 @@ ULONG WINAPI WatchForEvents()
                 else
                 {
                     // hide the screen window
-                    send_window_destroy(NULL);
+                    send_window_unmap(NULL);
                 }
 
                 break;

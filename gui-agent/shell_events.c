@@ -741,7 +741,8 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     if (g_bVchanClientConnected)
     {
         send_window_unmap(pWatchedDC->hWnd);
-        send_window_destroy(pWatchedDC->hWnd);
+        if (pWatchedDC->hWnd) // never destroy screen "window"
+            send_window_destroy(pWatchedDC->hWnd);
     }
 
     free(pWatchedDC);
