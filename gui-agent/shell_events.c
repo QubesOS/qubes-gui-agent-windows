@@ -1,10 +1,6 @@
 #include "shell_events.h"
 #include "log.h"
 
-// If set, maintain each window's composition buffer separately.
-// Requires gui-daemon support for whole-screen cropping if not set.
-#define PER_WINDOW_BUFFER 0
-
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
 #define USE_DIRTY_PAGES 1
@@ -104,59 +100,6 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
     return NULL;
 }
 
-ULONG CopyScreenData(
-    BYTE *pCompositionBuffer,
-    RECT *pRect
-    )
-{
-    LONG Line;
-    ULONG uWindowStride;
-    ULONG uScreenStride;
-    PBYTE pSourceLine = NULL;
-    PBYTE pDestLine = NULL;
-    PBYTE pScreenBufferLimit;
-    //ULONG diff = 0;
-
-    if (!pCompositionBuffer || !g_pScreenData || !pRect)
-        return ERROR_INVALID_PARAMETER;
-
-    uWindowStride = (pRect->right - pRect->left) * 4;
-    uScreenStride = g_ScreenWidth * 4;
-    // Limit of screen buffer memory.
-    pScreenBufferLimit = g_pScreenData + uScreenStride*g_ScreenHeight;
-
-    // Range checking done manually later.
-    //SanitizeRect(pRect, g_ScreenHeight, g_ScreenWidth);
-    // FIXME: limit window width to screen width or handle that below
-
-    debugf("buffer=%p, (%d,%d)-(%d,%d), win stride %d, screen stride %d",
-        pCompositionBuffer, pRect->left, pRect->top, pRect->right, pRect->bottom,
-        uWindowStride, uScreenStride);
-
-    if (pRect->bottom - pRect->top == 0)
-        return ERROR_SUCCESS;
-
-    pDestLine = pCompositionBuffer;
-    pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left * 4;
-
-    for (Line = pRect->top; Line < pRect->bottom; Line++)
-    {
-        if (pSourceLine >= g_pScreenData)
-        {
-            if (pSourceLine+uScreenStride >= pScreenBufferLimit)
-                break; // end of screen buffer reached
-            //if (memcmp(pDestLine, pSourceLine, uWindowStride))
-            //    diff++;
-            memcpy(pDestLine, pSourceLine, uWindowStride);
-        }
-        pDestLine += uWindowStride;
-        pSourceLine += uScreenStride;
-    }
-    //debugf("%d/%d lines differ (%d%%)", diff, pRect->bottom-pRect->top, 100*diff/(pRect->bottom-pRect->top));
-
-    return ERROR_SUCCESS;
-}
-
 ULONG CheckWatchedWindowUpdates(
     PWATCHED_DC pWatchedDC,
     WINDOWINFO *pwi,
@@ -244,21 +187,12 @@ ULONG CheckWatchedWindowUpdates(
         //			 wi.rcWindow.bottom);
         pWatchedDC->rcWindow = wi.rcWindow;
 
-#if PER_WINDOW_BUFFER
-        CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
-#endif
-
         if (g_bVchanClientConnected)
         {
             RECT intersection;
 
             if (bMoveDetected || bResizingDetected)
                 send_window_configure(pWatchedDC);
-
-#if PER_WINDOW_BUFFER
-            if (bResizingDetected)
-                send_pixmap_mfns(pWatchedDC);
-#endif
 
             if (prcDamageArea == NULL)
             { // assume the whole area changed
@@ -643,51 +577,9 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->MaxHeight = g_ScreenHeight;
     pWatchedDC->MaxWidth = g_ScreenWidth;
 
-#if PER_WINDOW_BUFFER
-    pWatchedDC->uCompositionBufferSize = pWatchedDC->MaxHeight * pWatchedDC->MaxWidth * 4;
-
-    pWatchedDC->pCompositionBuffer =
-        (PUCHAR) VirtualAlloc(NULL, pWatchedDC->uCompositionBufferSize, MEM_COMMIT, PAGE_READWRITE);
-
-    if (!pWatchedDC->pCompositionBuffer)
-    {
-        perror("VirtualAlloc");
-        //perror("VirtualAlloc(%d)", pWatchedDC->uCompositionBufferSize);
-        free(pWatchedDC);
-        return NULL;
-    }
-
-    if (!VirtualLock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize))
-    {
-        perror("VirtualLock");
-        VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
-        free(pWatchedDC);
-        return NULL;
-    }
-
-    if (ERROR_SUCCESS != GetPfnList(pWatchedDC->pCompositionBuffer,
-        pWatchedDC->uCompositionBufferSize, &pWatchedDC->PfnArray))
-    {
-            perror("GetPfnList");
-            VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
-            VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
-            free(pWatchedDC);
-            return NULL;
-    }
-
-    logf("created: %x, pages: %d: %d %d %d\n",
-        hWnd, pWatchedDC->PfnArray.uNumberOf4kPages,
-        pWatchedDC->PfnArray.Pfn[0], pWatchedDC->PfnArray.Pfn[1], pWatchedDC->PfnArray.Pfn[2]);
-
-    CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
-#endif
-
     if (g_bVchanClientConnected)
     {
         send_window_create(pWatchedDC);
-#if PER_WINDOW_BUFFER
-        send_pixmap_mfns(pWatchedDC);
-#endif
         send_wmname(hWnd);
     }
 
