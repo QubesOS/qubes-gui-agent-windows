@@ -120,7 +120,7 @@ BOOL WINAPI FindModalChildProc(
 
     msp->ModalWindow = hwnd;
     debugf("0x%x: seems OK", hwnd);
-    return TRUE;
+    return FALSE; // stop enumeration
 }
 
 ULONG CheckWatchedWindowUpdates(
