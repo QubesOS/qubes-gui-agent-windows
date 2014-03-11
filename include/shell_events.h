@@ -12,6 +12,12 @@ typedef struct _BANNED_POPUP_WINDOWS
     HWND	hBannedPopupArray[1];
 } BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
 
+// used when searching for modal window that's blocking another window
+typedef struct _MODAL_SEARCH_PARAMS
+{
+    HWND ParentWindow; // window that's disabled by a modal window, input
+    HWND ModalWindow; // modal window that's active, output
+} MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
 
 ULONG StartShellEventsThread();
 

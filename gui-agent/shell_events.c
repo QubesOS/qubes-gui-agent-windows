@@ -100,6 +100,29 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
     return NULL;
 }
 
+// Enumerate top-level windows, searching for one that is modal
+// in relation to a parent one (passed in lParam).
+BOOL WINAPI FindModalChildProc(
+    IN HWND hwnd,
+    IN LPARAM lParam
+    )
+{
+    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS)lParam;
+    LONG wantedStyle = WS_POPUP | WS_VISIBLE;
+    HWND owner = GetWindow(hwnd, GW_OWNER);
+
+    // Modal windows are not child windows but owned windows.
+    if (owner != msp->ParentWindow)
+        return TRUE;
+
+    if ((GetWindowLong(hwnd, GWL_STYLE) & wantedStyle) != wantedStyle)
+        return TRUE;
+
+    msp->ModalWindow = hwnd;
+    debugf("0x%x: seems OK", hwnd);
+    return TRUE;
+}
+
 ULONG CheckWatchedWindowUpdates(
     PWATCHED_DC pWatchedDC,
     WINDOWINFO *pwi,
@@ -112,6 +135,7 @@ ULONG CheckWatchedWindowUpdates(
     BOOL bMoveDetected;
     BOOL bCurrentlyVisible;
     BOOL bUpdateStyle;
+    MODAL_SEARCH_PARAMS modalParams;
 
     if (!pWatchedDC)
         return ERROR_INVALID_PARAMETER;
@@ -166,6 +190,26 @@ ULONG CheckWatchedWindowUpdates(
         {
             SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, wi.dwStyle);
             DrawMenuBar(pWatchedDC->hWnd);
+        }
+    }
+
+    if ((wi.dwStyle & WS_DISABLED) && pWatchedDC->bVisible) // possibly showing a modal window
+    {
+        // todo: don't check this every time
+        debugf("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
+        modalParams.ParentWindow = pWatchedDC->hWnd;
+        modalParams.ModalWindow = NULL;
+        EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
+        debugf("result: 0x%x", modalParams.ModalWindow);
+        if (modalParams.ModalWindow) // found a modal "child"
+        {
+            PWATCHED_DC modalDc = FindWindowByHwnd(modalParams.ModalWindow);
+            if (modalDc && !modalDc->ModalParent)
+            {
+                modalDc->ModalParent = pWatchedDC->hWnd;
+                send_window_unmap(modalDc->hWnd);
+                send_window_map(modalDc);
+            }
         }
     }
 

@@ -344,7 +344,10 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         hdr.window = 0;
     hdr.untrusted_len = 0;
 
-    mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
+    if (pWatchedDC && pWatchedDC->ModalParent)
+        mmi.transient_for = (uint32_t) pWatchedDC->ModalParent;
+    else
+        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
 
     if (pWatchedDC)
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
