@@ -193,9 +193,10 @@ ULONG CheckWatchedWindowUpdates(
         }
     }
 
-    if ((wi.dwStyle & WS_DISABLED) && pWatchedDC->bVisible) // possibly showing a modal window
+    if ((wi.dwStyle & WS_DISABLED) && pWatchedDC->bVisible && (GetTickCount() > pWatchedDC->uTimeModalChecked + 500))
     {
-        // todo: don't check this every time
+        // possibly showing a modal window
+        pWatchedDC->uTimeModalChecked = GetTickCount();
         debugf("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
         modalParams.ParentWindow = pWatchedDC->hWnd;
         modalParams.ModalWindow = NULL;
@@ -602,7 +603,7 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->bVisible = IsWindowVisible(hWnd);
 
     pWatchedDC->bStyleChecked = FALSE;
-    pWatchedDC->uTimeAdded = GetTickCount();
+    pWatchedDC->uTimeAdded = pWatchedDC->uTimeModalChecked = GetTickCount();
 
     // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
     // FIXME: better prevention of large popup windows that can obscure dom0 screen

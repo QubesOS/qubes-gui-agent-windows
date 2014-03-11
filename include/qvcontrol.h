@@ -11,7 +11,6 @@ typedef struct _WATCHED_DC
 {
 	HWND hWnd;
 	HDC hDC;
-	//ULONG uModifications;
 
 	RECT	rcWindow;
 	LIST_ENTRY	le;
@@ -19,6 +18,7 @@ typedef struct _WATCHED_DC
 	BOOL	bVisible;
 	BOOL	bOverrideRedirect;
     HWND    ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
+    ULONG   uTimeModalChecked; // time of last check for modal window
 
 	BOOL	bStyleChecked;
 	ULONG	uTimeAdded;
