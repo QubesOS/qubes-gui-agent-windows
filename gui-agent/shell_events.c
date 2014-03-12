@@ -438,10 +438,10 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
         debugf("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
     }
 
-    if (!g_ExplorerHwnd || bRecheckWindows)
+    if (!g_ExplorerHwnd || bRecheckWindows || !IsWindow(g_ExplorerHwnd))
         g_ExplorerHwnd = FindWindow(NULL, _T("Program Manager"));
 
-    if (!g_TaskbarHwnd || bRecheckWindows)
+    if (!g_TaskbarHwnd || bRecheckWindows || !IsWindow(g_TaskbarHwnd))
     {
         g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
 
@@ -452,7 +452,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
                 ShowWindow(g_TaskbarHwnd, SW_HIDE);
     }
 
-    if (!g_StartButtonHwnd || bRecheckWindows)
+    if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
     {
         g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, _T("Button"), NULL);
 
