@@ -4,22 +4,33 @@
 #include <tchar.h>
 #include <WtsApi32.h>
 #include "qvcontrol.h"
+#include "common.h"
 
+#define REG_CONFIG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
+#define REG_CONFIG_FPS_VALUE TEXT("QvideoMaxFps")
+#define REG_CONFIG_DIRTY_VALUE TEXT("UseDirtyBits")
 
-typedef struct _BANNED_POPUP_WINDOWS {
+extern BOOL g_bUseDirtyBits;
+
+typedef struct _BANNED_POPUP_WINDOWS
+{
     ULONG	uNumberOfBannedPopups;
     HWND	hBannedPopupArray[1];
 } BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
 
+// used when searching for modal window that's blocking another window
+typedef struct _MODAL_SEARCH_PARAMS
+{
+    HWND ParentWindow; // window that's disabled by a modal window, input
+    HWND ModalWindow; // modal window that's active, output
+} MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
 
-ULONG StartShellEventsThread(
-);
+ULONG StartShellEventsThread();
 
-ULONG StopShellEventsThread(
-);
+ULONG StopShellEventsThread();
 
 ULONG ProcessUpdatedWindows(
-    BOOLEAN bUpdateEverything
+    BOOL bUpdateEverything
 );
 
 ULONG send_window_create(
@@ -58,8 +69,7 @@ ULONG send_window_map(
     PWATCHED_DC pWatchedDC
 );
 
-ULONG OpenScreenSection(
-);
+ULONG OpenScreenSection();
 
 DWORD WINAPI ResetWatch(PVOID param);
 

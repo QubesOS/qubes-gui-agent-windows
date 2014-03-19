@@ -1,6 +1,10 @@
 #include "shell_events.h"
 #include "log.h"
 
+// If set, only invalidate parts of the screen that changed according to
+// qvideo's dirty page scan of surface memory buffer.
+BOOL g_bUseDirtyBits = FALSE;
+
 const TCHAR g_szClassName[] = _T("QubesShellHookClass");
 ULONG g_uShellHookMessage = 0;
 HWND g_ShellEventsWnd = NULL;
@@ -8,51 +12,71 @@ HANDLE g_hShellEventsThread = NULL;
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
-BOOLEAN g_Initialized = FALSE;
+BOOL g_Initialized = FALSE;
 
 LONG g_ScreenHeight = 0;
 LONG g_ScreenWidth = 0;
 PBYTE g_pScreenData = NULL;
-HANDLE g_hSection;
+HANDLE g_hSection = NULL;
+
+// bit array of dirty pages in the screen buffer (changed since last check)
+PQV_DIRTY_PAGES g_pDirtyPages = NULL;
+HANDLE g_hDirtySection = NULL;
 
 HWND g_DesktopHwnd = NULL;
 HWND g_ExplorerHwnd = NULL;
 HWND g_TaskbarHwnd = NULL;
 HWND g_StartButtonHwnd = NULL;
 
-extern BOOLEAN g_bVchanClientConnected;
-extern BOOLEAN g_bFullScreenMode;
+extern BOOL g_bVchanClientConnected;
+extern BOOL g_bFullScreenMode;
 
 PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
     WINDOWINFO *pwi
-);
+    );
 
 ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
 
 ULONG OpenScreenSection()
 {
     TCHAR SectionName[100];
+    ULONG uLength = g_ScreenHeight * g_ScreenWidth * 4;
 
     // already initialized
     if (g_hSection && g_pScreenData)
         return ERROR_SUCCESS;
 
     StringCchPrintf(SectionName, _countof(SectionName),
-        _T("Global\\QubesSharedMemory_%x"), g_ScreenHeight * g_ScreenWidth * 4);
-    debugf("%s", SectionName);
+        _T("Global\\QubesSharedMemory_%x"), uLength);
+    debugf("screen section: %s", SectionName);
 
     g_hSection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
-    if (!g_hSection) {
-        return perror("OpenFileMapping");
+    if (!g_hSection)
+        return perror("OpenFileMapping(screen section)");
+
+    g_pScreenData = (PBYTE) MapViewOfFile(g_hSection, FILE_MAP_READ, 0, 0, 0);
+    if (!g_pScreenData)
+        return perror("MapViewOfFile(screen section)");
+
+    if (g_bUseDirtyBits)
+    {
+        uLength /= PAGE_SIZE;
+        StringCchPrintf(SectionName, _countof(SectionName),
+            _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
+        debugf("dirty section: %s", SectionName);
+
+        g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
+        if (!g_hDirtySection)
+            return perror("OpenFileMapping(dirty section)");
+
+        g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
+        if (!g_pDirtyPages)
+            return perror("MapViewOfFile(dirty section)");
+
+        debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
     }
 
-    g_pScreenData = MapViewOfFile(g_hSection, FILE_MAP_READ, 0, 0, 0);
-    if (!g_pScreenData) {
-        return perror("MapViewOfFile");
-    }
-
-    debugf("success: section=0x%x, data=0x%x", g_hSection, g_pScreenData);
     return ERROR_SUCCESS;
 }
 
@@ -62,7 +86,8 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 
     debugf("%x", hWnd);
     pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
+    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList)
+    {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
 
         if (hWnd == pWatchedDC->hWnd)
@@ -73,110 +98,62 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 
     return NULL;
 }
-/*
-#define ENFORCE_LIMITS(var, min, max) \
-    if (var < min) \
-        var = min; \
-    if (var > max) \
-        var = max;
 
-// unused, caused erratic window behaviour when partially outside of screen
-// CopyScreenData handles range checking
-ULONG SanitizeRect(
-    RECT *pRect,
-    LONG MaxHeight,
-    LONG MaxWidth
-)
+// Enumerate top-level windows, searching for one that is modal
+// in relation to a parent one (passed in lParam).
+BOOL WINAPI FindModalChildProc(
+    IN HWND hwnd,
+    IN LPARAM lParam
+    )
 {
-    if (!pRect)
-        return ERROR_INVALID_PARAMETER;
+    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS)lParam;
+    LONG wantedStyle = WS_POPUP | WS_VISIBLE;
+    HWND owner = GetWindow(hwnd, GW_OWNER);
 
-    ENFORCE_LIMITS(pRect->right, 0, MaxWidth);
-    ENFORCE_LIMITS(pRect->bottom, 0, MaxHeight);
+    // Modal windows are not child windows but owned windows.
+    if (owner != msp->ParentWindow)
+        return TRUE;
 
-    ENFORCE_LIMITS(pRect->left, 0, pRect->right);
-    ENFORCE_LIMITS(pRect->top, 0, pRect->bottom);
+    if ((GetWindowLong(hwnd, GWL_STYLE) & wantedStyle) != wantedStyle)
+        return TRUE;
 
-    return ERROR_SUCCESS;
-}
-*/
-ULONG CopyScreenData(
-    BYTE *pCompositionBuffer,
-    RECT *pRect
-)
-{
-    LONG Line;
-    ULONG uWindowStride;
-    ULONG uScreenStride;
-    PBYTE pSourceLine = NULL;
-    PBYTE pDestLine = NULL;
-    PBYTE pScreenBufferLimit;
-    //ULONG diff = 0;
-
-    if (!pCompositionBuffer || !g_pScreenData || !pRect)
-        return ERROR_INVALID_PARAMETER;
-
-    uWindowStride = (pRect->right - pRect->left) * 4;
-    uScreenStride = g_ScreenWidth * 4;
-    // Limit of screen buffer memory.
-    pScreenBufferLimit = g_pScreenData + uScreenStride*g_ScreenHeight;
-
-    // Range checking done manually later.
-    //SanitizeRect(pRect, g_ScreenHeight, g_ScreenWidth);
-
-    debugf("buffer=%p, (%d,%d)-(%d,%d), win stride %d, screen stride %d",
-        pCompositionBuffer, pRect->left, pRect->top, pRect->right, pRect->bottom,
-        uWindowStride, uScreenStride);
-
-    if (pRect->bottom - pRect->top == 0)
-        return ERROR_SUCCESS;
-
-    pDestLine = pCompositionBuffer;
-    pSourceLine = g_pScreenData + (uScreenStride * pRect->top) + pRect->left * 4;
-
-    for (Line = pRect->top; Line < pRect->bottom; Line++) {
-        if (pSourceLine >= g_pScreenData) {
-            if (pSourceLine+uScreenStride >= pScreenBufferLimit)
-                break; // end of screen buffer reached
-            //if (memcmp(pDestLine, pSourceLine, uWindowStride))
-            //    diff++;
-            memcpy(pDestLine, pSourceLine, uWindowStride);
-        }
-        pDestLine += uWindowStride;
-        pSourceLine += uScreenStride;
-    }
-    //debugf("%d/%d lines differ (%d%%)", diff, pRect->bottom-pRect->top, 100*diff/(pRect->bottom-pRect->top));
-
-    return ERROR_SUCCESS;
+    msp->ModalWindow = hwnd;
+    debugf("0x%x: seems OK", hwnd);
+    return FALSE; // stop enumeration
 }
 
 ULONG CheckWatchedWindowUpdates(
     PWATCHED_DC pWatchedDC,
     WINDOWINFO *pwi,
-    BOOLEAN bDamageDetected
-)
+    BOOL bDamageDetected,
+    PRECT prcDamageArea
+    )
 {
     WINDOWINFO wi;
-    BOOLEAN	bResizingDetected;
-    BOOLEAN bMoveDetected;
-    BOOL	bCurrentlyVisible;
-    BOOL	bUpdateStyle;
+    BOOL bResizingDetected;
+    BOOL bMoveDetected;
+    BOOL bCurrentlyVisible;
+    BOOL bUpdateStyle;
+    MODAL_SEARCH_PARAMS modalParams;
 
     if (!pWatchedDC)
         return ERROR_INVALID_PARAMETER;
 
     debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
 
-    if (!pwi) {
+    if (!pwi)
+    {
         wi.cbSize = sizeof(wi);
-        if (!GetWindowInfo(pWatchedDC->hWnd, &wi)) {
+        if (!GetWindowInfo(pWatchedDC->hWnd, &wi))
             return perror("GetWindowInfo");
-        }
-    } else
+    }
+    else
         memcpy(&wi, pwi, sizeof(wi));
 
     bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
-    if (g_bVchanClientConnected) {
+    if (g_bVchanClientConnected)
+    {
+        // visibility change
         if (bCurrentlyVisible && !pWatchedDC->bVisible)
             send_window_map(pWatchedDC);
 
@@ -184,62 +161,101 @@ ULONG CheckWatchedWindowUpdates(
             send_window_unmap(pWatchedDC->hWnd);
     }
 
-    if (!pWatchedDC->bStyleChecked && (GetTickCount() >= pWatchedDC->uTimeAdded + 500)) {
+    if (!pWatchedDC->bStyleChecked && (GetTickCount() >= pWatchedDC->uTimeAdded + 500))
+    {
         pWatchedDC->bStyleChecked = TRUE;
 
         bUpdateStyle = FALSE;
-        if (wi.dwStyle & WS_MINIMIZEBOX) {
+        if (wi.dwStyle & WS_MINIMIZEBOX)
+        {
             wi.dwStyle &= ~WS_MINIMIZEBOX;
             bUpdateStyle = TRUE;
             DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
         }
-/*		if (Style & WS_MAXIMIZEBOX) {
-            Style &= ~WS_MAXIMIZEBOX;
-            bUpdateStyle = TRUE;
-            DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MAXIMIZE, MF_BYCOMMAND);
+        /*		if (Style & WS_MAXIMIZEBOX)
+        {
+        Style &= ~WS_MAXIMIZEBOX;
+        bUpdateStyle = TRUE;
+        DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MAXIMIZE, MF_BYCOMMAND);
         }
-*/
-        if (wi.dwStyle & WS_SIZEBOX) {
+        */
+        if (wi.dwStyle & WS_SIZEBOX)
+        {
             wi.dwStyle &= ~WS_SIZEBOX;
             bUpdateStyle = TRUE;
         }
 
-        if (bUpdateStyle) {
+        if (bUpdateStyle)
+        {
             SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, wi.dwStyle);
             DrawMenuBar(pWatchedDC->hWnd);
         }
     }
 
-    pWatchedDC->bVisible = bCurrentlyVisible;
+    if ((wi.dwStyle & WS_DISABLED) && pWatchedDC->bVisible && (GetTickCount() > pWatchedDC->uTimeModalChecked + 500))
+    {
+        // possibly showing a modal window
+        pWatchedDC->uTimeModalChecked = GetTickCount();
+        debugf("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
+        modalParams.ParentWindow = pWatchedDC->hWnd;
+        modalParams.ModalWindow = NULL;
+        EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
+        debugf("result: 0x%x", modalParams.ModalWindow);
+        if (modalParams.ModalWindow) // found a modal "child"
+        {
+            PWATCHED_DC modalDc = FindWindowByHwnd(modalParams.ModalWindow);
+            if (modalDc && !modalDc->ModalParent)
+            {
+                modalDc->ModalParent = pWatchedDC->hWnd;
+                send_window_unmap(modalDc->hWnd);
+                send_window_map(modalDc);
+            }
+        }
+    }
 
-    //SanitizeRect(&wi.rcWindow, pWatchedDC->MaxHeight, pWatchedDC->MaxWidth);
+    pWatchedDC->bVisible = bCurrentlyVisible;
 
     bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
         wi.rcWindow.top != pWatchedDC->rcWindow.top ||
-        wi.rcWindow.right != pWatchedDC->rcWindow.right || wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
+        wi.rcWindow.right != pWatchedDC->rcWindow.right ||
+        wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
 
     bDamageDetected |= bMoveDetected;
 
     bResizingDetected = (wi.rcWindow.right - wi.rcWindow.left != pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left) ||
         (wi.rcWindow.bottom - wi.rcWindow.top != pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
 
-    if (bDamageDetected || bResizingDetected) {
-//		_tprintf(_T("hwnd: %x, left: %d top: %d right: %d bottom %d\n"), pWatchedDC->hWnd, wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right,
-//			 wi.rcWindow.bottom);
-
+    if (bDamageDetected || bResizingDetected)
+    {
+        //		_tprintf(_T("hwnd: %x, left: %d top: %d right: %d bottom %d\n"), pWatchedDC->hWnd, wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right,
+        //			 wi.rcWindow.bottom);
         pWatchedDC->rcWindow = wi.rcWindow;
-        CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
 
-        if (g_bVchanClientConnected) {
+        if (g_bVchanClientConnected)
+        {
+            RECT intersection;
+
             if (bMoveDetected || bResizingDetected)
                 send_window_configure(pWatchedDC);
 
-            if (bResizingDetected)
-                send_pixmap_mfns(pWatchedDC);
-
-            send_window_damage_event(pWatchedDC->hWnd, 0, 0,
-                pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left,
-                pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
+            if (prcDamageArea == NULL)
+            { // assume the whole area changed
+                send_window_damage_event(pWatchedDC->hWnd,
+                    0,
+                    0,
+                    pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left,
+                    pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
+            }
+            else
+            {
+                // send only intersection of damage area and window area
+                IntersectRect(&intersection, prcDamageArea, &pWatchedDC->rcWindow);
+                send_window_damage_event(pWatchedDC->hWnd,
+                    intersection.left - pWatchedDC->rcWindow.left,
+                    intersection.top - pWatchedDC->rcWindow.top,
+                    intersection.right - pWatchedDC->rcWindow.left,
+                    intersection.bottom - pWatchedDC->rcWindow.top);
+            }
         }
     }
 
@@ -252,7 +268,7 @@ BOOL ShouldAcceptWindow(HWND hWnd, WINDOWINFO *pwi)
     //debugf("0x%x", hWnd);
     if (!IsWindowVisible(hWnd))
         return FALSE;
-
+    
     // If a window has a parent window, has no caption and is not a tool window,
     // then don't show it as a separate window.
     if (GetParent(hWnd) && ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & pwi->dwExStyle))
@@ -265,10 +281,10 @@ BOOL ShouldAcceptWindow(HWND hWnd, WINDOWINFO *pwi)
 BOOL CALLBACK EnumWindowsProc(
     HWND hWnd,
     LPARAM lParam
-)
+    )
 {
     WINDOWINFO wi;
-    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)lParam;
+    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS) lParam;
     ULONG i;
 
     wi.cbSize = sizeof(wi);
@@ -305,16 +321,19 @@ ULONG AttachToInputDesktop()
         DESKTOP_CREATEMENU|DESKTOP_CREATEWINDOW|DESKTOP_ENUMERATE|DESKTOP_HOOKCONTROL
         |DESKTOP_JOURNALPLAYBACK|DESKTOP_READOBJECTS|DESKTOP_WRITEOBJECTS);
 
-    if (!desktop) {
+    if (!desktop)
+    {
         uResult = perror("OpenInputDesktop");
         goto cleanup;
     }
 
 #ifdef DEBUG
-    if (!GetUserObjectInformation(desktop, UOI_NAME, name, sizeof(name), &needed)) {
+    if (!GetUserObjectInformation(desktop, UOI_NAME, name, sizeof(name), &needed))
+    {
         perror("GetUserObjectInformation");
     }
-    else {
+    else
+    {
         // Get access token from ourselves.
         OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
         // Session ID is stored in the access token.
@@ -327,7 +346,8 @@ ULONG AttachToInputDesktop()
 
     // Close old handle to prevent object leaks.
     oldDesktop = GetThreadDesktop(GetCurrentThreadId());
-    if (!SetThreadDesktop(desktop)) {
+    if (!SetThreadDesktop(desktop))
+    {
         uResult = perror("SetThreadDesktop");
         goto cleanup;
     }
@@ -342,29 +362,87 @@ cleanup:
     return uResult;
 }
 
+// Convert memory page number in the screen buffer to a rectangle that covers it.
+void PageToRect(ULONG uPageNumber, OUT PRECT pRect)
+{
+    ULONG uStride = g_ScreenWidth * 4;
+    ULONG uPageStart = uPageNumber * PAGE_SIZE;
+
+    pRect->left = (uPageStart % uStride) / 4;
+    pRect->top = uPageStart / uStride;
+    pRect->right = ((uPageStart+PAGE_SIZE-1) % uStride) / 4;
+    pRect->bottom = (uPageStart+PAGE_SIZE-1) / uStride;
+
+    if (pRect->left > pRect->right) // page crossed right border
+    {
+        pRect->left = 0;
+        pRect->right = g_ScreenWidth-1;
+    }
+}
+
 // Main function that scans for window updates.
 // Runs in the main thread.
-ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
+ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 {
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
     CHAR BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
     PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
-    BOOLEAN bRecheckWindows = FALSE;
-    HWND oldDesktop = g_DesktopHwnd;
+    BOOL bRecheckWindows = FALSE;
+    HWND hwndOldDesktop = g_DesktopHwnd;
+    ULONG uTotalPages, uPage, uDirtyPages = 0;
+    RECT rcDirtyArea, rcCurrent;
+    BOOL bFirst = TRUE;
+    HDC hDC;
+    QV_SYNCHRONIZE qvs;
 
-    debugf("update all? %d", bUpdateEverything);
+    if (g_bUseDirtyBits)
+    {
+        uTotalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
+        //debugf("update all? %d", bUpdateEverything);
+        // create a damage rectangle from changed pages
+        for (uPage = 0; uPage < uTotalPages; uPage++)
+        {
+            if (BIT_GET(g_pDirtyPages->DirtyBits, uPage))
+            {
+                uDirtyPages++;
+                PageToRect(uPage, &rcCurrent);
+                if (bFirst)
+                {
+                    rcDirtyArea = rcCurrent;
+                    bFirst = FALSE;
+                }
+                else
+                    UnionRect(&rcDirtyArea, &rcDirtyArea, &rcCurrent);
+            }
+        }
 
-    AttachToInputDesktop();
-    if (oldDesktop != g_DesktopHwnd) {
-        bRecheckWindows = TRUE;
-        debugf("desktop changed (old 0x%x), refreshing all windows", oldDesktop);
+        // tell qvideo that we're done reading dirty bits
+        hDC = GetDC(0);
+        qvs.uMagic = QVIDEO_MAGIC;
+        if (ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(qvs), (LPCSTR) &qvs, 0, NULL) <= 0)
+            errorf("ExtEscape(synchronize) failed");
+        ReleaseDC(0, hDC);
+
+        debugf("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
+            rcDirtyArea.left, rcDirtyArea.top, rcDirtyArea.right, rcDirtyArea.bottom);
+
+        if (uDirtyPages == 0) // nothing changed according to qvideo
+            return ERROR_SUCCESS;
     }
 
-    if (!g_ExplorerHwnd || bRecheckWindows)
+    AttachToInputDesktop();
+    if (hwndOldDesktop != g_DesktopHwnd)
+    {
+        bRecheckWindows = TRUE;
+        debugf("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
+    }
+
+    if (!g_ExplorerHwnd || bRecheckWindows || !IsWindow(g_ExplorerHwnd))
         g_ExplorerHwnd = FindWindow(NULL, _T("Program Manager"));
 
-    if (!g_TaskbarHwnd || bRecheckWindows) {
+    if (!g_TaskbarHwnd || bRecheckWindows || !IsWindow(g_TaskbarHwnd))
+    {
         g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
 
         if (g_TaskbarHwnd)
@@ -374,7 +452,8 @@ ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
                 ShowWindow(g_TaskbarHwnd, SW_HIDE);
     }
 
-    if (!g_StartButtonHwnd || bRecheckWindows) {
+    if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
+    {
         g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, _T("Button"), NULL);
 
         if (g_StartButtonHwnd)
@@ -390,9 +469,15 @@ ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
     if (g_bFullScreenMode)
     {
         // just send damage event with the dirty area
-        send_window_damage_event(0, 0, 0,
-            g_ScreenWidth,
-            g_ScreenHeight);
+        if (g_bUseDirtyBits)
+            send_window_damage_event(0, rcDirtyArea.left, rcDirtyArea.top,
+                rcDirtyArea.right - rcDirtyArea.left,
+                rcDirtyArea.bottom - rcDirtyArea.top);
+        else
+            send_window_damage_event(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
+        // TODO? if we're not using dirty bits we could narrow the damage area
+        // by checking all windows... but it's probably not worth it.
+
         return ERROR_SUCCESS;
     }
 
@@ -407,16 +492,28 @@ ULONG ProcessUpdatedWindows(BOOLEAN bUpdateEverything)
     EnumWindows(EnumWindowsProc, (LPARAM)pBannedPopupsList);
 
     pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList) {
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList)
+    {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
         pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
-        if (!IsWindow(pWatchedDC->hWnd)) {
+        if (!IsWindow(pWatchedDC->hWnd))
+        {
             RemoveEntryList(&pWatchedDC->le);
             RemoveWatchedDC(pWatchedDC);
             pWatchedDC = NULL;
-        } else
-            CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything);
+        }
+        else
+        {
+            if (g_bUseDirtyBits)
+            {
+                if (IntersectRect(&rcCurrent, &rcDirtyArea, &pWatchedDC->rcWindow))
+                    // skip windows that aren't in the changed area
+                    CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, &rcDirtyArea);
+            }
+            else
+                CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, NULL);
+        }
 
         pWatchedDC = pNextWatchedDC;
     }
@@ -444,7 +541,8 @@ DWORD WINAPI ResetWatch(PVOID param)
     EnterCriticalSection(&g_csWatchedWindows);
 
     pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList) {
+    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList)
+    {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
         pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
@@ -462,10 +560,12 @@ DWORD WINAPI ResetWatch(PVOID param)
     g_StartButtonHwnd = NULL;
 
     // todo: wait for desktop switch - it can take some time after the session event
+    // (if using session switch event)
 
     // don't start shell events thread if we're in fullscreen mode
     // WatchForEvents will map the whole screen as one window
-    if (!g_bFullScreenMode) {
+    if (!g_bFullScreenMode)
+    {
         StartShellEventsThread();
     }
 
@@ -477,25 +577,25 @@ DWORD WINAPI ResetWatch(PVOID param)
 PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
     WINDOWINFO *pwi
-)
+    )
 {
     PWATCHED_DC pWatchedDC = NULL;
 
-    debugf("0x%x", hWnd);
     if (!pwi)
         return NULL;
+
+    debugf("0x%x (%d,%d)-(%d,%d)",
+        hWnd, pwi->rcWindow.left, pwi->rcWindow.top, pwi->rcWindow.right, pwi->rcWindow.bottom);
 
     pWatchedDC = FindWindowByHwnd(hWnd);
     if (pWatchedDC)
         // already being watched
         return pWatchedDC;
 
-    //SanitizeRect(&pwi->rcWindow, g_ScreenHeight, g_ScreenWidth);
-
     if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
 
-    pWatchedDC = malloc(sizeof(WATCHED_DC));
+    pWatchedDC = (PWATCHED_DC) malloc(sizeof(WATCHED_DC));
     if (!pWatchedDC)
         return NULL;
 
@@ -504,15 +604,18 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->bVisible = IsWindowVisible(hWnd);
 
     pWatchedDC->bStyleChecked = FALSE;
-    pWatchedDC->uTimeAdded = GetTickCount();
+    pWatchedDC->uTimeAdded = pWatchedDC->uTimeModalChecked = GetTickCount();
 
     // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
-    if (pwi->rcWindow.right-pwi->rcWindow.left == g_ScreenWidth && pwi->rcWindow.bottom-pwi->rcWindow.top == g_ScreenHeight)
+    if (pwi->rcWindow.right-pwi->rcWindow.left == g_ScreenWidth
+        && pwi->rcWindow.bottom-pwi->rcWindow.top == g_ScreenHeight)
+    {
         pWatchedDC->bOverrideRedirect = FALSE;
+    }
     else
-        pWatchedDC->bOverrideRedirect = (BOOL)((WS_CAPTION & pwi->dwStyle) != WS_CAPTION);
+        pWatchedDC->bOverrideRedirect = (BOOL) ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION);
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
@@ -520,56 +623,16 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->MaxHeight = g_ScreenHeight;
     pWatchedDC->MaxWidth = g_ScreenWidth;
 
-    pWatchedDC->uCompositionBufferSize = pWatchedDC->MaxHeight * pWatchedDC->MaxWidth * 4;
-
-    pWatchedDC->pCompositionBuffer = VirtualAlloc(NULL, pWatchedDC->uCompositionBufferSize, MEM_COMMIT, PAGE_READWRITE);
-    if (!pWatchedDC->pCompositionBuffer) {
-        perror("VirtualAlloc");
-        //perror("VirtualAlloc(%d)", pWatchedDC->uCompositionBufferSize);
-        free(pWatchedDC);
-        return NULL;
-    }
-
-    if (!VirtualLock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize)) {
-        perror("VirtualLock");
-        VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
-        free(pWatchedDC);
-        return NULL;
-    }
-
-    if (ERROR_SUCCESS != GetPfnList(pWatchedDC->pCompositionBuffer,
-        pWatchedDC->uCompositionBufferSize, &pWatchedDC->PfnArray)) {
-        perror("GetPfnList");
-        VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
-        VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
-        free(pWatchedDC);
-        return NULL;
-    }
-/*
-    uResult = AllocateAndMapPhysicalMemory((pWatchedDC->uCompositionBufferSize + 0xfff) >> 12, &pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
-    if (ERROR_SUCCESS != uResult) {
-        _tprintf(_T(__FUNCTION__) _T("(): AllocateAndMapPhysicalMemory() failed, error %d\n"), uResult);
-        free(pWatchedDC);
-        return NULL;
-    }
-*/
-
-    logf("created: %x, pages: %d: %d %d %d\n",
-        hWnd, pWatchedDC->PfnArray.uNumberOf4kPages,
-        pWatchedDC->PfnArray.Pfn[0], pWatchedDC->PfnArray.Pfn[1], pWatchedDC->PfnArray.Pfn[2]);
-
-    CopyScreenData(pWatchedDC->pCompositionBuffer, &pWatchedDC->rcWindow);
-
-    if (g_bVchanClientConnected) {
+    if (g_bVchanClientConnected)
+    {
         send_window_create(pWatchedDC);
-        send_pixmap_mfns(pWatchedDC);
         send_wmname(hWnd);
     }
 
     InsertTailList(&g_WatchedWindowsList, &pWatchedDC->le);
 
-//	_tprintf(_T("created: %x, left: %d top: %d right: %d bottom %d\n"), hWnd, pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
-//		 pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom);
+    //	_tprintf(_T("created: %x, left: %d top: %d right: %d bottom %d\n"), hWnd, pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
+    //		 pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom);
 
     //debugf("success");
     return pWatchedDC;
@@ -585,7 +648,8 @@ PWATCHED_DC AddWindow(HWND hWnd)
         return NULL;
 
     wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(hWnd, &wi)) {
+    if (!GetWindowInfo(hWnd, &wi))
+    {
         perror("GetWindowInfo");
         return NULL;
     }
@@ -612,15 +676,11 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
     VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
 
-/*
-    uResult = UnmapAndFreePhysicalMemory(&pWatchedDC->pCompositionBuffer, &pWatchedDC->PfnArray);
-    if (ERROR_SUCCESS != uResult)
-        _tprintf(_T(__FUNCTION__) _T("(): UnmapAndFreePhysicalMemory() failed, error %d\n"), uResult);
-
-*/
-    if (g_bVchanClientConnected) {
+    if (g_bVchanClientConnected)
+    {
         send_window_unmap(pWatchedDC->hWnd);
-        send_window_destroy(pWatchedDC->hWnd);
+        if (pWatchedDC->hWnd) // never destroy screen "window"
+            send_window_destroy(pWatchedDC->hWnd);
     }
 
     free(pWatchedDC);
@@ -636,7 +696,8 @@ ULONG RemoveWindow(HWND hWnd)
     EnterCriticalSection(&g_csWatchedWindows);
 
     pWatchedDC = FindWindowByHwnd(hWnd);
-    if (!pWatchedDC) {
+    if (!pWatchedDC)
+    {
         LeaveCriticalSection(&g_csWatchedWindows);
         return ERROR_SUCCESS;
     }
@@ -666,13 +727,14 @@ ULONG CheckWindowUpdates(HWND hWnd)
 
     // AddWindowWithRect() returns an existing pWatchedDC if the window is already on the list.
     pWatchedDC = AddWindowWithInfo(hWnd, &wi);
-    if (!pWatchedDC) {
+    if (!pWatchedDC)
+    {
         logf("AddWindowWithInfo returned NULL");
         LeaveCriticalSection(&g_csWatchedWindows);
         return ERROR_SUCCESS;
     }
 
-    CheckWatchedWindowUpdates(pWatchedDC, &wi, FALSE);
+    CheckWatchedWindowUpdates(pWatchedDC, &wi, FALSE, NULL);
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
@@ -687,54 +749,56 @@ LRESULT CALLBACK ShellHookWndProc(
     UINT uMsg,
     WPARAM wParam,
     LPARAM lParam
-)
+    )
 {
     HWND targetWindow = (HWND) lParam;
 
-    if (uMsg == g_uShellHookMessage) {
-        switch (wParam) {
-            case HSHELL_WINDOWCREATED:
-                AddWindow(targetWindow);
-                break;
+    if (uMsg == g_uShellHookMessage)
+    {
+        switch (wParam)
+        {
+        case HSHELL_WINDOWCREATED:
+            AddWindow(targetWindow);
+            break;
 
-            case HSHELL_WINDOWDESTROYED:
-                RemoveWindow(targetWindow);
-                break;
+        case HSHELL_WINDOWDESTROYED:
+            RemoveWindow(targetWindow);
+            break;
 
-            case HSHELL_REDRAW:
-                debugf("HSHELL_REDRAW");
-                goto update;
-            case HSHELL_RUDEAPPACTIVATED:
-                debugf("HSHELL_RUDEAPPACTIVATED");
-                goto update;
-            case HSHELL_WINDOWACTIVATED:
-                debugf("HSHELL_RUDEAPPACTIVATED");
-                goto update;
-            case HSHELL_GETMINRECT:
-                debugf("HSHELL_GETMINRECT");
-                targetWindow = ((SHELLHOOKINFO*)lParam)->hwnd;
+        case HSHELL_REDRAW:
+            debugf("HSHELL_REDRAW");
+            goto update;
+        case HSHELL_RUDEAPPACTIVATED:
+            debugf("HSHELL_RUDEAPPACTIVATED");
+            goto update;
+        case HSHELL_WINDOWACTIVATED:
+            debugf("HSHELL_RUDEAPPACTIVATED");
+            goto update;
+        case HSHELL_GETMINRECT:
+            debugf("HSHELL_GETMINRECT");
+            targetWindow = ((SHELLHOOKINFO*)lParam)->hwnd;
 update:
-                CheckWindowUpdates(targetWindow);
-                break;
+            CheckWindowUpdates(targetWindow);
+            break;
             /*
             case HSHELL_WINDOWREPLACING:
             case HSHELL_WINDOWREPLACED:
             case HSHELL_FLASH:
             case HSHELL_ENDTASK:
             case HSHELL_APPCOMMAND:
-                break;
+            break;
             */
         }
 
         return 0;
     }
 
-    switch (uMsg) {
+    switch (uMsg)
+    {
     case WM_WTSSESSION_CHANGE:
         logf("session change: event 0x%x, session %d", wParam, lParam);
-        //if (!CreateThread(0, 0, ResetWatch, NULL, 0, NULL)) {
+        //if (!CreateThread(0, 0, ResetWatch, NULL, 0, NULL))
         //    perror("CreateThread(ResetWatch)");
-        //}
         break;
     case WM_CLOSE:
         debugf("WM_CLOSE");
@@ -747,7 +811,7 @@ update:
         PostQuitMessage(0);
         break;
     default:
-//      _tprintf(_T("hwnd: %x, msg %d\n"), hwnd, uMsg);
+        //_tprintf(_T("hwnd: %x, msg %d\n"), hwnd, uMsg);
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
     return 0;
@@ -770,28 +834,28 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
     wc.hInstance = hInstance;
     wc.lpszClassName = g_szClassName;
 
-    if (!RegisterClassEx(&wc)) {
+    if (!RegisterClassEx(&wc))
         return perror("RegisterClassEx");
-    }
 
     hwnd = CreateWindow(g_szClassName, _T("QubesShellHook"),
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, NULL, NULL, hInstance, NULL);
 
-    if (hwnd == NULL) {
+    if (hwnd == NULL)
         return perror("CreateWindow");
-    }
 
     ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
 
-    if (!RegisterShellHookWindow(hwnd)) {
+    if (!RegisterShellHookWindow(hwnd))
+    {
         uResult = perror("RegisterShellHookWindow");
         DestroyWindow(hwnd);
         UnregisterClass(g_szClassName, hInstance);
         return uResult;
     }
     /*
-    if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_ALL_SESSIONS)) {
+    if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_ALL_SESSIONS))
+    {
         uResult = perror("WTSRegisterSessionNotification");
         DestroyWindow(hwnd);
         UnregisterClass(g_szClassName, hInstance);
@@ -816,7 +880,8 @@ ULONG HookMessageLoop()
     HINSTANCE hInstance = GetModuleHandle(NULL);
 
     debugf("start");
-    while (GetMessage(&Msg, NULL, 0, 0) > 0) {
+    while (GetMessage(&Msg, NULL, 0, 0) > 0)
+    {
         TranslateMessage(&Msg);
         DispatchMessage(&Msg);
     }
@@ -829,17 +894,14 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
 {
     ULONG uResult;
 
-    if (ERROR_SUCCESS != AttachToInputDesktop()) {
+    if (ERROR_SUCCESS != AttachToInputDesktop())
         return perror("AttachToInputDesktop");
-    }
 
-    if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWnd)) {
+    if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWnd))
         return perror("CreateShellHookWindow");
-    }
 
-    if (ERROR_SUCCESS != (uResult = HookMessageLoop())) {
+    if (ERROR_SUCCESS != (uResult = HookMessageLoop()))
         return uResult;
-    }
 
     if (!UnregisterClass(g_szClassName, NULL))
         return perror("UnregisterClass");
@@ -855,25 +917,18 @@ ULONG StartShellEventsThread()
 
     if (!g_Initialized)
     {
-         if (ERROR_SUCCESS != OpenScreenSection()) {
+        if (ERROR_SUCCESS != OpenScreenSection())
             return perror("OpenScreenSection");
-        }
 
-        /*
-        if (!LoggedSetLockPagesPrivilege(TRUE)) {
-            _tprintf(_T(__FUNCTION__) _T("(): LoggedSetLockPagesPrivilege() failed\n"));
-            return ERROR_PRIVILEGE_NOT_HELD;
-        }
-        */
         InitializeListHead(&g_WatchedWindowsList);
         InitializeCriticalSection(&g_csWatchedWindows);
+
         g_Initialized = TRUE;
     }
 
     g_hShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
-    if (!g_hShellEventsThread) {
+    if (!g_hShellEventsThread)
         return perror("CreateThread(ShellEventsThread)");
-    }
 
     debugf("new thread ID: %d", threadId);
     return ERROR_SUCCESS;

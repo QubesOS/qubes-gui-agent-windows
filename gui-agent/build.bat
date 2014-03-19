@@ -1,1 +1,1 @@
-build.exe -cegZ
+build.exe -cewgZ

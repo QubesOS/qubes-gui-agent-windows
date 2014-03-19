@@ -6,7 +6,7 @@ UMTYPE=windows
 USE_MSVCRT=1
 
 UMENTRY = wmain
-C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \

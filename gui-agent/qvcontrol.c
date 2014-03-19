@@ -7,19 +7,19 @@
 
 ULONG FindQubesDisplayDevice(
     PDISPLAY_DEVICE pQubesDisplayDevice
-)
+    )
 {
     DISPLAY_DEVICE DisplayDevice;
     DWORD iDevNum = 0;
     BOOL bResult;
 
     debugf("start");
-    memset(&DisplayDevice, 0, sizeof(DISPLAY_DEVICE));
 
     DisplayDevice.cb = sizeof(DISPLAY_DEVICE);
 
     iDevNum = 0;
-    while ((bResult = EnumDisplayDevices(NULL, iDevNum, &DisplayDevice, 0)) == TRUE) {
+    while ((bResult = EnumDisplayDevices(NULL, iDevNum, &DisplayDevice, 0)) == TRUE)
+    {
         logf("DevNum: %d\nName: %s\nString: %s\nFlags: %x\nID: %s\nKey: %s\n",
             iDevNum, &DisplayDevice.DeviceName[0], &DisplayDevice.DeviceString[0],
             DisplayDevice.StateFlags, &DisplayDevice.DeviceID[0], &DisplayDevice.DeviceKey[0]);
@@ -30,7 +30,8 @@ ULONG FindQubesDisplayDevice(
         iDevNum++;
     }
 
-    if (!bResult) {
+    if (!bResult)
+    {
         errorf("No '%s' found.\n", QUBES_DRIVER_NAME);
         return ERROR_NOT_SUPPORTED;
     }
@@ -46,7 +47,7 @@ ULONG SupportVideoMode(
     ULONG uWidth,
     ULONG uHeight,
     ULONG uBpp
-)
+    )
 {
     HDC hControlDC;
     QV_SUPPORT_MODE QvSupportMode;
@@ -60,9 +61,8 @@ ULONG SupportVideoMode(
         return ERROR_INVALID_PARAMETER;
 
     hControlDC = CreateDC(NULL, ptszQubesDeviceName, NULL, NULL);
-    if (!hControlDC) {
+    if (!hControlDC)
         return perror("CreateDC");
-    }
 
     QvSupportMode.uMagic = QVIDEO_MAGIC;
     QvSupportMode.uWidth = uWidth;
@@ -72,7 +72,8 @@ ULONG SupportVideoMode(
     iRet = ExtEscape(hControlDC, QVESC_SUPPORT_MODE, sizeof(QvSupportMode), (LPCSTR) & QvSupportMode, 0, NULL);
     DeleteDC(hControlDC);
 
-    if (iRet <= 0) {
+    if (iRet <= 0)
+    {
         errorf("ExtEscape(QVESC_SUPPORT_MODE) failed, error %d\n", iRet);
         return ERROR_NOT_SUPPORTED;
     }
@@ -84,7 +85,7 @@ ULONG SupportVideoMode(
 ULONG GetWindowData(
     HWND hWnd,
     PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse
-)
+    )
 {
     HDC hDC;
     QV_GET_SURFACE_DATA QvGetSurfaceData;
@@ -95,24 +96,24 @@ ULONG GetWindowData(
         return ERROR_INVALID_PARAMETER;
 
     hDC = GetDC(hWnd);
-    if (!hDC) {
+    if (!hDC)
         return perror("GetDC");
-    }
 
     QvGetSurfaceData.uMagic = QVIDEO_MAGIC;
-    memset(pQvGetSurfaceDataResponse, 0, sizeof(QV_GET_SURFACE_DATA_RESPONSE));
 
     iRet = ExtEscape(hDC, QVESC_GET_SURFACE_DATA, sizeof(QV_GET_SURFACE_DATA),
         (LPCSTR) & QvGetSurfaceData, sizeof(QV_GET_SURFACE_DATA_RESPONSE), (LPSTR) pQvGetSurfaceDataResponse);
 
     ReleaseDC(hWnd, hDC);
 
-    if (iRet <= 0) {
+    if (iRet <= 0)
+    {
         errorf("ExtEscape(QVESC_GET_SURFACE_DATA) failed, error %d\n", iRet);
         return ERROR_NOT_SUPPORTED;
     }
 
-    if (QVIDEO_MAGIC != pQvGetSurfaceDataResponse->uMagic) {
+    if (QVIDEO_MAGIC != pQvGetSurfaceDataResponse->uMagic)
+    {
         errorf("The response to QVESC_GET_SURFACE_DATA is not valid\n");
         return ERROR_NOT_SUPPORTED;
     }
@@ -120,6 +121,7 @@ ULONG GetWindowData(
     debugf("hdc 0x%0x, IsScreen %d, %dx%d@%d, delta %d", hDC, pQvGetSurfaceDataResponse->bIsScreen,
         pQvGetSurfaceDataResponse->cx, pQvGetSurfaceDataResponse->cy,
         pQvGetSurfaceDataResponse->ulBitCount, pQvGetSurfaceDataResponse->lDelta);
+
     return ERROR_SUCCESS;
 }
 
@@ -127,7 +129,7 @@ ULONG GetPfnList(
     PVOID pVirtualAddress,
     ULONG uRegionSize,
     PPFN_ARRAY pPfnArray
-)
+    )
 {
     HDC hDC;
     QV_GET_PFN_LIST QvGetPfnList;
@@ -136,19 +138,22 @@ ULONG GetPfnList(
     DWORD retval = ERROR_SUCCESS;
 
     debugf("start");
-    if (!pVirtualAddress || !uRegionSize || !pPfnArray) {
+    if (!pVirtualAddress || !uRegionSize || !pPfnArray)
+    {
         retval = ERROR_INVALID_PARAMETER;
         goto cleanup;
     }
 
-    pQvGetPfnListResponse = malloc(sizeof(QV_GET_PFN_LIST_RESPONSE));
-    if (!pQvGetPfnListResponse) {
+    pQvGetPfnListResponse = (PQV_GET_PFN_LIST_RESPONSE) malloc(sizeof(QV_GET_PFN_LIST_RESPONSE));
+    if (!pQvGetPfnListResponse)
+    {
         retval = ERROR_NOT_ENOUGH_MEMORY;
         goto cleanup;
     }
 
     hDC = GetDC(0);
-    if (!hDC) {
+    if (!hDC)
+    {
         retval = perror("GetDC");
         goto cleanup;
     }
@@ -157,20 +162,20 @@ ULONG GetPfnList(
     QvGetPfnList.pVirtualAddress = pVirtualAddress;
     QvGetPfnList.uRegionSize = uRegionSize;
 
-    memset(pQvGetPfnListResponse, 0, sizeof(QV_GET_PFN_LIST_RESPONSE));
-
     iRet = ExtEscape(hDC, QVESC_GET_PFN_LIST, sizeof(QV_GET_PFN_LIST),
         (LPCSTR) & QvGetPfnList, sizeof(QV_GET_PFN_LIST_RESPONSE), (LPSTR) pQvGetPfnListResponse);
 
     ReleaseDC(0, hDC);
 
-    if (iRet <= 0) {
+    if (iRet <= 0)
+    {
         errorf("ExtEscape(QVESC_GET_PFN_LIST) failed, error %d\n", iRet);
         retval = ERROR_NOT_SUPPORTED;
         goto cleanup;
     }
 
-    if (QVIDEO_MAGIC != pQvGetPfnListResponse->uMagic) {
+    if (QVIDEO_MAGIC != pQvGetPfnListResponse->uMagic)
+    {
         errorf("The response to QVESC_GET_PFN_LIST is not valid\n");
         retval = ERROR_NOT_SUPPORTED;
         goto cleanup;
@@ -188,7 +193,7 @@ ULONG ChangeVideoMode(
     ULONG uWidth,
     ULONG uHeight,
     ULONG uBpp
-)
+    )
 {
     DEVMODE DevMode;
     ULONG uResult = ERROR_SUCCESS;
@@ -203,10 +208,12 @@ ULONG ChangeVideoMode(
     memset(&DevMode, 0, sizeof(DEVMODE));
     DevMode.dmSize = sizeof(DEVMODE);
 
-    if (EnumDisplaySettings(ptszDeviceName, ENUM_CURRENT_SETTINGS, &DevMode)) {
+    if (EnumDisplaySettings(ptszDeviceName, ENUM_CURRENT_SETTINGS, &DevMode))
+    {
         if (DevMode.dmPelsWidth == uWidth &&
-                DevMode.dmPelsHeight == uHeight &&
-                DevMode.dmBitsPerPel == uBpp) {
+            DevMode.dmPelsHeight == uHeight &&
+            DevMode.dmBitsPerPel == uBpp)
+        {
             // the current mode is good
             goto cleanup;
         }
@@ -216,19 +223,22 @@ ULONG ChangeVideoMode(
     // Without this, win32k will try to match a specified mode in the cache,
     // will fail and return DISP_CHANGE_BADMODE.
     iModeNum = 0;
-    while (EnumDisplaySettings(ptszDeviceName, iModeNum, &DevMode)) {
+    while (EnumDisplaySettings(ptszDeviceName, iModeNum, &DevMode))
+    {
         logf("mode %d: %dx%d@%d\n",
             iModeNum, DevMode.dmPelsWidth, DevMode.dmPelsHeight, DevMode.dmBitsPerPel);
         if (DevMode.dmPelsWidth == uWidth &&
-                DevMode.dmPelsHeight == uHeight &&
-                DevMode.dmBitsPerPel == uBpp) {
+            DevMode.dmPelsHeight == uHeight &&
+            DevMode.dmBitsPerPel == uBpp)
+        {
             bFound = TRUE;
             break;
         }
         iModeNum++;
     }
 
-    if (!bFound) {
+    if (!bFound)
+    {
         errorf("EnumDisplaySettings() didn't return expected mode\n");
         uResult = ERROR_INVALID_FUNCTION;
         goto cleanup;
@@ -236,23 +246,26 @@ ULONG ChangeVideoMode(
 
     // dirty workaround for failing ChangeDisplaySettingsEx when called too early
     iTriesLeft = CHANGE_DISPLAY_MODE_TRIES;
-    while (iTriesLeft--) {
+    while (iTriesLeft--)
+    {
         uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
-        if (DISP_CHANGE_SUCCESSFUL != uResult) {
+        if (DISP_CHANGE_SUCCESSFUL != uResult)
+        {
             errorf("ChangeDisplaySettingsEx(CDS_TEST) failed: %d", uResult);
-        } else {
+        }
+        else
+        {
             uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, 0, NULL);
-            if (DISP_CHANGE_SUCCESSFUL != uResult) {
+            if (DISP_CHANGE_SUCCESSFUL != uResult)
                 errorf("ChangeDisplaySettingsEx() failed: %d", uResult);
-            } else {
+            else
                 break;
-            }
         }
         Sleep(1000);
     }
-    if (DISP_CHANGE_SUCCESSFUL != uResult) {
+
+    if (DISP_CHANGE_SUCCESSFUL != uResult)
         uResult = ERROR_NOT_SUPPORTED;
-    }
 
 cleanup:
     //debugf("end: %d", uResult);
@@ -263,7 +276,7 @@ cleanup:
 ULONG RegisterWatchedDC(
     HDC hDC,
     HANDLE hModificationEvent
-)
+    )
 {
     QV_WATCH_SURFACE QvWatchSurface;
     int iRet;
@@ -274,7 +287,8 @@ ULONG RegisterWatchedDC(
 
     iRet = ExtEscape(hDC, QVESC_WATCH_SURFACE, sizeof(QV_WATCH_SURFACE), (LPCSTR) & QvWatchSurface, 0, NULL);
 
-    if (iRet <= 0) {
+    if (iRet <= 0)
+    {
         errorf("ExtEscape(QVESC_WATCH_SURFACE) failed, error %d\n", iRet);
         return ERROR_NOT_SUPPORTED;
     }
@@ -294,7 +308,8 @@ ULONG UnregisterWatchedDC(HDC hDC)
     iRet = ExtEscape(hDC, QVESC_STOP_WATCHING_SURFACE, sizeof(QV_STOP_WATCHING_SURFACE),
         (LPCSTR) & QvStopWatchingSurface, 0, NULL);
 
-    if (iRet <= 0) {
+    if (iRet <= 0)
+    {
         errorf("ExtEscape(QVESC_STOP_WATCHING_SURFACE) failed, error %d\n", iRet);
         return ERROR_NOT_SUPPORTED;
     }
