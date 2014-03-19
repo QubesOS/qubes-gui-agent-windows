@@ -33,6 +33,8 @@
               <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
                 <File Id='wga.exe' DiskId='1' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
                 <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]wga.exe"'/>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="QvideoMaxFps" Type="integer" Value='30'/>
               </Component>
               <Component Id='QTWHelper' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
                 <File Id='QTWHelper.exe' DiskId='1' Source='service\bin\$(var.ARCHDIR)\QTWHelper.exe' KeyPath="yes"/>
