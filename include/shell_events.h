@@ -6,6 +6,12 @@
 #include "qvcontrol.h"
 #include "common.h"
 
+#define REG_CONFIG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
+#define REG_CONFIG_FPS_VALUE TEXT("QvideoMaxFps")
+#define REG_CONFIG_DIRTY_VALUE TEXT("UseDirtyBits")
+
+extern BOOL g_bUseDirtyBits;
+
 typedef struct _BANNED_POPUP_WINDOWS
 {
     ULONG	uNumberOfBannedPopups;

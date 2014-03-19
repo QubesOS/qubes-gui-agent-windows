@@ -6,10 +6,12 @@
 LARGE_INTEGER g_PCFrequency;
 LARGE_INTEGER g_RefreshInterval;
 ULONG g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
+BOOLEAN g_bUseDirtyBits = TRUE;
 
 // read maximum refresh FPS from the registry
 VOID ReadRegistryConfig(VOID)
 {
+    static BOOLEAN bInitialized = FALSE;
     HANDLE handleRegKey = NULL;
     NTSTATUS status;
     UNICODE_STRING RegistryKeyName;
@@ -18,6 +20,12 @@ VOID ReadRegistryConfig(VOID)
     UNICODE_STRING ValueName;
     ULONG ulKeyInfoSize = 0;
     ULONG ulKeyInfoSizeNeeded = 0;
+    ULONG ulUseDirtyBits = g_bUseDirtyBits;
+
+    if (bInitialized)
+        return;
+
+    bInitialized = TRUE;
 
     // frequency doesn't change, query it once
     KeQueryPerformanceCounter(&g_PCFrequency);
@@ -37,7 +45,7 @@ VOID ReadRegistryConfig(VOID)
         goto cleanup;
     }
 
-    RtlInitUnicodeString(&ValueName, REG_CONFIG_VALUE);
+    RtlInitUnicodeString(&ValueName, REG_CONFIG_FPS_VALUE);
 
     // Determine the required size of keyInfo.
     status = ZwQueryValueKey(
@@ -76,7 +84,7 @@ VOID ReadRegistryConfig(VOID)
 
         if (pKeyInfo->Type != REG_DWORD)
         {
-            WARNINGF("config value is not DWORD but 0x%x", pKeyInfo->Type);
+            WARNINGF("config value '%wZ' is not DWORD but 0x%x", ValueName, pKeyInfo->Type);
             goto cleanup;
         }
 
@@ -89,14 +97,75 @@ VOID ReadRegistryConfig(VOID)
         }
     }
 
+    g_RefreshInterval.QuadPart = g_PCFrequency.QuadPart / g_MaxFps;
+    DEBUGF("FPS: %lu, freq: %I64d, interval: %I64d", g_MaxFps, g_PCFrequency.QuadPart, g_RefreshInterval.QuadPart);
+
 cleanup:
     if (pKeyInfo)
         ExFreePoolWithTag(pKeyInfo, QVDISPLAY_TAG);
+    pKeyInfo = NULL;
+
+    // second config value
+    RtlInitUnicodeString(&ValueName, REG_CONFIG_DIRTY_VALUE);
+
+    ulKeyInfoSize = 0;
+    // Determine the required size of keyInfo.
+    status = ZwQueryValueKey(
+        handleRegKey,
+        &ValueName,
+        KeyValueFullInformation,
+        pKeyInfo,
+        ulKeyInfoSize,
+        &ulKeyInfoSizeNeeded);
+
+    if ((status == STATUS_BUFFER_TOO_SMALL) || (status == STATUS_BUFFER_OVERFLOW))
+    {
+        ulKeyInfoSize = ulKeyInfoSizeNeeded;
+        pKeyInfo = (PKEY_VALUE_FULL_INFORMATION) ExAllocatePoolWithTag(NonPagedPool, ulKeyInfoSizeNeeded, QVDISPLAY_TAG);
+        if (NULL == pKeyInfo)
+        {
+            ERRORF("No memory");
+            goto cleanup2;
+        }
+
+        RtlZeroMemory(pKeyInfo, ulKeyInfoSize);
+        // Get the key data.
+        status = ZwQueryValueKey(
+            handleRegKey,
+            &ValueName,
+            KeyValueFullInformation,
+            pKeyInfo,
+            ulKeyInfoSize,
+            &ulKeyInfoSizeNeeded);
+
+        if ((status != STATUS_SUCCESS) || (ulKeyInfoSizeNeeded != ulKeyInfoSize) || (NULL == pKeyInfo))
+        {
+            WARNINGF("ZwQueryValueKey(%wZ) failed: 0x%x", ValueName, status);
+            goto cleanup2;
+        }
+
+        if (pKeyInfo->Type != REG_DWORD)
+        {
+            WARNINGF("config value '%wZ' is not DWORD but 0x%x", ValueName, pKeyInfo->Type);
+            goto cleanup2;
+        }
+
+        RtlCopyMemory(&ulUseDirtyBits, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
+        g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
+    }
+    else
+    {
+        WARNINGF("dirty status %x", status);
+    }
+
+cleanup2:
+    if (pKeyInfo)
+        ExFreePoolWithTag(pKeyInfo, QVDISPLAY_TAG);
+
     if (handleRegKey)
         ZwClose(handleRegKey);
 
-    g_RefreshInterval.QuadPart = g_PCFrequency.QuadPart / g_MaxFps;
-    DEBUGF("FPS: %lu, freq: %I64d, interval: %I64d", g_MaxFps, g_PCFrequency.QuadPart, g_RefreshInterval.QuadPart);
+    DEBUGF("Use dirty bits? %d", g_bUseDirtyBits);
 }
 
 // debug
@@ -146,6 +215,9 @@ ULONG UpdateDirtyBits(
         return 0; // too soon
 
     *pTimestamp = timestamp;
+
+    if (!g_bUseDirtyBits)
+        return 1; // just signal the refresh event
 
     pages = size / PAGE_SIZE;
 

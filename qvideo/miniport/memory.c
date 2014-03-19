@@ -229,9 +229,9 @@ PVOID AllocateSection(
     PVOID *ppSectionObject,
     PVOID *ppMdl,
     PPFN_ARRAY pPfnArray,
-    HANDLE *phDirtySection,
-    PVOID *ppDirtySectionObject,
-    PVOID *ppDirtySectionMemory
+    OPTIONAL HANDLE *phDirtySection,
+    OPTIONAL PVOID *ppDirtySectionObject,
+    OPTIONAL PVOID *ppDirtySectionMemory
 )
 {
     NTSTATUS Status;
@@ -248,9 +248,6 @@ PVOID AllocateSection(
     *phSection = NULL;
     *ppSectionObject = NULL;
     *ppMdl = NULL;
-    *phDirtySection = NULL;
-    *ppDirtySectionObject = NULL;
-    *ppDirtySectionMemory = NULL;
 
     RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QubesSharedMemory_%x", uLength);
     RtlInitUnicodeString(&usSectionName, SectionName);
@@ -271,21 +268,28 @@ PVOID AllocateSection(
     *ppSectionObject = SectionObject;
     *ppMdl = pMdl;
 
-    // struct header + bit array for dirty pages
-    uLength = sizeof(QV_DIRTY_PAGES) + ((uLength/PAGE_SIZE) >> 3) + 1;
-    RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", uLength);
-    RtlInitUnicodeString(&usSectionName, SectionName);
-
-    Status = CreateAndMapSection(usSectionName, uLength, phDirtySection, ppDirtySectionObject, ppDirtySectionMemory);
-    if (!NT_SUCCESS(Status))
-        return NULL;
-
-    // just lock, don't get PFNs
-    Status = GetBufferPfnArray(*ppDirtySectionMemory, uLength, NULL, KernelMode, TRUE, NULL);
-    if (!NT_SUCCESS(Status))
+    if (phDirtySection && ppDirtySectionObject && ppDirtySectionMemory)
     {
-        FreeSection(hSection, SectionObject, NULL, BaseAddress, *phDirtySection, *ppDirtySectionObject, *ppDirtySectionMemory);
-        return NULL;
+        *phDirtySection = NULL;
+        *ppDirtySectionObject = NULL;
+        *ppDirtySectionMemory = NULL;
+
+        // struct header + bit array for dirty pages
+        uLength = sizeof(QV_DIRTY_PAGES) + ((uLength/PAGE_SIZE) >> 3) + 1;
+        RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", uLength);
+        RtlInitUnicodeString(&usSectionName, SectionName);
+
+        Status = CreateAndMapSection(usSectionName, uLength, phDirtySection, ppDirtySectionObject, ppDirtySectionMemory);
+        if (!NT_SUCCESS(Status))
+            return NULL;
+
+        // just lock, don't get PFNs
+        Status = GetBufferPfnArray(*ppDirtySectionMemory, uLength, NULL, KernelMode, TRUE, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            FreeSection(hSection, SectionObject, NULL, BaseAddress, *phDirtySection, *ppDirtySectionObject, *ppDirtySectionMemory);
+            return NULL;
+        }
     }
     return BaseAddress;
 }

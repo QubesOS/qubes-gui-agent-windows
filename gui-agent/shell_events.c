@@ -3,7 +3,7 @@
 
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
-#define USE_DIRTY_PAGES 1
+BOOL g_bUseDirtyBits = FALSE;
 
 const TCHAR g_szClassName[] = _T("QubesShellHookClass");
 ULONG g_uShellHookMessage = 0;
@@ -19,11 +19,9 @@ LONG g_ScreenWidth = 0;
 PBYTE g_pScreenData = NULL;
 HANDLE g_hSection = NULL;
 
-#if USE_DIRTY_PAGES
 // bit array of dirty pages in the screen buffer (changed since last check)
 PQV_DIRTY_PAGES g_pDirtyPages = NULL;
 HANDLE g_hDirtySection = NULL;
-#endif
 
 HWND g_DesktopHwnd = NULL;
 HWND g_ExplorerHwnd = NULL;
@@ -61,22 +59,23 @@ ULONG OpenScreenSection()
     if (!g_pScreenData)
         return perror("MapViewOfFile(screen section)");
 
-#if USE_DIRTY_PAGES
-    uLength /= PAGE_SIZE;
-    StringCchPrintf(SectionName, _countof(SectionName),
-        _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
-    debugf("dirty section: %s", SectionName);
+    if (g_bUseDirtyBits)
+    {
+        uLength /= PAGE_SIZE;
+        StringCchPrintf(SectionName, _countof(SectionName),
+            _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
+        debugf("dirty section: %s", SectionName);
 
-    g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
-    if (!g_hDirtySection)
-        return perror("OpenFileMapping(dirty section)");
+        g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
+        if (!g_hDirtySection)
+            return perror("OpenFileMapping(dirty section)");
 
-    g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
-    if (!g_pDirtyPages)
-        return perror("MapViewOfFile(dirty section)");
+        g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
+        if (!g_pDirtyPages)
+            return perror("MapViewOfFile(dirty section)");
 
-    debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
-#endif
+        debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
+    }
 
     return ERROR_SUCCESS;
 }
@@ -391,45 +390,46 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
     BOOL bRecheckWindows = FALSE;
     HWND hwndOldDesktop = g_DesktopHwnd;
-#if USE_DIRTY_PAGES
     ULONG uTotalPages, uPage, uDirtyPages = 0;
     RECT rcDirtyArea, rcCurrent;
     BOOL bFirst = TRUE;
     HDC hDC;
     QV_SYNCHRONIZE qvs;
 
-    uTotalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
-    //debugf("update all? %d", bUpdateEverything);
-    // create a damage rectangle from changed pages
-    for (uPage = 0; uPage < uTotalPages; uPage++)
+    if (g_bUseDirtyBits)
     {
-        if (BIT_GET(g_pDirtyPages->DirtyBits, uPage))
+        uTotalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
+        //debugf("update all? %d", bUpdateEverything);
+        // create a damage rectangle from changed pages
+        for (uPage = 0; uPage < uTotalPages; uPage++)
         {
-            uDirtyPages++;
-            PageToRect(uPage, &rcCurrent);
-            if (bFirst)
+            if (BIT_GET(g_pDirtyPages->DirtyBits, uPage))
             {
-                rcDirtyArea = rcCurrent;
-                bFirst = FALSE;
+                uDirtyPages++;
+                PageToRect(uPage, &rcCurrent);
+                if (bFirst)
+                {
+                    rcDirtyArea = rcCurrent;
+                    bFirst = FALSE;
+                }
+                else
+                    UnionRect(&rcDirtyArea, &rcDirtyArea, &rcCurrent);
             }
-            else
-                UnionRect(&rcDirtyArea, &rcDirtyArea, &rcCurrent);
         }
+
+        // tell qvideo that we're done reading dirty bits
+        hDC = GetDC(0);
+        qvs.uMagic = QVIDEO_MAGIC;
+        if (ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(qvs), (LPCSTR) &qvs, 0, NULL) <= 0)
+            errorf("ExtEscape(synchronize) failed");
+        ReleaseDC(0, hDC);
+
+        debugf("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
+            rcDirtyArea.left, rcDirtyArea.top, rcDirtyArea.right, rcDirtyArea.bottom);
+
+        if (uDirtyPages == 0) // nothing changed according to qvideo
+            return ERROR_SUCCESS;
     }
-
-    // tell qvideo that we're done reading dirty bits
-    hDC = GetDC(0);
-    qvs.uMagic = QVIDEO_MAGIC;
-    if (ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(QVESC_GET_SURFACE_DATA), (LPCSTR) &qvs, 0, NULL) <= 0)
-        errorf("ExtEscape(synchronize) failed");
-    ReleaseDC(0, hDC);
-
-    debugf("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
-        rcDirtyArea.left, rcDirtyArea.top, rcDirtyArea.right, rcDirtyArea.bottom);
-
-    if (uDirtyPages == 0) // nothing changed according to qvideo
-        return ERROR_SUCCESS;
-#endif
 
     AttachToInputDesktop();
     if (hwndOldDesktop != g_DesktopHwnd)
@@ -469,15 +469,15 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     if (g_bFullScreenMode)
     {
         // just send damage event with the dirty area
-#if USE_DIRTY_PAGES
-        send_window_damage_event(0, rcDirtyArea.left, rcDirtyArea.top,
-            rcDirtyArea.right - rcDirtyArea.left,
-            rcDirtyArea.bottom - rcDirtyArea.top);
-#else
-        send_window_damage_event(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
+        if (g_bUseDirtyBits)
+            send_window_damage_event(0, rcDirtyArea.left, rcDirtyArea.top,
+                rcDirtyArea.right - rcDirtyArea.left,
+                rcDirtyArea.bottom - rcDirtyArea.top);
+        else
+            send_window_damage_event(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
         // TODO? if we're not using dirty bits we could narrow the damage area
         // by checking all windows... but it's probably not worth it.
-#endif
+
         return ERROR_SUCCESS;
     }
 
@@ -505,13 +505,14 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
         }
         else
         {
-#if USE_DIRTY_PAGES
-            if (IntersectRect(&rcCurrent, &rcDirtyArea, &pWatchedDC->rcWindow))
-                // skip windows that aren't in the changed area
-                CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, &rcDirtyArea);
-#else
-            CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, NULL);
-#endif
+            if (g_bUseDirtyBits)
+            {
+                if (IntersectRect(&rcCurrent, &rcDirtyArea, &pWatchedDC->rcWindow))
+                    // skip windows that aren't in the changed area
+                    CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, &rcDirtyArea);
+            }
+            else
+                CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, NULL);
         }
 
         pWatchedDC = pNextWatchedDC;
@@ -919,12 +920,6 @@ ULONG StartShellEventsThread()
         if (ERROR_SUCCESS != OpenScreenSection())
             return perror("OpenScreenSection");
 
-        /*
-        if (!LoggedSetLockPagesPrivilege(TRUE)) {
-        _tprintf(_T(__FUNCTION__) _T("(): LoggedSetLockPagesPrivilege() failed\n"));
-        return ERROR_PRIVILEGE_NOT_HELD;
-        }
-        */
         InitializeListHead(&g_WatchedWindowsList);
         InitializeCriticalSection(&g_csWatchedWindows);
 

@@ -1169,6 +1169,43 @@ ULONG DisableEffects()
     return ERROR_SUCCESS;
 }
 
+ULONG ReadRegistryConfig()
+{
+    HKEY key = NULL;
+    DWORD status = ERROR_SUCCESS;
+    DWORD type;
+    DWORD useDirtyBits;
+    DWORD size = sizeof(useDirtyBits);
+
+    logf("reading registry value '%s\\%s'", REG_CONFIG_KEY, REG_CONFIG_DIRTY_VALUE);
+    SetLastError(status = RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_KEY, &key));
+    if (status != ERROR_SUCCESS)
+        return perror("RegOpenKey");
+    SetLastError(status = RegQueryValueEx(key, REG_CONFIG_DIRTY_VALUE, NULL, &type, (PBYTE)&useDirtyBits, &size));
+    if (status != ERROR_SUCCESS)
+    {
+        perror("RegQueryValueEx");
+        status = ERROR_SUCCESS; // don't fail, just use default value
+        goto cleanup;
+    }
+
+    if (type != REG_DWORD)
+    {
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_DWORD", REG_CONFIG_DIRTY_VALUE, type);
+        status = ERROR_SUCCESS; // don't fail, just use default value
+        goto cleanup;
+    }
+
+    g_bUseDirtyBits = (BOOL) useDirtyBits;
+
+cleanup:
+    if (key)
+        RegCloseKey(key);
+
+    logf("Use dirty bits? %d", g_bUseDirtyBits);
+    return status;
+}
+
 ULONG Init()
 {
     ULONG uResult;
@@ -1186,11 +1223,10 @@ ULONG Init()
         // try to continue
     }
 
-    uResult = CheckForXenInterface();
+    SetLastError(uResult = CheckForXenInterface());
     if (ERROR_SUCCESS != uResult)
     {
-        perror("CheckForXenInterface");
-        return ERROR_NOT_SUPPORTED;
+        return perror("CheckForXenInterface");
     }
 
     // Manual reset, initial state is not signaled
@@ -1210,6 +1246,9 @@ ULONG Init()
     InitializeCriticalSection(&g_VchanCriticalSection);
 
     if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE))
+        return GetLastError();
+
+    if (ERROR_SUCCESS != ReadRegistryConfig())
         return GetLastError();
 
     return ERROR_SUCCESS;

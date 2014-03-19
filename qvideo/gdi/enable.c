@@ -290,6 +290,7 @@ ULONG AllocateSection(
     }
 
     QvminiAllocateSection.uLength = uLength;
+    QvminiAllocateSection.bUseDirtyBits = g_bUseDirtyBits;
 
     dwResult = EngDeviceIoControl(
         pSurfaceDescriptor->ppdev->hDriver,
@@ -921,6 +922,8 @@ ULONG APIENTRY DrvEscape(
         return GetPfnList(pso, cjIn, pvIn, cjOut, pvOut);
 
     case QVESC_SYNCHRONIZE:
+        if (!g_bUseDirtyBits)
+            return 0;
         pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) pso->dhsurf;
         if (!pSurfaceDescriptor || !pSurfaceDescriptor->ppdev)
             return QV_INVALID_PARAMETER;
@@ -960,7 +963,8 @@ VOID APIENTRY DrvSynchronizeSurface(
     // surface buffer size
     uSize = pSurfaceDescriptor->lDelta * pSurfaceDescriptor->cy;
 
-    // UpdateDirtyBits returns 0 also if the check was too early after a previous one
+    // UpdateDirtyBits returns 0 also if the check was too early after a previous one.
+    // This just returns 1 if using dirty bits is disabled.
     uDirty = UpdateDirtyBits(pSurfaceDescriptor->pSurfaceData, uSize, pSurfaceDescriptor->pDirtyPages,
         &pSurfaceDescriptor->LastCheck);
 

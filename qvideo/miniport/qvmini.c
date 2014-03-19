@@ -211,13 +211,28 @@ BOOLEAN QubesVideoStartIO(
 
         uLength = pQvminiAllocateSection->uLength;
 
-        pQvminiAllocateSectionResponse->pVirtualAddress =
-            AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
-            &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-            &pQvminiAllocateSectionResponse->PfnArray,
-            &pQvminiAllocateSectionResponse->hDirtySection,
-            &pQvminiAllocateSectionResponse->DirtySectionObject,
-            &pQvminiAllocateSectionResponse->pDirtyPages);
+        if (pQvminiAllocateSection->bUseDirtyBits)
+        {
+            pQvminiAllocateSectionResponse->pVirtualAddress =
+                AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
+                &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
+                &pQvminiAllocateSectionResponse->PfnArray,
+                &pQvminiAllocateSectionResponse->hDirtySection,
+                &pQvminiAllocateSectionResponse->DirtySectionObject,
+                &pQvminiAllocateSectionResponse->pDirtyPages);
+        }
+        else // don't alloc dirty bits section
+        {
+            pQvminiAllocateSectionResponse->pVirtualAddress =
+                AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
+                &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
+                &pQvminiAllocateSectionResponse->PfnArray,
+                NULL, NULL, NULL
+                );
+            pQvminiAllocateSectionResponse->DirtySectionObject = NULL;
+            pQvminiAllocateSectionResponse->hDirtySection = NULL;
+            pQvminiAllocateSectionResponse->pDirtyPages = NULL;
+        }
 
         if (!pQvminiAllocateSectionResponse->pVirtualAddress)
         {

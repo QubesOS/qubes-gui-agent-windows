@@ -1,6 +1,6 @@
-
 #define REG_CONFIG_KEY L"\\Registry\\Machine\\Software\\Invisible Things Lab\\Qubes Tools"
-#define REG_CONFIG_VALUE L"QvideoMaxFps"
+#define REG_CONFIG_FPS_VALUE L"QvideoMaxFps"
+#define REG_CONFIG_DIRTY_VALUE L"UseDirtyBits"
 
 // default maximum refresh events per second
 #define DEFAULT_MAX_REFRESH_FPS 30LL
@@ -30,3 +30,5 @@ ULONG UpdateDirtyBits(
     PQV_DIRTY_PAGES pDirtyPages,
     IN OUT PLARGE_INTEGER pTimestamp
     );
+
+extern BOOLEAN g_bUseDirtyBits;
