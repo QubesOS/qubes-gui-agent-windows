@@ -5,7 +5,8 @@
 #define SERVICE_NAME TEXT("QTWHelper")
 // Value below should contain path to the executable to launch at system start.
 #define CONFIG_REG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
-#define CONFIG_REG_VALUE TEXT("Autostart")
+#define CONFIG_REG_AUTOSTART_VALUE TEXT("Autostart")
+#define CONFIG_REG_LOG_VALUE TEXT("LogDir")
 
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
@@ -21,10 +22,7 @@ int main(int argc, TCHAR *argv[])
         {NULL, NULL}
     };
 
-    log_init(L"c:\\", SERVICE_NAME);
-    logf("start");
     StartServiceCtrlDispatcher(serviceTable);
-    logf("end");
 }
 
 DWORD SpawnProcess(TCHAR *cmdline)
@@ -78,10 +76,54 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     TCHAR cmdline[MAX_PATH];
     HANDLE workerHandle = 0;
     HKEY key = 0;
-    DWORD size = sizeof(cmdline);
+    DWORD size;
+    DWORD type;
     DWORD result;
+    TCHAR logPath[MAX_PATH];
 
-    logf("start");
+    // Read the registry configuration.
+    if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, CONFIG_REG_KEY, &key))
+    {
+        log_init(TEXT("c:\\"), SERVICE_NAME);
+        errorf("Opening config key '%s' failed, exiting", CONFIG_REG_KEY);
+        goto cleanup;
+    }
+
+    RtlZeroMemory(logPath, sizeof(logPath));
+    size = sizeof(logPath) - sizeof(TCHAR);
+    result = RegQueryValueEx(key, CONFIG_REG_LOG_VALUE, NULL, &type, (BYTE*)logPath, &size);
+    if (ERROR_SUCCESS != result)
+    {
+        log_init(TEXT("c:\\"), SERVICE_NAME);
+        SetLastError(result);
+        perror("RegQueryValueEx(LogPath)");
+        // don't fail
+    }
+
+    log_init(logPath, SERVICE_NAME);
+
+    if (type != REG_SZ)
+    {
+        log_init(TEXT("c:\\"), SERVICE_NAME);
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", CONFIG_REG_LOG_VALUE, type);
+        // don't fail
+    }
+
+    size = sizeof(cmdline);
+    result = RegQueryValueEx(key, CONFIG_REG_AUTOSTART_VALUE, NULL, &type, (BYTE*)cmdline, &size);
+    if (ERROR_SUCCESS != result)
+    {
+        SetLastError(result);
+        perror("RegQueryValueEx(Autostart)");
+        goto cleanup;
+    }
+
+    if (type != REG_SZ)
+    {
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", CONFIG_REG_LOG_VALUE, type);
+        goto cleanup;
+    }
+
     g_Status.dwServiceType        = SERVICE_WIN32;
     g_Status.dwCurrentState       = SERVICE_START_PENDING;
     g_Status.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
@@ -99,20 +141,6 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     g_Status.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(g_StatusHandle, &g_Status);
 
-    // Read the registry configuration.
-    if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, CONFIG_REG_KEY, &key))
-    {
-        errorf("Opening config key '%s' failed, exiting", CONFIG_REG_KEY);
-        goto cleanup;
-    }
-
-    result = RegQueryValueEx(key, CONFIG_REG_VALUE, NULL, NULL, (BYTE*)cmdline, &size);
-    if (ERROR_SUCCESS != result)
-    {
-        SetLastError(result);
-        perror("RegQueryValueEx");
-        goto cleanup;
-    }
 
     // Start the process.
     SpawnProcess(cmdline);
