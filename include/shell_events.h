@@ -7,6 +7,7 @@
 #include "common.h"
 
 #define REG_CONFIG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
+#define REG_CONFIG_LOG_VALUE TEXT("LogDir")
 #define REG_CONFIG_FPS_VALUE TEXT("QvideoMaxFps")
 #define REG_CONFIG_DIRTY_VALUE TEXT("UseDirtyBits")
 

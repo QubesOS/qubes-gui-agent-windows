@@ -1175,12 +1175,45 @@ ULONG ReadRegistryConfig()
     DWORD status = ERROR_SUCCESS;
     DWORD type;
     DWORD useDirtyBits;
-    DWORD size = sizeof(useDirtyBits);
+    DWORD size;
+    TCHAR logPath[MAX_PATH];
 
-    logf("reading registry value '%s\\%s'", REG_CONFIG_KEY, REG_CONFIG_DIRTY_VALUE);
+    // first, read the log directory
     SetLastError(status = RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_KEY, &key));
     if (status != ERROR_SUCCESS)
+    {
+        // failed, use some safe default
+        // todo: use event log
+        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        logf("registry config: '%s'", REG_CONFIG_KEY);
         return perror("RegOpenKey");
+    }
+
+    size = sizeof(logPath) -sizeof(TCHAR);
+    RtlZeroMemory(logPath, sizeof(logPath));
+    SetLastError(status = RegQueryValueEx(key, REG_CONFIG_LOG_VALUE, NULL, &type, (PBYTE)logPath, &size));
+    if (status != ERROR_SUCCESS)
+    {
+        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        errorf("Failed to read log path from '%s\\%s'", REG_CONFIG_KEY, REG_CONFIG_LOG_VALUE);
+        perror("RegQueryValueEx");
+        status = ERROR_SUCCESS; // don't fail
+        goto cleanup;
+    }
+
+    if (type != REG_SZ)
+    {
+        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_LOG_VALUE, type);
+        status = ERROR_SUCCESS; // don't fail
+        goto cleanup;
+    }
+
+    log_init(logPath, TEXT("gui-agent"));
+
+    // read the rest
+    size = sizeof(useDirtyBits);
+    logf("reading registry value '%s\\%s'", REG_CONFIG_KEY, REG_CONFIG_DIRTY_VALUE);
     SetLastError(status = RegQueryValueEx(key, REG_CONFIG_DIRTY_VALUE, NULL, &type, (PBYTE)&useDirtyBits, &size));
     if (status != ERROR_SUCCESS)
     {
@@ -1209,6 +1242,9 @@ cleanup:
 ULONG Init()
 {
     ULONG uResult;
+
+    if (ERROR_SUCCESS != ReadRegistryConfig())
+        return GetLastError();
 
     debugf("start");
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
@@ -1248,9 +1284,6 @@ ULONG Init()
     if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE))
         return GetLastError();
 
-    if (ERROR_SUCCESS != ReadRegistryConfig())
-        return GetLastError();
-
     return ERROR_SUCCESS;
 }
 
@@ -1260,7 +1293,6 @@ int _tmain(
     PTCHAR argv[]
 )
 {
-    log_init(TEXT("c:\\"), TEXT("gui-agent"));
     if (ERROR_SUCCESS != Init())
         return perror("Init");
 
