@@ -10,7 +10,8 @@
 #include "resource.h"
 #include "log.h"
 
-#define FULLSCREEN_EVENT_NAME TEXT("WGA_FULLSCREEN_SWITCH")
+#define FULLSCREEN_ON_EVENT_NAME TEXT("WGA_FULLSCREEN_ON")
+#define FULLSCREEN_OFF_EVENT_NAME TEXT("WGA_FULLSCREEN_OFF")
 
 HANDLE g_hStopServiceEvent;
 HANDLE g_hCleanupFinishedEvent;
@@ -28,7 +29,7 @@ extern PUCHAR g_pScreenData;
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
 
-HANDLE CreateFullScreenEvent(void)
+HANDLE CreateFullScreenEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
@@ -64,7 +65,7 @@ HANDLE CreateFullScreenEvent(void)
     sa.lpSecurityDescriptor = &sd;
     sa.bInheritHandle = FALSE;
 
-    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, FULLSCREEN_EVENT_NAME);
+    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, name);
 
     if (!hFullScreenEvent)
     {
@@ -796,6 +797,27 @@ ULONG handle_server_data()
     return ERROR_SUCCESS;
 }
 
+void SetFullscreenMode()
+{
+    debugf("Full screen mode changed to %d", g_bFullScreenMode);
+
+    // ResetWatch kills the shell event thread and removes all watched windows.
+    // If fullscreen is off the shell event thread is also restarted.
+    ResetWatch(NULL);
+
+    if (g_bFullScreenMode)
+    {
+        // show the screen window
+        send_window_map(NULL);
+        send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
+    }
+    else
+    {
+        // hide the screen window
+        send_window_unmap(NULL);
+    }
+}
+
 ULONG WINAPI WatchForEvents()
 {
     EVTCHN evtchn;
@@ -808,7 +830,8 @@ ULONG WINAPI WatchForEvents()
     BOOL bVchanReturnedError;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
-    HANDLE hFullScreenEvent;
+    HANDLE hFullScreenOnEvent;
+    HANDLE hFullScreenOffEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
@@ -832,8 +855,11 @@ ULONG WINAPI WatchForEvents()
     memset(&ol, 0, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hFullScreenEvent = CreateFullScreenEvent();
-    if (!hFullScreenEvent)
+    hFullScreenOnEvent = CreateFullScreenEvent(FULLSCREEN_ON_EVENT_NAME);
+    if (!hFullScreenOnEvent)
+        return GetLastError();
+    hFullScreenOffEvent = CreateFullScreenEvent(FULLSCREEN_OFF_EVENT_NAME);
+    if (!hFullScreenOffEvent)
         return GetLastError();
 
     g_bVchanClientConnected = FALSE;
@@ -847,7 +873,8 @@ ULONG WINAPI WatchForEvents()
         // Order matters.
         WatchedEvents[uEventNumber++] = g_hStopServiceEvent;
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
-        WatchedEvents[uEventNumber++] = hFullScreenEvent;
+        WatchedEvents[uEventNumber++] = hFullScreenOnEvent;
+        WatchedEvents[uEventNumber++] = hFullScreenOffEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -895,29 +922,21 @@ ULONG WINAPI WatchForEvents()
                 }
                 break;
 
-            case 2: // fullscreen toggle event
-                g_bFullScreenMode = !g_bFullScreenMode;
-                debugf("Full screen mode changed to %d", g_bFullScreenMode);
-
-                // ResetWatch kills the shell event thread and removes all watched windows.
-                // If fullscreen is off the shell event thread is also restarted.
-                ResetWatch(NULL);
-
+            case 2: // fullscreen on event
                 if (g_bFullScreenMode)
-                {
-                    // show the screen window
-                    send_window_map(NULL);
-                    send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
-                }
-                else
-                {
-                    // hide the screen window
-                    send_window_unmap(NULL);
-                }
-
+                    break; // already in fullscreen
+                g_bFullScreenMode = TRUE;
+                SetFullscreenMode();
                 break;
 
-            case 3: // vchan receive
+            case 3: // fullscreen off event
+                if (!g_bFullScreenMode)
+                    break; // already in seamless
+                g_bFullScreenMode = FALSE;
+                SetFullscreenMode();
+                break;
+
+            case 4: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //
