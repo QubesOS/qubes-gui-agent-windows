@@ -263,15 +263,23 @@ ULONG CheckWatchedWindowUpdates(
     return ERROR_SUCCESS;
 }
 
-BOOL ShouldAcceptWindow(HWND hWnd, WINDOWINFO *pwi)
+BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
 {
+    WINDOWINFO wi;
+
+    if (!pwi)
+    {
+        if (!GetWindowInfo(hWnd, &wi))
+            return FALSE;
+        pwi = &wi;
+    }
+
     //debugf("0x%x", hWnd);
     if (!IsWindowVisible(hWnd))
         return FALSE;
     
-    // If a window has a parent window, has no caption and is not a tool window,
-    // then don't show it as a separate window.
-    if (GetParent(hWnd) && ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION) && !(WS_EX_TOOLWINDOW & pwi->dwExStyle))
+    // Ignore child windows, they are confined to parent's client area and can't be top-level.
+    if (pwi->dwStyle & WS_CHILD)
         return FALSE;
 
     return TRUE;
@@ -497,7 +505,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
         pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
-        if (!IsWindow(pWatchedDC->hWnd))
+        if (!IsWindow(pWatchedDC->hWnd) || !ShouldAcceptWindow(pWatchedDC->hWnd, NULL))
         {
             RemoveEntryList(&pWatchedDC->le);
             RemoveWatchedDC(pWatchedDC);
