@@ -592,8 +592,8 @@ PWATCHED_DC AddWindowWithInfo(
     if (!pwi)
         return NULL;
 
-    debugf("0x%x (%d,%d)-(%d,%d)",
-        hWnd, pwi->rcWindow.left, pwi->rcWindow.top, pwi->rcWindow.right, pwi->rcWindow.bottom);
+    debugf("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
+        hWnd, pwi->rcWindow.left, pwi->rcWindow.top, pwi->rcWindow.right, pwi->rcWindow.bottom, pwi->dwStyle, pwi->dwExStyle);
 
     pWatchedDC = FindWindowByHwnd(hWnd);
     if (pWatchedDC)

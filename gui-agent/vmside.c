@@ -265,15 +265,10 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, mc);
 
-    if (pWatchedDC ? pWatchedDC->bVisible : FALSE)
-    {
-        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-        mmi.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
-
-        hdr.type = MSG_MAP;
-        write_message(hdr, mmi);
-    }
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    if (pWatchedDC && pWatchedDC->bVisible)
+        send_window_map(pWatchedDC);
 
     return ERROR_SUCCESS;
 }
@@ -358,6 +353,15 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
     EnterCriticalSection(&g_VchanCriticalSection);
     write_message(hdr, mmi);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
+    if (!pWatchedDC ||
+        (pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left == g_ScreenWidth &&
+        pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
+    {
+        logf("fullscreen window");
+        send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+    }
 
     return ERROR_SUCCESS;
 }
@@ -809,7 +813,6 @@ void SetFullscreenMode()
     {
         // show the screen window
         send_window_map(NULL);
-        send_window_flags(NULL, WINDOW_FLAG_FULLSCREEN, 0);
     }
     else
     {
