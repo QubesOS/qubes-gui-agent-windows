@@ -579,6 +579,7 @@ DWORD WINAPI ResetWatch(PVOID param)
     if (!g_bFullScreenMode)
     {
         StartShellEventsThread();
+        ProcessUpdatedWindows(TRUE);
     }
 
     //debugf("success");
