@@ -274,12 +274,16 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
         pwi = &wi;
     }
 
-    //debugf("0x%x", hWnd);
+    //debugf("0x%x: %x %x", hWnd, pwi->dwStyle, pwi->dwExStyle);
     if (!IsWindowVisible(hWnd))
         return FALSE;
     
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (pwi->dwStyle & WS_CHILD)
+        return FALSE;
+
+    // Office 2013 uses this style for some helper windows that are drawn on/near its border.
+    if ((pwi->dwExStyle & (WS_EX_LAYERED|WS_EX_TOOLWINDOW)) == (WS_EX_LAYERED|WS_EX_TOOLWINDOW))
         return FALSE;
 
     return TRUE;
