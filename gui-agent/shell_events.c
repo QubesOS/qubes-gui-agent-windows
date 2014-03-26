@@ -283,7 +283,8 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
         return FALSE;
 
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
-    if ((pwi->dwExStyle & (WS_EX_LAYERED|WS_EX_TOOLWINDOW)) == (WS_EX_LAYERED|WS_EX_TOOLWINDOW))
+    // 0x800 exstyle is undocumented...
+    if (pwi->dwExStyle == (WS_EX_LAYERED|WS_EX_TOOLWINDOW|0x800))
         return FALSE;
 
     return TRUE;
@@ -619,7 +620,6 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->bStyleChecked = FALSE;
     pWatchedDC->uTimeAdded = pWatchedDC->uTimeModalChecked = GetTickCount();
 
-    // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
     if (pwi->rcWindow.right-pwi->rcWindow.left == g_ScreenWidth
@@ -628,7 +628,18 @@ PWATCHED_DC AddWindowWithInfo(
         pWatchedDC->bOverrideRedirect = FALSE;
     }
     else
-        pWatchedDC->bOverrideRedirect = (BOOL) ((WS_CAPTION & pwi->dwStyle) != WS_CAPTION);
+    {
+        // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
+        if ((pwi->dwStyle & WS_CAPTION) == WS_CAPTION) // normal window
+            pWatchedDC->bOverrideRedirect = FALSE;
+        else if (((pwi->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((pwi->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
+            // Metro apps without WS_CAPTION.
+            // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
+            // but I guess MS doesn't adhere to its own standards...
+            pWatchedDC->bOverrideRedirect = FALSE;
+        else
+            pWatchedDC->bOverrideRedirect = TRUE;
+    }
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
