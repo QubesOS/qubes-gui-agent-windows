@@ -1050,6 +1050,8 @@ ULONG WINAPI WatchForEvents()
             break;
     }
 
+    logf("main loop finished");
+
     if (bVchanIoInProgress)
         if (CancelIo(evtchn))
         {
@@ -1076,6 +1078,7 @@ ULONG WINAPI WatchForEvents()
 
     UnregisterWatchedDC(hDC);
     ReleaseDC(NULL, hDC);
+    logf("exiting");
 
     return bVchanReturnedError ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
@@ -1325,5 +1328,6 @@ int _tmain(
     DeleteCriticalSection(&g_VchanCriticalSection);
     SetEvent(g_hCleanupFinishedEvent);
 
+    logf("exiting");
     return ERROR_SUCCESS;
 }

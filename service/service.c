@@ -10,9 +10,25 @@
 
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
+HANDLE g_ConsoleEvent;
 
 void WINAPI ServiceMain(DWORD argc, TCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
+
+WCHAR *g_SessionEventName[] = {
+    L"<invalid>",
+    L"WTS_CONSOLE_CONNECT",
+    L"WTS_CONSOLE_DISCONNECT",
+    L"WTS_REMOTE_CONNECT",
+    L"WTS_REMOTE_DISCONNECT",
+    L"WTS_SESSION_LOGON",
+    L"WTS_SESSION_LOGOFF",
+    L"WTS_SESSION_LOCK",
+    L"WTS_SESSION_UNLOCK",
+    L"WTS_SESSION_REMOTE_CONTROL",
+    L"WTS_SESSION_CREATE",
+    L"WTS_SESSION_TERMINATE"
+};
 
 // Entry point.
 int main(int argc, TCHAR *argv[])
@@ -25,8 +41,9 @@ int main(int argc, TCHAR *argv[])
     StartServiceCtrlDispatcher(serviceTable);
 }
 
-DWORD SpawnProcess(TCHAR *cmdline)
+DWORD WINAPI WorkerThread(void *param)
 {
+    TCHAR *cmdline;
     PROCESS_INFORMATION pi;
     STARTUPINFO si;
     HANDLE newToken;
@@ -35,39 +52,46 @@ DWORD SpawnProcess(TCHAR *cmdline)
     HANDLE currentToken;
     HANDLE currentProcess = GetCurrentProcess();
 
-    // Get access token from ourselves.
-    OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
-    // Session ID is stored in the access token. For services it's normally 0.
-    GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
-    logf("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
+    cmdline = (TCHAR*) param;
 
-    // We need to create a primary token for CreateProcessAsUser.
-    if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
+    while (1)
     {
-        return perror("DuplicateTokenEx");
-    }
-    CloseHandle(currentProcess);
+        // Wait until the interactive session changes (to winlogon console).
+        WaitForSingleObject(g_ConsoleEvent, INFINITE);
 
-    sessionId = WTSGetActiveConsoleSessionId();
-    // Change the session ID in the new access token to the target session ID.
-    // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
-    if (!SetTokenInformation(newToken, TokenSessionId, &sessionId, sizeof(sessionId)))
-    {
-        return perror("SetTokenInformation(TokenSessionId)");
+        // Get access token from ourselves.
+        OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
+        // Session ID is stored in the access token. For services it's normally 0.
+        GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
+        logf("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
+
+        // We need to create a primary token for CreateProcessAsUser.
+        if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
+        {
+            return perror("DuplicateTokenEx");
+        }
+        CloseHandle(currentProcess);
+
+        sessionId = WTSGetActiveConsoleSessionId();
+        // Change the session ID in the new access token to the target session ID.
+        // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
+        if (!SetTokenInformation(newToken, TokenSessionId, &sessionId, sizeof(sessionId)))
+        {
+            return perror("SetTokenInformation(TokenSessionId)");
+        }
+
+        logf("Running process '%s' in session %d", cmdline, sessionId);
+        // Create process with the new token.
+        ZeroMemory(&si, sizeof(si));
+        si.cb = sizeof(si);
+        // Don't forget to set the correct desktop.
+        si.lpDesktop = TEXT("WinSta0\\Winlogon");
+        if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+        {
+            perror("CreateProcessAsUser1");
+        }
     }
 
-    logf("Running process '%s' in session %d", cmdline, sessionId);
-    // Create process with the new token.
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    // Don't forget to set the correct desktop.
-    si.lpDesktop = TEXT("WinSta0\\Winlogon");
-    if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-    {
-        perror("CreateProcessAsUser1");
-    }
-
-    logf("done");
     return ERROR_SUCCESS;
 }
 
@@ -126,7 +150,8 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
 
     g_Status.dwServiceType        = SERVICE_WIN32;
     g_Status.dwCurrentState       = SERVICE_START_PENDING;
-    g_Status.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    // SERVICE_ACCEPT_SESSIONCHANGE allows us to receive session change notifications.
+    g_Status.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE;
     g_Status.dwWin32ExitCode      = 0;
     g_Status.dwServiceSpecificExitCode = 0;
     g_Status.dwCheckPoint         = 0;
@@ -141,9 +166,23 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     g_Status.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(g_StatusHandle, &g_Status);
 
+    // Create trigger event for the worker thread.
+    g_ConsoleEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    // Start the process.
-    SpawnProcess(cmdline);
+    // Start the worker thread.
+    logf("Starting worker thread");
+    workerHandle = CreateThread(NULL, 0, WorkerThread, cmdline, 0, NULL);
+    if (!workerHandle)
+    {
+        perror("CreateThread");
+        goto cleanup;
+    }
+
+    // Signal the console change event to trigger initial spawning of the target process.
+    SetEvent(g_ConsoleEvent);
+
+    // Wait for the worker thread to exit.
+    WaitForSingleObject(workerHandle, INFINITE);
 
 cleanup:
     if (key)
@@ -152,8 +191,22 @@ cleanup:
     g_Status.dwWin32ExitCode = GetLastError();
     SetServiceStatus(g_StatusHandle, &g_Status);
 
-    logf("end");
+    logf("exiting");
     return;
+}
+
+void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
+{
+    if (eventType < RTL_NUMBER_OF(g_SessionEventName))
+        logf("%s, session ID %d", g_SessionEventName[eventType], sn->dwSessionId);
+    else
+        logf("<unknown event: %d>, session id %d", eventType, sn->dwSessionId);
+
+    if (eventType == WTS_CONSOLE_CONNECT)
+    {
+        // Signal trigger event for the worker thread.
+        SetEvent(g_ConsoleEvent);
+    }
 }
 
 DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
@@ -168,8 +221,12 @@ DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEvent
         SetServiceStatus(g_StatusHandle, &g_Status);
         break;
 
+    case SERVICE_CONTROL_SESSIONCHANGE:
+        SessionChange(dwEventType, (WTSSESSION_NOTIFICATION*) lpEventData);
+        break;
+
     default:
-        logf("ControlHandlerEx: code 0x%x, event 0x%x", dwControl, dwEventType);
+        logf("code 0x%x, event 0x%x", dwControl, dwEventType);
         break;
     }
 
