@@ -13,8 +13,9 @@
 #define FULLSCREEN_ON_EVENT_NAME TEXT("WGA_FULLSCREEN_ON")
 #define FULLSCREEN_OFF_EVENT_NAME TEXT("WGA_FULLSCREEN_OFF")
 
-HANDLE g_hStopServiceEvent;
-HANDLE g_hCleanupFinishedEvent;
+// When signaled, causes agent to shutdown gracefully.
+#define WGA_SHUTDOWN_EVENT_NAME TEXT("Global\\WGA_SHUTDOWN")
+
 CRITICAL_SECTION g_VchanCriticalSection;
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
@@ -29,13 +30,13 @@ extern PUCHAR g_pScreenData;
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
 
-HANDLE CreateFullScreenEvent(TCHAR *name)
+HANDLE CreateNamedEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
     EXPLICIT_ACCESS ea = {0};
     PACL acl = NULL;
-    HANDLE hFullScreenEvent = NULL;
+    HANDLE event = NULL;
 
     // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
     ea.grfAccessMode = GRANT_ACCESS;
@@ -65,18 +66,19 @@ HANDLE CreateFullScreenEvent(TCHAR *name)
     sa.lpSecurityDescriptor = &sd;
     sa.bInheritHandle = FALSE;
 
-    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, name);
+    // autoreset, not signaled
+    event = CreateEvent(&sa, FALSE, FALSE, name);
 
-    if (!hFullScreenEvent)
+    if (!event)
     {
-        perror("CreateEvent(fullscreen)");
+        perror("CreateEvent");
         goto cleanup;
     }
 
 cleanup:
     if (acl)
         LocalFree(acl);
-    return hFullScreenEvent;
+    return event;
 }
 
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
@@ -835,6 +837,7 @@ ULONG WINAPI WatchForEvents()
     HANDLE hWindowDamageEvent;
     HANDLE hFullScreenOnEvent;
     HANDLE hFullScreenOffEvent;
+    HANDLE hShutdownEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
@@ -858,10 +861,13 @@ ULONG WINAPI WatchForEvents()
     memset(&ol, 0, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hFullScreenOnEvent = CreateFullScreenEvent(FULLSCREEN_ON_EVENT_NAME);
+    hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
+    if (!hShutdownEvent)
+        return GetLastError();
+    hFullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!hFullScreenOnEvent)
         return GetLastError();
-    hFullScreenOffEvent = CreateFullScreenEvent(FULLSCREEN_OFF_EVENT_NAME);
+    hFullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
     if (!hFullScreenOffEvent)
         return GetLastError();
 
@@ -874,7 +880,7 @@ ULONG WINAPI WatchForEvents()
         uEventNumber = 0;
 
         // Order matters.
-        WatchedEvents[uEventNumber++] = g_hStopServiceEvent;
+        WatchedEvents[uEventNumber++] = hShutdownEvent;
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOnEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOffEvent;
@@ -909,8 +915,11 @@ ULONG WINAPI WatchForEvents()
         else
         {
             if (0 == dwSignaledEvent)
-                // g_hStopServiceEvent is signaled
+            {
+                // shutdown event
+                logf("Shutdown event signaled");
                 break;
+            }
 
             //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
             switch (dwSignaledEvent)
@@ -1094,24 +1103,6 @@ static ULONG CheckForXenInterface()
     return ERROR_SUCCESS;
 }
 
-BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
-{
-    logf("Got shutdown signal\n");
-
-    SetEvent(g_hStopServiceEvent);
-
-    WaitForSingleObject(g_hCleanupFinishedEvent, 2000);
-
-    CloseHandle(g_hStopServiceEvent);
-    CloseHandle(g_hCleanupFinishedEvent);
-
-    StopShellEventsThread();
-
-    logf("Shutdown complete\n");
-    ExitProcess(0);
-    return TRUE;
-}
-
 ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)
 {
     SIZE_T uMinimumWorkingSetSize = 0;
@@ -1290,25 +1281,6 @@ ULONG Init()
         return perror("CheckForXenInterface");
     }
 
-    // Manual reset, initial state is not signaled
-    g_hStopServiceEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (!g_hStopServiceEvent)
-        return perror("CreateEvent");
-
-    // Manual reset, initial state is not signaled
-    g_hCleanupFinishedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (!g_hCleanupFinishedEvent)
-    {
-        uResult = perror("CreateEvent");
-        CloseHandle(g_hStopServiceEvent);
-        return uResult;
-    }
-
-    InitializeCriticalSection(&g_VchanCriticalSection);
-
-    if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE))
-        return GetLastError();
-
     return ERROR_SUCCESS;
 }
 
@@ -1321,12 +1293,13 @@ int _tmain(
     if (ERROR_SUCCESS != Init())
         return perror("Init");
 
+    InitializeCriticalSection(&g_VchanCriticalSection);
+
     // Call the thread proc directly.
     if (ERROR_SUCCESS != WatchForEvents())
         return perror("WatchForEvents");
 
     DeleteCriticalSection(&g_VchanCriticalSection);
-    SetEvent(g_hCleanupFinishedEvent);
 
     logf("exiting");
     return ERROR_SUCCESS;

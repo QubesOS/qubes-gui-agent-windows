@@ -900,9 +900,13 @@ ULONG APIENTRY DrvEscape(
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor;
 
+    DISPDBG((0, "DrvEscape: pso=%p, code=%x\n", pso, iEsc));
     if ((cjIn < sizeof(ULONG)) || !pvIn || (*(PULONG) pvIn != QVIDEO_MAGIC))
+    {
         // 0 means "not supported"
+        DISPDBG((0, "DrvEscape: bad size/magic\n"));
         return 0;
+    }
 
     switch (iEsc)
     {
@@ -932,6 +936,7 @@ ULONG APIENTRY DrvEscape(
         return QV_SUCCESS;
 
     default:
+        DISPDBG((0, "DrvEscape: bad code %x\n", iEsc));
         // 0 means "not supported"
         return 0;
     }
