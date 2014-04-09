@@ -26,6 +26,8 @@ typedef struct _MODAL_SEARCH_PARAMS
     HWND ModalWindow; // modal window that's active, output
 } MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
 
+ULONG AttachToInputDesktop();
+
 ULONG StartShellEventsThread();
 
 ULONG StopShellEventsThread();

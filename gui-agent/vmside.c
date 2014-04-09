@@ -468,6 +468,9 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
     }
 
     logf("New resolution: %dx%d bpp %d\n", uWidth, uHeight, uBpp);
+    // ChangeDisplaySettings fails if thread's desktop != input desktop...
+    // This can happen on "quick user switch".
+    AttachToInputDesktop();
 
     if (ERROR_SUCCESS != FindQubesDisplayDevice(&DisplayDevice))
         return perror("FindQubesDisplayDevice");
