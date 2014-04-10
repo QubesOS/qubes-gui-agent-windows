@@ -50,7 +50,7 @@ typedef struct _QV_SUPPORT_MODE
 
     ULONG uHeight;
     ULONG uWidth;
-    UCHAR uBpp;
+    ULONG uBpp;
 } QV_SUPPORT_MODE, *PQV_SUPPORT_MODE;
 
 typedef struct _QV_GET_SURFACE_DATA

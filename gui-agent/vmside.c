@@ -21,12 +21,6 @@ CRITICAL_SECTION g_VchanCriticalSection;
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
-extern LONG g_ScreenWidth;
-extern LONG g_ScreenHeight;
-
-extern HANDLE g_hSection;
-extern PUCHAR g_pScreenData;
-
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
 
@@ -456,18 +450,18 @@ void send_protocol_version()
     write_struct(version);
 }
 
-ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
+ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 {
     LPTSTR ptszDeviceName = NULL;
     DISPLAY_DEVICE DisplayDevice;
 
     if (!IS_RESOLUTION_VALID(uWidth, uHeight))
     {
-        errorf("Resolution is invalid: %dx%d\n", uWidth, uHeight);
+        errorf("Resolution is invalid: %lux%lu\n", uWidth, uHeight);
         return ERROR_INVALID_PARAMETER;
     }
 
-    logf("New resolution: %dx%d bpp %d\n", uWidth, uHeight, uBpp);
+    logf("New resolution: %lux%lu bpp %u\n", uWidth, uHeight, uBpp);
     // ChangeDisplaySettings fails if thread's desktop != input desktop...
     // This can happen on "quick user switch".
     AttachToInputDesktop();
@@ -489,28 +483,20 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
     return ERROR_SUCCESS;
 }
 
-void handle_xconf()
+void InitVideo(ULONG width, ULONG height, ULONG bpp)
 {
-    struct msg_xconf xconf;
-    ULONG uResult;
-
-    //debugf("start");
-    read_all_vchan_ext((char *)&xconf, sizeof(xconf));
-
-    logf("host resolution: %dx%d, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
-
-    uResult = SetVideoMode(xconf.w, xconf.h, 32);
+    ULONG uResult = SetVideoMode(width, height, bpp);
     if (ERROR_SUCCESS != uResult)
     {
         QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
 
-        logf("SetVideoMode() failed: %d\n", uResult);
+        logf("SetVideoMode() failed: %lu\n", uResult);
 
         // resolution change failed, use fullscreen mode at current resolution
         uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
         if (ERROR_SUCCESS != uResult)
         {
-            errorf("GetWindowData() failed with error %d\n", uResult);
+            errorf("GetWindowData() failed with error %lu\n", uResult);
             return;
         }
 
@@ -518,12 +504,12 @@ void handle_xconf()
         g_ScreenHeight = QvGetSurfaceDataResponse.cy;
         g_bFullScreenMode = TRUE;
 
-        logf("keeping original %dx%d\n", g_ScreenWidth, g_ScreenHeight);
+        logf("keeping original %lux%lu\n", g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
-        g_ScreenWidth = xconf.w;
-        g_ScreenHeight = xconf.h;
+        g_ScreenWidth = width;
+        g_ScreenHeight = height;
 
         if (ERROR_SUCCESS != StartShellEventsThread())
         {
@@ -531,6 +517,16 @@ void handle_xconf()
             exit(1);
         }
     }
+}
+
+void handle_xconf()
+{
+    struct msg_xconf xconf;
+
+    //debugf("start");
+    read_all_vchan_ext(&xconf, sizeof(xconf));
+    logf("host resolution: %lux%lu, mem: %lu, depth: %lu\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
+    InitVideo(xconf.w, xconf.h, 32 /*xconf.depth*/);
 }
 
 int bitset(BYTE *keys, int num)

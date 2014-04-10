@@ -16,20 +16,11 @@ BOOL g_Initialized = FALSE;
 
 LONG g_ScreenHeight = 0;
 LONG g_ScreenWidth = 0;
-PBYTE g_pScreenData = NULL;
-HANDLE g_hSection = NULL;
-
-// bit array of dirty pages in the screen buffer (changed since last check)
-PQV_DIRTY_PAGES g_pDirtyPages = NULL;
-HANDLE g_hDirtySection = NULL;
 
 HWND g_DesktopHwnd = NULL;
 HWND g_ExplorerHwnd = NULL;
 HWND g_TaskbarHwnd = NULL;
 HWND g_StartButtonHwnd = NULL;
-
-extern BOOL g_bVchanClientConnected;
-extern BOOL g_bFullScreenMode;
 
 PWATCHED_DC AddWindowWithInfo(
     HWND hWnd,
@@ -37,48 +28,6 @@ PWATCHED_DC AddWindowWithInfo(
     );
 
 ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
-
-ULONG OpenScreenSection()
-{
-    TCHAR SectionName[100];
-    ULONG uLength = g_ScreenHeight * g_ScreenWidth * 4;
-
-    // already initialized
-    if (g_hSection && g_pScreenData)
-        return ERROR_SUCCESS;
-
-    StringCchPrintf(SectionName, _countof(SectionName),
-        _T("Global\\QubesSharedMemory_%x"), uLength);
-    debugf("screen section: %s", SectionName);
-
-    g_hSection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
-    if (!g_hSection)
-        return perror("OpenFileMapping(screen section)");
-
-    g_pScreenData = (PBYTE) MapViewOfFile(g_hSection, FILE_MAP_READ, 0, 0, 0);
-    if (!g_pScreenData)
-        return perror("MapViewOfFile(screen section)");
-
-    if (g_bUseDirtyBits)
-    {
-        uLength /= PAGE_SIZE;
-        StringCchPrintf(SectionName, _countof(SectionName),
-            _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
-        debugf("dirty section: %s", SectionName);
-
-        g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
-        if (!g_hDirtySection)
-            return perror("OpenFileMapping(dirty section)");
-
-        g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
-        if (!g_pDirtyPages)
-            return perror("MapViewOfFile(dirty section)");
-
-        debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
-    }
-
-    return ERROR_SUCCESS;
-}
 
 PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 {
@@ -172,13 +121,7 @@ ULONG CheckWatchedWindowUpdates(
             bUpdateStyle = TRUE;
             DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
         }
-        /*		if (Style & WS_MAXIMIZEBOX)
-        {
-        Style &= ~WS_MAXIMIZEBOX;
-        bUpdateStyle = TRUE;
-        DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MAXIMIZE, MF_BYCOMMAND);
-        }
-        */
+
         if (wi.dwStyle & WS_SIZEBOX)
         {
             wi.dwStyle &= ~WS_SIZEBOX;
@@ -835,7 +778,6 @@ update:
         PostQuitMessage(0);
         break;
     default:
-        //_tprintf(_T("hwnd: %x, msg %d\n"), hwnd, uMsg);
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
     return 0;
