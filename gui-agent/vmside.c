@@ -24,6 +24,11 @@ CRITICAL_SECTION g_VchanCriticalSection;
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
 
+// used to determine whether our window in fullscreen mode should be borderless
+// (when resolution is smaller than host's)
+LONG g_HostScreenWidth = 0;
+LONG g_HostScreenHeight = 0;
+
 HANDLE CreateNamedEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
@@ -355,8 +360,11 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         (pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left == g_ScreenWidth &&
         pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
     {
-        logf("fullscreen window");
-        send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+        if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
+        {
+            logf("fullscreen window");
+            send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+        }
     }
 
     return ERROR_SUCCESS;
@@ -368,17 +376,32 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
     struct msg_configure mc;
     struct msg_map_info mmi;
 
-    debugf("0x%x", pWatchedDC->hWnd);
-    hdr.window = (uint32_t) pWatchedDC->hWnd;
+    if (pWatchedDC)
+    {
+        debugf("0x%x", pWatchedDC->hWnd);
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
 
-    hdr.type = MSG_CONFIGURE;
+        hdr.type = MSG_CONFIGURE;
 
-    mc.x = pWatchedDC->rcWindow.left;
-    mc.y = pWatchedDC->rcWindow.top;
-    mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
-    mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
-    mc.override_redirect = 0;
+        mc.x = pWatchedDC->rcWindow.left;
+        mc.y = pWatchedDC->rcWindow.top;
+        mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
+        mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
+        mc.override_redirect = 0;
+    }
+    else // whole screen
+    {
+        debugf("fullscreen: (0,0) %dx%d", g_ScreenWidth, g_ScreenHeight);
+        hdr.window = 0;
 
+        hdr.type = MSG_CONFIGURE;
+
+        mc.x = 0;
+        mc.y = 0;
+        mc.width = g_ScreenWidth;
+        mc.height = g_ScreenHeight;
+        mc.override_redirect = 0;
+    }
     EnterCriticalSection(&g_VchanCriticalSection);
 
     /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
@@ -388,7 +411,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
         write_message(hdr, mc);
     }
 
-    if (pWatchedDC->bVisible)
+    if (pWatchedDC && pWatchedDC->bVisible)
     {
         mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
@@ -483,7 +506,7 @@ ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
     return ERROR_SUCCESS;
 }
 
-void InitVideo(ULONG width, ULONG height, ULONG bpp)
+ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
 {
     ULONG uResult = SetVideoMode(width, height, bpp);
     if (ERROR_SUCCESS != uResult)
@@ -496,8 +519,8 @@ void InitVideo(ULONG width, ULONG height, ULONG bpp)
         uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
         if (ERROR_SUCCESS != uResult)
         {
-            errorf("GetWindowData() failed with error %lu\n", uResult);
-            return;
+            errorf("GetWindowData() failed: %lu\n", uResult);
+            return uResult;
         }
 
         g_ScreenWidth = QvGetSurfaceDataResponse.cx;
@@ -510,23 +533,64 @@ void InitVideo(ULONG width, ULONG height, ULONG bpp)
     {
         g_ScreenWidth = width;
         g_ScreenHeight = height;
-
-        if (ERROR_SUCCESS != StartShellEventsThread())
-        {
-            errorf("StartShellEventsThread failed, exiting");
-            exit(1);
-        }
     }
+
+    return OpenScreenSection();
 }
 
-void handle_xconf()
+ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG height, ULONG bpp)
+{
+    ULONG uResult;
+
+    logf("deinitializing");
+    send_window_unmap(NULL);
+    send_window_destroy(NULL); // kill screen window
+    if (ERROR_SUCCESS != (uResult = StopShellEventsThread()))
+        return uResult;
+    if (ERROR_SUCCESS != (uResult = UnregisterWatchedDC(*screenDC)))
+        return uResult;
+    if (ERROR_SUCCESS != (uResult = CloseScreenSection()))
+        return uResult;
+    if (!ReleaseDC(NULL, *screenDC))
+        return GetLastError();
+
+    logf("reinitializing");
+    if (ERROR_SUCCESS != (uResult = InitVideo(width, height, bpp)))
+        return uResult;
+    *screenDC = GetDC(NULL);
+    if (!(*screenDC))
+        return GetLastError();
+    if (ERROR_SUCCESS != (uResult = RegisterWatchedDC(*screenDC, damageEvent)))
+        return uResult;
+
+    send_window_create(NULL); // recreate screen window
+    send_pixmap_mfns(NULL); // update framebuffer
+
+    // is it possible to have VM resolution bigger than host set by user?
+    if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
+        g_bFullScreenMode = TRUE; // can't have reliable/intuitive seamless mode in this case
+
+    if (g_bFullScreenMode)
+        send_window_map(NULL); // show desktop window
+    else
+    {
+        if (ERROR_SUCCESS != StartShellEventsThread())
+            return uResult;
+    }
+    logf("done");
+    return ERROR_SUCCESS;
+}
+
+ULONG handle_xconf()
 {
     struct msg_xconf xconf;
 
     //debugf("start");
     read_all_vchan_ext(&xconf, sizeof(xconf));
     logf("host resolution: %lux%lu, mem: %lu, depth: %lu\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
-    InitVideo(xconf.w, xconf.h, 32 /*xconf.depth*/);
+    g_HostScreenWidth = xconf.w;
+    g_HostScreenHeight = xconf.h;
+    return InitVideo(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
 }
 
 int bitset(BYTE *keys, int num)
@@ -713,7 +777,9 @@ void handle_configure(HWND hWnd)
 
     debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &configure, sizeof(configure));
-    SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    debugf("(%d,%x) %dx%d", configure.x, configure.y, configure.width, configure.height);
+    if (hWnd != 0) // 0 is full screen
+        SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
 }
 
 void handle_focus(HWND hWnd)
@@ -771,24 +837,6 @@ ULONG handle_server_data()
     default:
         logf("got unknown msg type %d, ignoring\n", hdr.type);
 
-    case MSG_MAP:
-        //              handle_map(g, hdr.window);
-        //		break;
-    case MSG_CROSSING:
-        //              handle_crossing(g, hdr.window);
-        //		break;
-    case MSG_CLIPBOARD_REQ:
-        //              handle_clipboard_req(g, hdr.window);
-        //		break;
-    case MSG_CLIPBOARD_DATA:
-        //              handle_clipboard_data(g, hdr.window);
-        //		break;
-    case MSG_EXECUTE:
-        //              handle_execute();
-        //		break;
-    case MSG_WINDOW_FLAGS:
-        //              handle_window_flags(g, hdr.window);
-        //		break;
         /* discard unsupported message body */
         while (hdr.untrusted_len > 0)
         {
@@ -831,7 +879,7 @@ ULONG WINAPI WatchForEvents()
     DWORD i, dwSignaledEvent;
     BOOL bVchanIoInProgress;
     ULONG uResult;
-    BOOL bVchanReturnedError;
+    BOOL bExitLoop;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
     HANDLE hFullScreenOnEvent;
@@ -872,7 +920,7 @@ ULONG WINAPI WatchForEvents()
 
     g_bVchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
-    bVchanReturnedError = FALSE;
+    bExitLoop = FALSE;
 
     while (TRUE)
     {
@@ -896,7 +944,7 @@ ULONG WINAPI WatchForEvents()
             if (ERROR_IO_PENDING != uResult)
             {
                 perror("ReadFile");
-                bVchanReturnedError = TRUE;
+                bExitLoop = TRUE;
                 break;
             }
         }
@@ -969,20 +1017,28 @@ ULONG WINAPI WatchForEvents()
                     if (uResult)
                     {
                         errorf("libvchan_server_handle_connected() failed");
-                        bVchanReturnedError = TRUE;
+                        bExitLoop = TRUE;
                         break;
                     }
 
                     send_protocol_version();
 
                     // This will probably change the current video mode.
-                    handle_xconf();
+                    if (ERROR_SUCCESS != handle_xconf())
+                    {
+                        bExitLoop = TRUE;
+                        break;
+                    }
 
-                    // The desktop DC should be opened only after the resolution changes.
+                    // The screen DC should be opened only after the resolution changes.
                     hDC = GetDC(NULL);
                     uResult = RegisterWatchedDC(hDC, hWindowDamageEvent);
                     if (ERROR_SUCCESS != uResult)
+                    {
                         perror("RegisterWatchedDC");
+                        bExitLoop = TRUE;
+                        break;
+                    }
 
                     // send the whole screen framebuffer map
                     send_window_create(NULL);
@@ -993,6 +1049,13 @@ ULONG WINAPI WatchForEvents()
                         debugf("init in fullscreen mode");
                         send_window_map(NULL);
                     }
+                    else
+                        if (ERROR_SUCCESS != StartShellEventsThread())
+                        {
+                            errorf("StartShellEventsThread failed, exiting");
+                            bExitLoop = TRUE;
+                            break;
+                        }
 
                     g_bVchanClientConnected = TRUE;
                     break;
@@ -1022,7 +1085,7 @@ ULONG WINAPI WatchForEvents()
                         if (GetLastError() != ERROR_OPERATION_ABORTED)
                         {
                             perror("GetOverlappedResult(evtchn)");
-                            bVchanReturnedError = TRUE;
+                            bExitLoop = TRUE;
                             break;
                         }
                 }
@@ -1034,7 +1097,7 @@ ULONG WINAPI WatchForEvents()
 
                 if (libvchan_is_eof(ctrl))
                 {
-                    bVchanReturnedError = TRUE;
+                    bExitLoop = TRUE;
                     break;
                 }
 
@@ -1043,7 +1106,7 @@ ULONG WINAPI WatchForEvents()
                     uResult = handle_server_data();
                     if (ERROR_SUCCESS != uResult)
                     {
-                        bVchanReturnedError = TRUE;
+                        bExitLoop = TRUE;
                         errorf("handle_server_data() failed: 0x%x", uResult);
                         break;
                     }
@@ -1054,7 +1117,7 @@ ULONG WINAPI WatchForEvents()
             }
         }
 
-        if (bVchanReturnedError)
+        if (bExitLoop)
             break;
     }
 
@@ -1084,11 +1147,13 @@ ULONG WINAPI WatchForEvents()
     CloseHandle(ol.hEvent);
     CloseHandle(hWindowDamageEvent);
 
+    StopShellEventsThread();
     UnregisterWatchedDC(hDC);
+    CloseScreenSection();
     ReleaseDC(NULL, hDC);
     logf("exiting");
 
-    return bVchanReturnedError ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
+    return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
 
 static ULONG CheckForXenInterface()

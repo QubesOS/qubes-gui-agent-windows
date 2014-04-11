@@ -16,14 +16,37 @@ extern BOOL g_bUseDirtyBits;
 extern LONG g_ScreenHeight;
 extern LONG g_ScreenWidth;
 
+ULONG CloseScreenSection()
+{
+    if (!UnmapViewOfFile(g_pScreenData))
+        return perror("UnmapViewOfFile(g_pScreenData)");
+
+    CloseHandle(g_hScreenSection);
+    g_pScreenData = NULL;
+    g_hScreenSection = NULL;
+
+    if (g_bUseDirtyBits)
+    {
+        if (!UnmapViewOfFile(g_pDirtyPages))
+            return perror("UnmapViewOfFile(g_pDirtyPages)");
+        CloseHandle(g_hDirtySection);
+        g_pDirtyPages = NULL;
+        g_hDirtySection = NULL;
+    }
+
+    return ERROR_SUCCESS;
+}
+
 ULONG OpenScreenSection()
 {
     TCHAR SectionName[100];
     ULONG uLength = g_ScreenHeight * g_ScreenWidth * 4;
 
-    // already initialized
+    // need to explicitly close sections before reopening them
     if (g_hScreenSection && g_pScreenData)
-        return ERROR_SUCCESS;
+    {
+        return ERROR_NOT_SUPPORTED;
+    }
 
     StringCchPrintf(SectionName, _countof(SectionName),
         _T("Global\\QubesSharedMemory_%x"), uLength);

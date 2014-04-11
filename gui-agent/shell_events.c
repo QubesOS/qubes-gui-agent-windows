@@ -483,6 +483,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 // Reinitialize everything, called after a session switch.
 // This is executed as another thread to avoid g_hShellEventsThread killing itself without finishing the job.
 // TODO: use this with session change notification instead of AttachToInputDesktop every time?
+// NOTE: this function doesn't close/reopen qvideo's screen section
 DWORD WINAPI ResetWatch(PVOID param)
 {
     PWATCHED_DC pWatchedDC;
@@ -883,9 +884,6 @@ ULONG StartShellEventsThread()
 
     if (!g_Initialized)
     {
-        if (ERROR_SUCCESS != OpenScreenSection())
-            return perror("OpenScreenSection");
-
         InitializeListHead(&g_WatchedWindowsList);
         InitializeCriticalSection(&g_csWatchedWindows);
 
@@ -907,9 +905,10 @@ ULONG StopShellEventsThread()
         return ERROR_SUCCESS;
 
     if (!PostMessage(g_ShellEventsWnd, WM_CLOSE, 0, 0))
-        perror("PostMessage(WM_CLOSE)");
+        return perror("PostMessage(WM_CLOSE)");
 
     debugf("waiting for thread to exit");
+    // FIXME: timeout
     WaitForSingleObject(g_hShellEventsThread, INFINITE);
 
     CloseHandle(g_hShellEventsThread);
