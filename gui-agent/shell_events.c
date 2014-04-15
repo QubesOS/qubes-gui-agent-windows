@@ -867,6 +867,7 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
     if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWnd))
         return perror("CreateShellHookWindow");
 
+    InvalidateRect(NULL, NULL, TRUE); // repaint everything
     if (ERROR_SUCCESS != (uResult = HookMessageLoop()))
         return uResult;
 

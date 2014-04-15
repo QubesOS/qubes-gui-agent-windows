@@ -29,6 +29,32 @@ BOOL g_bFullScreenMode = FALSE;
 LONG g_HostScreenWidth = 0;
 LONG g_HostScreenHeight = 0;
 
+// Signal to change resolution to g_ResolutionChangeParams.
+// This is pretty ugly but we need to trigger resolution change from a separate thread...
+HANDLE g_ResolutionChangeEvent = NULL;
+
+#define RESOLUTION_CHANGE_TIMEOUT 500
+
+// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+// after last screen resize message received from gui daemon.
+// This is to not change resolution on every such message (multiple times per second).
+// This thread is created in handle_configure().
+HANDLE g_ResolutionChangeThread = NULL;
+
+// Event signaled by handle_configure on receiving screen resize message.
+// g_ResolutionChangeThread handles that and throttles too frequent resolution changes.
+HANDLE g_ResolutionChangeRequestedEvent = NULL;
+
+struct RESOLUTION_CHANGE_PARAMS
+{
+    LONG width;
+    LONG height;
+    LONG x; // this is needed to send ACK to daemon although it's useless for fullscreen
+    LONG y;
+};
+
+struct RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = {0};
+
 HANDLE CreateNamedEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
@@ -328,7 +354,6 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
     struct msg_hdr hdr;
     struct msg_map_info mmi;
 
-    //logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
     if (pWatchedDC)
         logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
     else
@@ -419,6 +444,31 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
         hdr.type = MSG_MAP;
         write_message(hdr, mmi);
     }
+    LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return ERROR_SUCCESS;
+}
+
+// Send screen resolution back do gui daemon.
+ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    struct msg_hdr hdr;
+    struct msg_configure mc;
+    struct msg_map_info mmi;
+
+    debugf("(%d,%d) %dx%d", x, y, width, height);
+    hdr.window = 0; // 0 = screen
+
+    hdr.type = MSG_CONFIGURE;
+
+    mc.x = x;
+    mc.y = y;
+    mc.width = width;
+    mc.height = height;
+    mc.override_redirect = 0;
+
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, mc);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -543,8 +593,6 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG hei
     ULONG uResult;
 
     logf("deinitializing");
-    send_window_unmap(NULL);
-    send_window_destroy(NULL); // kill screen window
     if (ERROR_SUCCESS != (uResult = StopShellEventsThread()))
         return uResult;
     if (ERROR_SUCCESS != (uResult = UnregisterWatchedDC(*screenDC)))
@@ -563,7 +611,6 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG hei
     if (ERROR_SUCCESS != (uResult = RegisterWatchedDC(*screenDC, damageEvent)))
         return uResult;
 
-    send_window_create(NULL); // recreate screen window
     send_pixmap_mfns(NULL); // update framebuffer
 
     // is it possible to have VM resolution bigger than host set by user?
@@ -571,13 +618,22 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG hei
         g_bFullScreenMode = TRUE; // can't have reliable/intuitive seamless mode in this case
 
     if (g_bFullScreenMode)
+    {
         send_window_map(NULL); // show desktop window
+        // FIXME: sometimes after resolution change the desktop in dom0 isn't repainted
+        //send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
+    }
     else
     {
         if (ERROR_SUCCESS != StartShellEventsThread())
             return uResult;
     }
     logf("done");
+
+    // Reply to the daemon's request (with just the same data).
+    // Otherwise daemon won't send screen resize requests again.
+    send_screen_configure(g_ResolutionChangeParams.x, g_ResolutionChangeParams.y, width, height);
+
     return ERROR_SUCCESS;
 }
 
@@ -771,15 +827,81 @@ void handle_motion(HWND hWnd)
     }
 }
 
+// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+// after last screen resize message received from gui daemon.
+// This is to not change resolution on every such message (multiple times per second).
+// This thread is created in handle_configure().
+DWORD WINAPI ResolutionChangeThread(void *param)
+{
+    DWORD waitResult;
+
+    while (TRUE)
+    {
+        // Wait indefinitely for an initial "change resolution" event.
+        WaitForSingleObject(g_ResolutionChangeRequestedEvent, INFINITE);
+        debugf("resolution change requested: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+
+        do
+        {
+            // If event is signaled again before timeout expires: ignore and wait for another one.
+            waitResult = WaitForSingleObject(g_ResolutionChangeRequestedEvent, RESOLUTION_CHANGE_TIMEOUT);
+            debugf("second wait result: %lu", waitResult);
+        }
+        while (waitResult == WAIT_OBJECT_0);
+
+        // If we're here, that means the wait finally timed out.
+        // We can change the resolution now.
+        logf("resolution change: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        SetEvent(g_ResolutionChangeEvent); // handled in WatchForEvents
+    }
+    return 0;
+}
+
 void handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
-    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &configure, sizeof(configure));
-    debugf("(%d,%x) %dx%d", configure.x, configure.y, configure.width, configure.height);
+    debugf("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
+    
     if (hWnd != 0) // 0 is full screen
         SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    else
+    {
+        // gui daemon requests screen resize: possible resolution change
+
+        // Create trigger event for the throttling thread if not yet created.
+        if (!g_ResolutionChangeRequestedEvent)
+            g_ResolutionChangeRequestedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+        // Create the throttling thread if not yet running.
+        if (!g_ResolutionChangeThread)
+            g_ResolutionChangeThread = CreateThread(NULL, 0, ResolutionChangeThread, NULL, 0, 0);
+
+        if (g_ScreenWidth == configure.width && g_ScreenHeight == configure.height)
+        {
+            return; // nothing changes, ignore
+        }
+
+        if (!IS_RESOLUTION_VALID(configure.width, configure.height))
+        {
+            logf("Ignoring invalid resolution %dx%d", configure.width, configure.height);
+            // send back current resolution to keep daemon up to date
+            send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
+            return;
+        }
+
+        // Store the requested screen size.
+        g_ResolutionChangeParams.width = configure.width;
+        g_ResolutionChangeParams.height = configure.height;
+        // XY coords are used to reply with the same message to the daemon.
+        // It's useless for fullscreen but the daemon needs such ACK...
+        g_ResolutionChangeParams.x = configure.x;
+        g_ResolutionChangeParams.y = configure.y;
+
+        // Signal the trigger event so the throttling thread evaluates the resize request.
+        SetEvent(g_ResolutionChangeRequestedEvent);
+    }
 }
 
 void handle_focus(HWND hWnd)
@@ -852,7 +974,7 @@ ULONG handle_server_data()
 
 void SetFullscreenMode()
 {
-    debugf("Full screen mode changed to %d", g_bFullScreenMode);
+    logf("Full screen mode changed to %d", g_bFullScreenMode);
 
     // ResetWatch kills the shell event thread and removes all watched windows.
     // If fullscreen is off the shell event thread is also restarted.
@@ -863,8 +985,17 @@ void SetFullscreenMode()
         // show the screen window
         send_window_map(NULL);
     }
-    else
+    else // seamless mode
     {
+        // change the resolution to match host, if different
+        if (g_ScreenWidth != g_HostScreenWidth || g_ScreenHeight != g_HostScreenHeight)
+        {
+            logf("Changing resolution to match host's");
+            g_ResolutionChangeParams.x = g_ResolutionChangeParams.y = 0;
+            g_ResolutionChangeParams.width = g_HostScreenWidth;
+            g_ResolutionChangeParams.height = g_HostScreenHeight;
+            SetEvent(g_ResolutionChangeEvent);
+        }
         // hide the screen window
         send_window_unmap(NULL);
     }
@@ -917,6 +1048,9 @@ ULONG WINAPI WatchForEvents()
     hFullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
     if (!hFullScreenOffEvent)
         return GetLastError();
+    g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (!g_ResolutionChangeEvent)
+        return GetLastError();
 
     g_bVchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
@@ -931,6 +1065,7 @@ ULONG WINAPI WatchForEvents()
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOnEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOffEvent;
+        WatchedEvents[uEventNumber++] = g_ResolutionChangeEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -995,7 +1130,12 @@ ULONG WINAPI WatchForEvents()
                 SetFullscreenMode();
                 break;
 
-            case 4: // vchan receive
+            case 4: // resolution change event, signaled by ResolutionChangeThread
+                ChangeResolution(&hDC, hWindowDamageEvent,
+                    g_ResolutionChangeParams.width, g_ResolutionChangeParams.height, 32);
+                break;
+
+            case 5: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //
