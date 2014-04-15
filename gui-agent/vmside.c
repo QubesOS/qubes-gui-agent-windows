@@ -13,29 +13,55 @@
 #define FULLSCREEN_ON_EVENT_NAME TEXT("WGA_FULLSCREEN_ON")
 #define FULLSCREEN_OFF_EVENT_NAME TEXT("WGA_FULLSCREEN_OFF")
 
-HANDLE g_hStopServiceEvent;
-HANDLE g_hCleanupFinishedEvent;
+// When signaled, causes agent to shutdown gracefully.
+#define WGA_SHUTDOWN_EVENT_NAME TEXT("Global\\WGA_SHUTDOWN")
+
 CRITICAL_SECTION g_VchanCriticalSection;
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
-extern LONG g_ScreenWidth;
-extern LONG g_ScreenHeight;
-
-extern HANDLE g_hSection;
-extern PUCHAR g_pScreenData;
-
 BOOL g_bVchanClientConnected = FALSE;
 BOOL g_bFullScreenMode = FALSE;
 
-HANDLE CreateFullScreenEvent(TCHAR *name)
+// used to determine whether our window in fullscreen mode should be borderless
+// (when resolution is smaller than host's)
+LONG g_HostScreenWidth = 0;
+LONG g_HostScreenHeight = 0;
+
+// Signal to change resolution to g_ResolutionChangeParams.
+// This is pretty ugly but we need to trigger resolution change from a separate thread...
+HANDLE g_ResolutionChangeEvent = NULL;
+
+#define RESOLUTION_CHANGE_TIMEOUT 500
+
+// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+// after last screen resize message received from gui daemon.
+// This is to not change resolution on every such message (multiple times per second).
+// This thread is created in handle_configure().
+HANDLE g_ResolutionChangeThread = NULL;
+
+// Event signaled by handle_configure on receiving screen resize message.
+// g_ResolutionChangeThread handles that and throttles too frequent resolution changes.
+HANDLE g_ResolutionChangeRequestedEvent = NULL;
+
+struct RESOLUTION_CHANGE_PARAMS
+{
+    LONG width;
+    LONG height;
+    LONG x; // this is needed to send ACK to daemon although it's useless for fullscreen
+    LONG y;
+};
+
+struct RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = {0};
+
+HANDLE CreateNamedEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
     EXPLICIT_ACCESS ea = {0};
     PACL acl = NULL;
-    HANDLE hFullScreenEvent = NULL;
+    HANDLE event = NULL;
 
     // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
     ea.grfAccessMode = GRANT_ACCESS;
@@ -65,18 +91,19 @@ HANDLE CreateFullScreenEvent(TCHAR *name)
     sa.lpSecurityDescriptor = &sd;
     sa.bInheritHandle = FALSE;
 
-    hFullScreenEvent = CreateEvent(&sa, FALSE, FALSE, name);
+    // autoreset, not signaled
+    event = CreateEvent(&sa, FALSE, FALSE, name);
 
-    if (!hFullScreenEvent)
+    if (!event)
     {
-        perror("CreateEvent(fullscreen)");
+        perror("CreateEvent");
         goto cleanup;
     }
 
 cleanup:
     if (acl)
         LocalFree(acl);
-    return hFullScreenEvent;
+    return event;
 }
 
 /* Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd
@@ -327,7 +354,6 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
     struct msg_hdr hdr;
     struct msg_map_info mmi;
 
-    //logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
     if (pWatchedDC)
         logf("Mapping window 0x%x\n", pWatchedDC->hWnd);
     else
@@ -359,8 +385,11 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         (pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left == g_ScreenWidth &&
         pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
     {
-        logf("fullscreen window");
-        send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+        if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
+        {
+            logf("fullscreen window");
+            send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+        }
     }
 
     return ERROR_SUCCESS;
@@ -372,17 +401,32 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
     struct msg_configure mc;
     struct msg_map_info mmi;
 
-    debugf("0x%x", pWatchedDC->hWnd);
-    hdr.window = (uint32_t) pWatchedDC->hWnd;
+    if (pWatchedDC)
+    {
+        debugf("0x%x", pWatchedDC->hWnd);
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
 
-    hdr.type = MSG_CONFIGURE;
+        hdr.type = MSG_CONFIGURE;
 
-    mc.x = pWatchedDC->rcWindow.left;
-    mc.y = pWatchedDC->rcWindow.top;
-    mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
-    mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
-    mc.override_redirect = 0;
+        mc.x = pWatchedDC->rcWindow.left;
+        mc.y = pWatchedDC->rcWindow.top;
+        mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
+        mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
+        mc.override_redirect = 0;
+    }
+    else // whole screen
+    {
+        debugf("fullscreen: (0,0) %dx%d", g_ScreenWidth, g_ScreenHeight);
+        hdr.window = 0;
 
+        hdr.type = MSG_CONFIGURE;
+
+        mc.x = 0;
+        mc.y = 0;
+        mc.width = g_ScreenWidth;
+        mc.height = g_ScreenHeight;
+        mc.override_redirect = 0;
+    }
     EnterCriticalSection(&g_VchanCriticalSection);
 
     /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
@@ -392,7 +436,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
         write_message(hdr, mc);
     }
 
-    if (pWatchedDC->bVisible)
+    if (pWatchedDC && pWatchedDC->bVisible)
     {
         mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
@@ -400,6 +444,31 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
         hdr.type = MSG_MAP;
         write_message(hdr, mmi);
     }
+    LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return ERROR_SUCCESS;
+}
+
+// Send screen resolution back do gui daemon.
+ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    struct msg_hdr hdr;
+    struct msg_configure mc;
+    struct msg_map_info mmi;
+
+    debugf("(%d,%d) %dx%d", x, y, width, height);
+    hdr.window = 0; // 0 = screen
+
+    hdr.type = MSG_CONFIGURE;
+
+    mc.x = x;
+    mc.y = y;
+    mc.width = width;
+    mc.height = height;
+    mc.override_redirect = 0;
+
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, mc);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -454,18 +523,21 @@ void send_protocol_version()
     write_struct(version);
 }
 
-ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
+ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 {
     LPTSTR ptszDeviceName = NULL;
     DISPLAY_DEVICE DisplayDevice;
 
     if (!IS_RESOLUTION_VALID(uWidth, uHeight))
     {
-        errorf("Resolution is invalid: %dx%d\n", uWidth, uHeight);
+        errorf("Resolution is invalid: %lux%lu\n", uWidth, uHeight);
         return ERROR_INVALID_PARAMETER;
     }
 
-    logf("New resolution: %dx%d bpp %d\n", uWidth, uHeight, uBpp);
+    logf("New resolution: %lux%lu bpp %u\n", uWidth, uHeight, uBpp);
+    // ChangeDisplaySettings fails if thread's desktop != input desktop...
+    // This can happen on "quick user switch".
+    AttachToInputDesktop();
 
     if (ERROR_SUCCESS != FindQubesDisplayDevice(&DisplayDevice))
         return perror("FindQubesDisplayDevice");
@@ -484,48 +556,97 @@ ULONG SetVideoMode(int uWidth, int uHeight, int uBpp)
     return ERROR_SUCCESS;
 }
 
-void handle_xconf()
+ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
 {
-    struct msg_xconf xconf;
-    ULONG uResult;
-
-    //debugf("start");
-    read_all_vchan_ext((char *)&xconf, sizeof(xconf));
-
-    logf("host resolution: %dx%d, mem: %d, depth: %d\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
-
-    uResult = SetVideoMode(xconf.w, xconf.h, 32);
+    ULONG uResult = SetVideoMode(width, height, bpp);
     if (ERROR_SUCCESS != uResult)
     {
         QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
 
-        logf("SetVideoMode() failed: %d\n", uResult);
+        logf("SetVideoMode() failed: %lu\n", uResult);
 
         // resolution change failed, use fullscreen mode at current resolution
         uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
         if (ERROR_SUCCESS != uResult)
         {
-            errorf("GetWindowData() failed with error %d\n", uResult);
-            return;
+            errorf("GetWindowData() failed: %lu\n", uResult);
+            return uResult;
         }
 
         g_ScreenWidth = QvGetSurfaceDataResponse.cx;
         g_ScreenHeight = QvGetSurfaceDataResponse.cy;
         g_bFullScreenMode = TRUE;
 
-        logf("keeping original %dx%d\n", g_ScreenWidth, g_ScreenHeight);
+        logf("keeping original %lux%lu\n", g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
-        g_ScreenWidth = xconf.w;
-        g_ScreenHeight = xconf.h;
-
-        if (ERROR_SUCCESS != StartShellEventsThread())
-        {
-            errorf("StartShellEventsThread failed, exiting");
-            exit(1);
-        }
+        g_ScreenWidth = width;
+        g_ScreenHeight = height;
     }
+
+    return OpenScreenSection();
+}
+
+ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG height, ULONG bpp)
+{
+    ULONG uResult;
+
+    logf("deinitializing");
+    if (ERROR_SUCCESS != (uResult = StopShellEventsThread()))
+        return uResult;
+    if (ERROR_SUCCESS != (uResult = UnregisterWatchedDC(*screenDC)))
+        return uResult;
+    if (ERROR_SUCCESS != (uResult = CloseScreenSection()))
+        return uResult;
+    if (!ReleaseDC(NULL, *screenDC))
+        return GetLastError();
+
+    logf("reinitializing");
+    if (ERROR_SUCCESS != (uResult = InitVideo(width, height, bpp)))
+        return uResult;
+    *screenDC = GetDC(NULL);
+    if (!(*screenDC))
+        return GetLastError();
+    if (ERROR_SUCCESS != (uResult = RegisterWatchedDC(*screenDC, damageEvent)))
+        return uResult;
+
+    send_pixmap_mfns(NULL); // update framebuffer
+
+    // is it possible to have VM resolution bigger than host set by user?
+    if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
+        g_bFullScreenMode = TRUE; // can't have reliable/intuitive seamless mode in this case
+
+    if (g_bFullScreenMode)
+    {
+        send_window_map(NULL); // show desktop window
+        // FIXME: sometimes after resolution change the desktop in dom0 isn't repainted
+        //send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
+    }
+    else
+    {
+        if (ERROR_SUCCESS != StartShellEventsThread())
+            return uResult;
+    }
+    logf("done");
+
+    // Reply to the daemon's request (with just the same data).
+    // Otherwise daemon won't send screen resize requests again.
+    send_screen_configure(g_ResolutionChangeParams.x, g_ResolutionChangeParams.y, width, height);
+
+    return ERROR_SUCCESS;
+}
+
+ULONG handle_xconf()
+{
+    struct msg_xconf xconf;
+
+    //debugf("start");
+    read_all_vchan_ext(&xconf, sizeof(xconf));
+    logf("host resolution: %lux%lu, mem: %lu, depth: %lu\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
+    g_HostScreenWidth = xconf.w;
+    g_HostScreenHeight = xconf.h;
+    return InitVideo(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
 }
 
 int bitset(BYTE *keys, int num)
@@ -706,13 +827,81 @@ void handle_motion(HWND hWnd)
     }
 }
 
+// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+// after last screen resize message received from gui daemon.
+// This is to not change resolution on every such message (multiple times per second).
+// This thread is created in handle_configure().
+DWORD WINAPI ResolutionChangeThread(void *param)
+{
+    DWORD waitResult;
+
+    while (TRUE)
+    {
+        // Wait indefinitely for an initial "change resolution" event.
+        WaitForSingleObject(g_ResolutionChangeRequestedEvent, INFINITE);
+        debugf("resolution change requested: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+
+        do
+        {
+            // If event is signaled again before timeout expires: ignore and wait for another one.
+            waitResult = WaitForSingleObject(g_ResolutionChangeRequestedEvent, RESOLUTION_CHANGE_TIMEOUT);
+            debugf("second wait result: %lu", waitResult);
+        }
+        while (waitResult == WAIT_OBJECT_0);
+
+        // If we're here, that means the wait finally timed out.
+        // We can change the resolution now.
+        logf("resolution change: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        SetEvent(g_ResolutionChangeEvent); // handled in WatchForEvents
+    }
+    return 0;
+}
+
 void handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
-    debugf("0x%x", hWnd);
     read_all_vchan_ext((char *) &configure, sizeof(configure));
-    SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    debugf("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
+    
+    if (hWnd != 0) // 0 is full screen
+        SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    else
+    {
+        // gui daemon requests screen resize: possible resolution change
+
+        // Create trigger event for the throttling thread if not yet created.
+        if (!g_ResolutionChangeRequestedEvent)
+            g_ResolutionChangeRequestedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+        // Create the throttling thread if not yet running.
+        if (!g_ResolutionChangeThread)
+            g_ResolutionChangeThread = CreateThread(NULL, 0, ResolutionChangeThread, NULL, 0, 0);
+
+        if (g_ScreenWidth == configure.width && g_ScreenHeight == configure.height)
+        {
+            return; // nothing changes, ignore
+        }
+
+        if (!IS_RESOLUTION_VALID(configure.width, configure.height))
+        {
+            logf("Ignoring invalid resolution %dx%d", configure.width, configure.height);
+            // send back current resolution to keep daemon up to date
+            send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
+            return;
+        }
+
+        // Store the requested screen size.
+        g_ResolutionChangeParams.width = configure.width;
+        g_ResolutionChangeParams.height = configure.height;
+        // XY coords are used to reply with the same message to the daemon.
+        // It's useless for fullscreen but the daemon needs such ACK...
+        g_ResolutionChangeParams.x = configure.x;
+        g_ResolutionChangeParams.y = configure.y;
+
+        // Signal the trigger event so the throttling thread evaluates the resize request.
+        SetEvent(g_ResolutionChangeRequestedEvent);
+    }
 }
 
 void handle_focus(HWND hWnd)
@@ -770,24 +959,6 @@ ULONG handle_server_data()
     default:
         logf("got unknown msg type %d, ignoring\n", hdr.type);
 
-    case MSG_MAP:
-        //              handle_map(g, hdr.window);
-        //		break;
-    case MSG_CROSSING:
-        //              handle_crossing(g, hdr.window);
-        //		break;
-    case MSG_CLIPBOARD_REQ:
-        //              handle_clipboard_req(g, hdr.window);
-        //		break;
-    case MSG_CLIPBOARD_DATA:
-        //              handle_clipboard_data(g, hdr.window);
-        //		break;
-    case MSG_EXECUTE:
-        //              handle_execute();
-        //		break;
-    case MSG_WINDOW_FLAGS:
-        //              handle_window_flags(g, hdr.window);
-        //		break;
         /* discard unsupported message body */
         while (hdr.untrusted_len > 0)
         {
@@ -803,7 +974,7 @@ ULONG handle_server_data()
 
 void SetFullscreenMode()
 {
-    debugf("Full screen mode changed to %d", g_bFullScreenMode);
+    logf("Full screen mode changed to %d", g_bFullScreenMode);
 
     // ResetWatch kills the shell event thread and removes all watched windows.
     // If fullscreen is off the shell event thread is also restarted.
@@ -814,8 +985,17 @@ void SetFullscreenMode()
         // show the screen window
         send_window_map(NULL);
     }
-    else
+    else // seamless mode
     {
+        // change the resolution to match host, if different
+        if (g_ScreenWidth != g_HostScreenWidth || g_ScreenHeight != g_HostScreenHeight)
+        {
+            logf("Changing resolution to match host's");
+            g_ResolutionChangeParams.x = g_ResolutionChangeParams.y = 0;
+            g_ResolutionChangeParams.width = g_HostScreenWidth;
+            g_ResolutionChangeParams.height = g_HostScreenHeight;
+            SetEvent(g_ResolutionChangeEvent);
+        }
         // hide the screen window
         send_window_unmap(NULL);
     }
@@ -830,11 +1010,12 @@ ULONG WINAPI WatchForEvents()
     DWORD i, dwSignaledEvent;
     BOOL bVchanIoInProgress;
     ULONG uResult;
-    BOOL bVchanReturnedError;
+    BOOL bExitLoop;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
     HANDLE hFullScreenOnEvent;
     HANDLE hFullScreenOffEvent;
+    HANDLE hShutdownEvent;
     HDC hDC;
     ULONG uDamage = 0;
 
@@ -858,26 +1039,33 @@ ULONG WINAPI WatchForEvents()
     memset(&ol, 0, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hFullScreenOnEvent = CreateFullScreenEvent(FULLSCREEN_ON_EVENT_NAME);
+    hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
+    if (!hShutdownEvent)
+        return GetLastError();
+    hFullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!hFullScreenOnEvent)
         return GetLastError();
-    hFullScreenOffEvent = CreateFullScreenEvent(FULLSCREEN_OFF_EVENT_NAME);
+    hFullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
     if (!hFullScreenOffEvent)
+        return GetLastError();
+    g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (!g_ResolutionChangeEvent)
         return GetLastError();
 
     g_bVchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
-    bVchanReturnedError = FALSE;
+    bExitLoop = FALSE;
 
     while (TRUE)
     {
         uEventNumber = 0;
 
         // Order matters.
-        WatchedEvents[uEventNumber++] = g_hStopServiceEvent;
+        WatchedEvents[uEventNumber++] = hShutdownEvent;
         WatchedEvents[uEventNumber++] = hWindowDamageEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOnEvent;
         WatchedEvents[uEventNumber++] = hFullScreenOffEvent;
+        WatchedEvents[uEventNumber++] = g_ResolutionChangeEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -891,7 +1079,7 @@ ULONG WINAPI WatchForEvents()
             if (ERROR_IO_PENDING != uResult)
             {
                 perror("ReadFile");
-                bVchanReturnedError = TRUE;
+                bExitLoop = TRUE;
                 break;
             }
         }
@@ -909,8 +1097,11 @@ ULONG WINAPI WatchForEvents()
         else
         {
             if (0 == dwSignaledEvent)
-                // g_hStopServiceEvent is signaled
+            {
+                // shutdown event
+                logf("Shutdown event signaled");
                 break;
+            }
 
             //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
             switch (dwSignaledEvent)
@@ -939,7 +1130,12 @@ ULONG WINAPI WatchForEvents()
                 SetFullscreenMode();
                 break;
 
-            case 4: // vchan receive
+            case 4: // resolution change event, signaled by ResolutionChangeThread
+                ChangeResolution(&hDC, hWindowDamageEvent,
+                    g_ResolutionChangeParams.width, g_ResolutionChangeParams.height, 32);
+                break;
+
+            case 5: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //
@@ -961,20 +1157,28 @@ ULONG WINAPI WatchForEvents()
                     if (uResult)
                     {
                         errorf("libvchan_server_handle_connected() failed");
-                        bVchanReturnedError = TRUE;
+                        bExitLoop = TRUE;
                         break;
                     }
 
                     send_protocol_version();
 
                     // This will probably change the current video mode.
-                    handle_xconf();
+                    if (ERROR_SUCCESS != handle_xconf())
+                    {
+                        bExitLoop = TRUE;
+                        break;
+                    }
 
-                    // The desktop DC should be opened only after the resolution changes.
+                    // The screen DC should be opened only after the resolution changes.
                     hDC = GetDC(NULL);
                     uResult = RegisterWatchedDC(hDC, hWindowDamageEvent);
                     if (ERROR_SUCCESS != uResult)
+                    {
                         perror("RegisterWatchedDC");
+                        bExitLoop = TRUE;
+                        break;
+                    }
 
                     // send the whole screen framebuffer map
                     send_window_create(NULL);
@@ -985,6 +1189,13 @@ ULONG WINAPI WatchForEvents()
                         debugf("init in fullscreen mode");
                         send_window_map(NULL);
                     }
+                    else
+                        if (ERROR_SUCCESS != StartShellEventsThread())
+                        {
+                            errorf("StartShellEventsThread failed, exiting");
+                            bExitLoop = TRUE;
+                            break;
+                        }
 
                     g_bVchanClientConnected = TRUE;
                     break;
@@ -1014,7 +1225,7 @@ ULONG WINAPI WatchForEvents()
                         if (GetLastError() != ERROR_OPERATION_ABORTED)
                         {
                             perror("GetOverlappedResult(evtchn)");
-                            bVchanReturnedError = TRUE;
+                            bExitLoop = TRUE;
                             break;
                         }
                 }
@@ -1026,7 +1237,7 @@ ULONG WINAPI WatchForEvents()
 
                 if (libvchan_is_eof(ctrl))
                 {
-                    bVchanReturnedError = TRUE;
+                    bExitLoop = TRUE;
                     break;
                 }
 
@@ -1035,7 +1246,7 @@ ULONG WINAPI WatchForEvents()
                     uResult = handle_server_data();
                     if (ERROR_SUCCESS != uResult)
                     {
-                        bVchanReturnedError = TRUE;
+                        bExitLoop = TRUE;
                         errorf("handle_server_data() failed: 0x%x", uResult);
                         break;
                     }
@@ -1046,7 +1257,7 @@ ULONG WINAPI WatchForEvents()
             }
         }
 
-        if (bVchanReturnedError)
+        if (bExitLoop)
             break;
     }
 
@@ -1076,11 +1287,13 @@ ULONG WINAPI WatchForEvents()
     CloseHandle(ol.hEvent);
     CloseHandle(hWindowDamageEvent);
 
+    StopShellEventsThread();
     UnregisterWatchedDC(hDC);
+    CloseScreenSection();
     ReleaseDC(NULL, hDC);
     logf("exiting");
 
-    return bVchanReturnedError ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
+    return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
 
 static ULONG CheckForXenInterface()
@@ -1092,24 +1305,6 @@ static ULONG CheckForXenInterface()
         return ERROR_NOT_SUPPORTED;
     xc_evtchn_close(xc);
     return ERROR_SUCCESS;
-}
-
-BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
-{
-    logf("Got shutdown signal\n");
-
-    SetEvent(g_hStopServiceEvent);
-
-    WaitForSingleObject(g_hCleanupFinishedEvent, 2000);
-
-    CloseHandle(g_hStopServiceEvent);
-    CloseHandle(g_hCleanupFinishedEvent);
-
-    StopShellEventsThread();
-
-    logf("Shutdown complete\n");
-    ExitProcess(0);
-    return TRUE;
 }
 
 ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)
@@ -1290,25 +1485,6 @@ ULONG Init()
         return perror("CheckForXenInterface");
     }
 
-    // Manual reset, initial state is not signaled
-    g_hStopServiceEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (!g_hStopServiceEvent)
-        return perror("CreateEvent");
-
-    // Manual reset, initial state is not signaled
-    g_hCleanupFinishedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (!g_hCleanupFinishedEvent)
-    {
-        uResult = perror("CreateEvent");
-        CloseHandle(g_hStopServiceEvent);
-        return uResult;
-    }
-
-    InitializeCriticalSection(&g_VchanCriticalSection);
-
-    if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE))
-        return GetLastError();
-
     return ERROR_SUCCESS;
 }
 
@@ -1321,12 +1497,13 @@ int _tmain(
     if (ERROR_SUCCESS != Init())
         return perror("Init");
 
+    InitializeCriticalSection(&g_VchanCriticalSection);
+
     // Call the thread proc directly.
     if (ERROR_SUCCESS != WatchForEvents())
         return perror("WatchForEvents");
 
     DeleteCriticalSection(&g_VchanCriticalSection);
-    SetEvent(g_hCleanupFinishedEvent);
 
     logf("exiting");
     return ERROR_SUCCESS;

@@ -31,6 +31,10 @@ typedef struct _WATCHED_DC
 
 } WATCHED_DC, *PWATCHED_DC;
 
+ULONG OpenScreenSection();
+
+ULONG CloseScreenSection();
+
 ULONG GetWindowData(
 	HWND hWnd,
 	PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse

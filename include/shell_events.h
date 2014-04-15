@@ -11,8 +11,6 @@
 #define REG_CONFIG_FPS_VALUE TEXT("QvideoMaxFps")
 #define REG_CONFIG_DIRTY_VALUE TEXT("UseDirtyBits")
 
-extern BOOL g_bUseDirtyBits;
-
 typedef struct _BANNED_POPUP_WINDOWS
 {
     ULONG	uNumberOfBannedPopups;
@@ -25,6 +23,15 @@ typedef struct _MODAL_SEARCH_PARAMS
     HWND ParentWindow; // window that's disabled by a modal window, input
     HWND ModalWindow; // modal window that's active, output
 } MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
+
+extern LONG g_ScreenWidth;
+extern LONG g_ScreenHeight;
+extern BOOL g_bFullScreenMode;
+extern BOOL g_bUseDirtyBits;
+extern BOOL g_bVchanClientConnected;
+extern PQV_DIRTY_PAGES g_pDirtyPages;
+
+ULONG AttachToInputDesktop();
 
 ULONG StartShellEventsThread();
 
@@ -69,8 +76,6 @@ ULONG send_window_unmap(
 ULONG send_window_map(
     PWATCHED_DC pWatchedDC
 );
-
-ULONG OpenScreenSection();
 
 DWORD WINAPI ResetWatch(PVOID param);
 

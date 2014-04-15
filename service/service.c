@@ -1,5 +1,7 @@
 #include <windows.h>
-
+#include <WtsApi32.h>
+#include <Shlwapi.h>
+#include <tchar.h>
 #include "log.h"
 
 #define SERVICE_NAME TEXT("QTWHelper")
@@ -7,6 +9,11 @@
 #define CONFIG_REG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
 #define CONFIG_REG_AUTOSTART_VALUE TEXT("Autostart")
 #define CONFIG_REG_LOG_VALUE TEXT("LogDir")
+
+// When signaled, causes agent to shutdown gracefully.
+#define WGA_SHUTDOWN_EVENT_NAME TEXT("Global\\WGA_SHUTDOWN")
+#define WGA_TERMINATE_TIMEOUT 5000
+// FIXME: move shared definitions to one common file
 
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
@@ -41,9 +48,66 @@ int main(int argc, TCHAR *argv[])
     StartServiceCtrlDispatcher(serviceTable);
 }
 
+void TerminateTargetProcess(TCHAR *exeName)
+{
+    WTS_PROCESS_INFO *processInfo = NULL;
+    DWORD count = 0, i;
+    HANDLE targetProcess;
+    HANDLE shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
+
+    logf("Process name: %s", exeName);
+    if (!shutdownEvent)
+    {
+        logf("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
+    }
+    else
+    {
+        logf("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
+        SetEvent(shutdownEvent);
+        CloseHandle(shutdownEvent);
+
+        logf("Waiting for process shutdown");
+    }
+
+    if (!WTSEnumerateProcesses(WTS_CURRENT_SERVER, 0, 1, &processInfo, &count))
+    {
+        perror("WTSEnumerateProcesses");
+        goto cleanup;
+    }
+
+    for (i=0; i<count; i++)
+    {
+        if (0 == _tcsnicmp(exeName, processInfo[i].pProcessName, _tcslen(exeName))) // match
+        {
+            logf("Process '%s' running as PID %d in session %d, waiting for %dms",
+                exeName, processInfo[i].ProcessId, processInfo[i].SessionId, WGA_TERMINATE_TIMEOUT);
+            targetProcess = OpenProcess(SYNCHRONIZE|PROCESS_TERMINATE, FALSE, processInfo[i].ProcessId);
+            if (!targetProcess)
+            {
+                perror("OpenProcess");
+                goto cleanup;
+            }
+
+            // wait for exit
+            if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, WGA_TERMINATE_TIMEOUT))
+            {
+                logf("Process didn't exit in time, killing it");
+                TerminateProcess(targetProcess, 0);
+            }
+            CloseHandle(targetProcess);
+            break;
+        }
+    }
+
+cleanup:
+    if (processInfo)
+        WTSFreeMemory(processInfo);
+}
+
 DWORD WINAPI WorkerThread(void *param)
 {
     TCHAR *cmdline;
+    TCHAR *exeName;
     PROCESS_INFORMATION pi;
     STARTUPINFO si;
     HANDLE newToken;
@@ -53,11 +117,16 @@ DWORD WINAPI WorkerThread(void *param)
     HANDLE currentProcess = GetCurrentProcess();
 
     cmdline = (TCHAR*) param;
+    PathUnquoteSpaces(cmdline);
+    exeName = PathFindFileName(cmdline);
 
     while (1)
     {
         // Wait until the interactive session changes (to winlogon console).
         WaitForSingleObject(g_ConsoleEvent, INFINITE);
+
+        // Make sure process is not running.
+        TerminateTargetProcess(exeName);
 
         // Get access token from ourselves.
         OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
@@ -88,7 +157,7 @@ DWORD WINAPI WorkerThread(void *param)
         si.lpDesktop = TEXT("WinSta0\\Winlogon");
         if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
         {
-            perror("CreateProcessAsUser1");
+            perror("CreateProcessAsUser");
         }
     }
 

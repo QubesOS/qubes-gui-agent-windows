@@ -5,6 +5,82 @@
 
 #define CHANGE_DISPLAY_MODE_TRIES 5
 
+PBYTE g_pScreenData = NULL;
+HANDLE g_hScreenSection = NULL;
+
+// bit array of dirty pages in the screen buffer (changed since last check)
+PQV_DIRTY_PAGES g_pDirtyPages = NULL;
+HANDLE g_hDirtySection = NULL;
+
+extern BOOL g_bUseDirtyBits;
+extern LONG g_ScreenHeight;
+extern LONG g_ScreenWidth;
+
+ULONG CloseScreenSection()
+{
+    if (!UnmapViewOfFile(g_pScreenData))
+        return perror("UnmapViewOfFile(g_pScreenData)");
+
+    CloseHandle(g_hScreenSection);
+    g_pScreenData = NULL;
+    g_hScreenSection = NULL;
+
+    if (g_bUseDirtyBits)
+    {
+        if (!UnmapViewOfFile(g_pDirtyPages))
+            return perror("UnmapViewOfFile(g_pDirtyPages)");
+        CloseHandle(g_hDirtySection);
+        g_pDirtyPages = NULL;
+        g_hDirtySection = NULL;
+    }
+
+    return ERROR_SUCCESS;
+}
+
+ULONG OpenScreenSection()
+{
+    TCHAR SectionName[100];
+    ULONG uLength = g_ScreenHeight * g_ScreenWidth * 4;
+
+    // need to explicitly close sections before reopening them
+    if (g_hScreenSection && g_pScreenData)
+    {
+        return ERROR_NOT_SUPPORTED;
+    }
+
+    StringCchPrintf(SectionName, _countof(SectionName),
+        _T("Global\\QubesSharedMemory_%x"), uLength);
+    debugf("screen section: %s", SectionName);
+
+    g_hScreenSection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
+    if (!g_hScreenSection)
+        return perror("OpenFileMapping(screen section)");
+
+    g_pScreenData = (PBYTE) MapViewOfFile(g_hScreenSection, FILE_MAP_READ, 0, 0, 0);
+    if (!g_pScreenData)
+        return perror("MapViewOfFile(screen section)");
+
+    if (g_bUseDirtyBits)
+    {
+        uLength /= PAGE_SIZE;
+        StringCchPrintf(SectionName, _countof(SectionName),
+            _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
+        debugf("dirty section: %s", SectionName);
+
+        g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
+        if (!g_hDirtySection)
+            return perror("OpenFileMapping(dirty section)");
+
+        g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
+        if (!g_pDirtyPages)
+            return perror("MapViewOfFile(dirty section)");
+
+        debugf("dirty section=0x%x, data=0x%x", g_hDirtySection, g_pDirtyPages);
+    }
+
+    return ERROR_SUCCESS;
+}
+
 ULONG FindQubesDisplayDevice(
     PDISPLAY_DEVICE pQubesDisplayDevice
     )
@@ -42,6 +118,7 @@ ULONG FindQubesDisplayDevice(
     return ERROR_SUCCESS;
 }
 
+// tells qvideo that given resolution will be set by the system
 ULONG SupportVideoMode(
     LPTSTR ptszQubesDeviceName,
     ULONG uWidth,
@@ -67,7 +144,7 @@ ULONG SupportVideoMode(
     QvSupportMode.uMagic = QVIDEO_MAGIC;
     QvSupportMode.uWidth = uWidth;
     QvSupportMode.uHeight = uHeight;
-    QvSupportMode.uBpp = 32;
+    QvSupportMode.uBpp = uBpp;
 
     iRet = ExtEscape(hControlDC, QVESC_SUPPORT_MODE, sizeof(QvSupportMode), (LPCSTR) & QvSupportMode, 0, NULL);
     DeleteDC(hControlDC);

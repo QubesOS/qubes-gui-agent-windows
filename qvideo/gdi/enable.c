@@ -432,18 +432,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
     HSURF hsurf;
     DHSURF dhsurf;
     ULONG uResult;
-/*	BITMAP_HEADER BitmapHeader = { {0x4D42, 0, 0, 0, 0x8A}
-    ,
-    {0x7C, 0, 0, 1, 32, 3, 0, 0, 0, 0, 0,
-     0x0FF0000, 0x0FF00, 0x0FF, 0x0FF000000, 0x73524742,
-     {{0x28F5C280, 0x151EB860, 0x1EB8520}
-      , {0x13333340, 0x26666680, 0x6666640}
-      , {0x99999A0, 0x3D70A3C, 0x328F5C24}
-      }
-     ,
-     0, 0, 0, 4, 0, 0, 0}
-    };
-*/
+
     if (!hdev || !pHsurf || !ppSurfaceDescriptor)
         return STATUS_INVALID_PARAMETER;
 
@@ -469,7 +458,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
     uSurfaceMemorySize = (ULONG) (uStride * sizl.cy);
 
-//      DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
+//    DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
 
     pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) EngAllocMem(FL_ZERO_MEMORY, sizeof(SURFACE_DESCRIPTOR), ALLOC_TAG);
     if (!pSurfaceDescriptor)
@@ -518,18 +507,11 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
     pSurfaceDescriptor->lDelta = uStride;
     pSurfaceDescriptor->ulBitCount = ulBitCount;
 
-/*
-    memcpy(&pSurfaceDescriptor->BitmapHeader, &BitmapHeader, sizeof(BitmapHeader));
-    pSurfaceDescriptor->BitmapHeader.FileHeader.bfSize = sizl.cx * sizl.cy * 4 + sizeof(BitmapHeader);
-    pSurfaceDescriptor->BitmapHeader.V5Header.bV5Width = sizl.cx;
-    pSurfaceDescriptor->BitmapHeader.V5Header.bV5Height = -(LONG) sizl.cy;
-    pSurfaceDescriptor->BitmapHeader.V5Header.bV5SizeImage = sizl.cx * sizl.cy * 4;
-*/
     if (sizl.cx > 50)
     {
-//              DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
-//                       &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
-//                       pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
+//        DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
+//            &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
+//            pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
         DISPDBG((0, "Surface %dx%d, data at %p (0x%x bytes), pfns: %d\n",
             sizl.cx, sizl.cy, pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
             pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
@@ -701,6 +683,7 @@ ULONG SupportVideoMode(
     if (pQvSupportMode->uBpp != 16 && pQvSupportMode->uBpp != 24 && pQvSupportMode->uBpp != 32)
         return QV_SUPPORT_MODE_INVALID_BPP;
 
+    DISPDBG((0, "SupportVideoMode(%ld, %ld, %d)\n", pQvSupportMode->uWidth, pQvSupportMode->uHeight, pQvSupportMode->uBpp));
     g_uWidth = pQvSupportMode->uWidth;
     g_uHeight = pQvSupportMode->uHeight;
     g_uBpp = pQvSupportMode->uBpp;
@@ -883,7 +866,7 @@ ULONG StopWatchingSurface(
     DISPDBG((0, "StopWatchingSurface(%p)\n", pso));
 
     // Require a cleanup callback to be called.
-    // pSurfaceDescriptor->hDriverObj will be set no NULL by the callback.
+    // pSurfaceDescriptor->hDriverObj will be set to NULL by the callback.
     EngDeleteDriverObj(pSurfaceDescriptor->hDriverObj, TRUE, FALSE);
 
     return QV_SUCCESS;
@@ -900,9 +883,13 @@ ULONG APIENTRY DrvEscape(
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor;
 
+    DISPDBG((0, "DrvEscape: pso=%p, code=%x\n", pso, iEsc));
     if ((cjIn < sizeof(ULONG)) || !pvIn || (*(PULONG) pvIn != QVIDEO_MAGIC))
+    {
         // 0 means "not supported"
+        DISPDBG((0, "DrvEscape: bad size/magic\n"));
         return 0;
+    }
 
     switch (iEsc)
     {
@@ -932,6 +919,7 @@ ULONG APIENTRY DrvEscape(
         return QV_SUCCESS;
 
     default:
+        DISPDBG((0, "DrvEscape: bad code %x\n", iEsc));
         // 0 means "not supported"
         return 0;
     }

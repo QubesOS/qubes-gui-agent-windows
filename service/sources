@@ -19,4 +19,5 @@ TARGETLIBS=\
         $(SDK_LIB_PATH)\user32.lib \
         $(SDK_LIB_PATH)\shlwapi.lib \
         $(SDK_LIB_PATH)\shell32.lib \
+        $(SDK_LIB_PATH)\wtsapi32.lib \
         $(QUBES_LIBS)\windows-utils.lib \
