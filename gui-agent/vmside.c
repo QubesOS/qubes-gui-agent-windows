@@ -880,6 +880,8 @@ void handle_configure(HWND hWnd)
 
         if (g_ScreenWidth == configure.width && g_ScreenHeight == configure.height)
         {
+            // send ACK to guid so it won't stop sending MSG_CONFIGURE
+            send_screen_configure(configure.x, configure.y, configure.width, configure.height);
             return; // nothing changes, ignore
         }
 
