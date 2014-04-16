@@ -10,6 +10,7 @@ C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
+                    ..\qvideo\inc; \
                     $(QUBES_INCLUDES); \
                     $(DDK_INC_PATH); \
                     ..\..\core\vchan; \
