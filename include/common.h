@@ -38,8 +38,8 @@ typedef struct _PFN_ARRAY
 #define	MAX_RESOLUTION_WIDTH	4000
 #define	MAX_RESOLUTION_HEIGHT	4000
 
-#define	MIN_RESOLUTION_WIDTH	640
-#define	MIN_RESOLUTION_HEIGHT	480
+#define	MIN_RESOLUTION_WIDTH	320
+#define	MIN_RESOLUTION_HEIGHT	200
 
 #define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && ((uWidth) <= MAX_RESOLUTION_WIDTH) && (MIN_RESOLUTION_HEIGHT <= (uHeight)) && ((uHeight) <= MAX_RESOLUTION_HEIGHT))
 #define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
