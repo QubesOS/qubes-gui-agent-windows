@@ -55,6 +55,9 @@ struct RESOLUTION_CHANGE_PARAMS
 
 struct RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = {0};
 
+ULONG HideCursors();
+ULONG DisableEffects();
+
 HANDLE CreateNamedEvent(TCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
@@ -637,6 +640,9 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent, ULONG width, ULONG hei
     // is it possible to have VM resolution bigger than host set by user?
     if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
         g_bFullScreenMode = TRUE; // can't have reliable/intuitive seamless mode in this case
+
+    HideCursors();
+    DisableEffects();
 
     if (g_bFullScreenMode)
     {
