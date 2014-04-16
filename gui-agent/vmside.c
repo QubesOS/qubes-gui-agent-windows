@@ -333,6 +333,26 @@ ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
     return ERROR_SUCCESS;
 }
 
+void send_screen_hints()
+{
+    struct msg_hdr hdr;
+    struct msg_window_hints msg = {0};
+
+    msg.flags = 16|32; // min and max size, see http://tronche.com/gui/x/icccm/sec-4.html
+    msg.min_width = MIN_RESOLUTION_WIDTH;
+    msg.min_height = MIN_RESOLUTION_HEIGHT;
+    msg.max_width = g_HostScreenWidth;
+    msg.max_height = g_HostScreenHeight;
+    debugf("min %dx%d, max %dx%d", msg.min_width, msg.min_height, msg.max_width, msg.max_height);
+
+    hdr.window = 0; // screen
+    hdr.type = MSG_WINDOW_HINTS;
+
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, msg);
+    LeaveCriticalSection(&g_VchanCriticalSection);
+}
+
 ULONG send_window_unmap(HWND hWnd)
 {
     struct msg_hdr hdr;
@@ -385,6 +405,7 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         (pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left == g_ScreenWidth &&
         pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
     {
+        send_screen_hints(); // min/max screen size
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             logf("fullscreen window");
