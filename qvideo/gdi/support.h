@@ -3,6 +3,7 @@
 #define REG_CONFIG_DIRTY_VALUE L"UseDirtyBits"
 
 // default maximum refresh events per second
+// 0 = disable limiter
 #define DEFAULT_MAX_REFRESH_FPS 30LL
 
 // upper limit

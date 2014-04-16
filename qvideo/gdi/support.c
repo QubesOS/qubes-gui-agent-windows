@@ -90,15 +90,22 @@ VOID ReadRegistryConfig(VOID)
 
         RtlCopyMemory(&g_MaxFps, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
 
-        if (g_MaxFps < 1 || g_MaxFps > MAX_REFRESH_FPS)
+        if (g_MaxFps > MAX_REFRESH_FPS)
         {
             WARNINGF("invalid refresh FPS: %d, reverting to default %d", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
             g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
         }
     }
 
-    g_RefreshInterval.QuadPart = g_PCFrequency.QuadPart / g_MaxFps;
-    DEBUGF("FPS: %lu, freq: %I64d, interval: %I64d", g_MaxFps, g_PCFrequency.QuadPart, g_RefreshInterval.QuadPart);
+    if (g_MaxFps != 0)
+    {
+        g_RefreshInterval.QuadPart = g_PCFrequency.QuadPart / g_MaxFps;
+        DEBUGF("FPS: %lu, freq: %I64d, interval: %I64d", g_MaxFps, g_PCFrequency.QuadPart, g_RefreshInterval.QuadPart);
+    }
+    else
+    {
+        DEBUGF("FPS limit disabled");
+    }
 
 cleanup:
     if (pKeyInfo)
@@ -209,12 +216,15 @@ ULONG UpdateDirtyBits(
     TIME_FIELDS tf;
 #endif
 
-    timestamp = KeQueryPerformanceCounter(NULL);
-    //DEBUGF("ts: %I64d", timestamp.QuadPart);
-    if (timestamp.QuadPart < pTimestamp->QuadPart + g_RefreshInterval.QuadPart)
-        return 0; // too soon
+    if (g_MaxFps != 0) // FPS limiter enabled
+    {
+        timestamp = KeQueryPerformanceCounter(NULL);
+        //DEBUGF("ts: %I64d", timestamp.QuadPart);
+        if (timestamp.QuadPart < pTimestamp->QuadPart + g_RefreshInterval.QuadPart)
+            return 0; // too soon
 
-    *pTimestamp = timestamp;
+        *pTimestamp = timestamp;
+    }
 
     if (!g_bUseDirtyBits)
         return 1; // just signal the refresh event
