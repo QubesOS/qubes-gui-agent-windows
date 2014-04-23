@@ -1,6 +1,7 @@
 #define OEMRESOURCE
 #include <windows.h>
 #include <aclapi.h>
+#include <winsock2.h>
 #include "tchar.h"
 #include "qubes-gui-protocol.h"
 #include "libvchan.h"
@@ -54,6 +55,8 @@ struct RESOLUTION_CHANGE_PARAMS
 };
 
 struct RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = {0};
+
+char g_HostName[256] = "<unknown>";
 
 ULONG HideCursors();
 ULONG DisableEffects();
@@ -409,6 +412,7 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
     {
         send_screen_hints(); // min/max screen size
+        send_wmname(NULL);
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             logf("fullscreen window");
@@ -526,11 +530,18 @@ void send_wmname(HWND hWnd)
     struct msg_hdr hdr;
     struct msg_wmname msg;
 
-    // FIXME: this fails for non-ascii strings
-    if (!GetWindowTextA(hWnd, msg.data, sizeof(msg.data)))
+    if (hWnd)
     {
-        // ignore empty/non-readable captions
-        return;
+        // FIXME: this fails for non-ascii strings
+        if (!GetWindowTextA(hWnd, msg.data, sizeof(msg.data)))
+        {
+            // ignore empty/non-readable captions
+            return;
+        }
+    }
+    else
+    {
+        StringCchPrintfA(msg.data, RTL_NUMBER_OF(msg.data), "%s (Windows Desktop)", g_HostName);
     }
     debugf("0x%x %S", hWnd, msg.data);
 
@@ -1491,6 +1502,7 @@ cleanup:
 ULONG Init()
 {
     ULONG uResult;
+    WSADATA wsaData;
 
     if (ERROR_SUCCESS != ReadRegistryConfig())
         return GetLastError();
@@ -1512,6 +1524,21 @@ ULONG Init()
     if (ERROR_SUCCESS != uResult)
     {
         return perror("CheckForXenInterface");
+    }
+
+    uResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (uResult == 0)
+    {
+        if (0 != gethostname(g_HostName, sizeof(g_HostName)))
+        {
+            errorf("gethostname failed: 0x%x", uResult);
+        }
+        WSACleanup();
+    }
+    else
+    {
+        errorf("WSAStartup failed: 0x%x", uResult);
+        // this is not fatal, only used to get host name for full desktop window title
     }
 
     return ERROR_SUCCESS;

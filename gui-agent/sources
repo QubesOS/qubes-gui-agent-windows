@@ -27,6 +27,7 @@ TARGETLIBS=\
         $(SDK_LIB_PATH)\shlwapi.lib \
         $(SDK_LIB_PATH)\shell32.lib \
         $(SDK_LIB_PATH)\wtsapi32.lib \
+        $(SDK_LIB_PATH)\ws2_32.lib \
         $(QUBES_LIBS)\windows-utils.lib \
         $(QUBES_LIBS)\libvchan.lib \
         $(QUBES_LIBS)\gntmem.lib \
