@@ -30,7 +30,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 	ULONG DevicePropertyType;
 	int retcode = 1;
 
-    if (argc<2) {
+    if (argc < 2) {
 		usage(argv[0]);
 		return 2;
     }
@@ -47,21 +47,28 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
         return 4;
     }
 
+    fprintf(stderr, "inf: '%S', hwid: '%S'\n", inf, hwid);
+
     // List of hardware ID's must be double zero-terminated
     ZeroMemory(hwIdList,sizeof(hwIdList));
-    if (FAILED(StringCchCopy(hwIdList,LINE_LEN,hwid)))
+    if (FAILED(StringCchCopy(hwIdList, LINE_LEN, hwid))) {
+        fprintf(stderr, "StringCchCopy failed\n");
         goto cleanup;
+    }
 
     // Use the INF File to extract the Class GUID.
-    if (!SetupDiGetINFClass(inf,&ClassGUID,ClassName,sizeof(ClassName)/sizeof(ClassName[0]),0)) {
+    if (!SetupDiGetINFClass(inf, &ClassGUID, ClassName, sizeof(ClassName)/sizeof(ClassName[0]), 0)) {
 		retcode = 5;
+        fprintf(stderr, "SetupDiGetINFClass failed\n");
         goto cleanup;
 	}
 
+    fprintf(stderr, "class: %S\n", ClassName);
+
     // List devices of given enumerator
-    DeviceInfoSet = SetupDiGetClassDevs(&ClassGUID, TEXT("ROOT"), NULL, DIGCF_PRESENT );
+    DeviceInfoSet = SetupDiGetClassDevs(&ClassGUID, TEXT("ROOT"), NULL, DIGCF_PRESENT);
     if (DeviceInfoSet == INVALID_HANDLE_VALUE) {
-		fprintf(stderr, "GetLastError: %d\n", GetLastError());
+		fprintf(stderr, "SetupDiGetClassDevs failed: %d\n", GetLastError());
 		retcode = 6;
         goto cleanup;
 	}
@@ -69,7 +76,10 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
     DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
 	DeviceIndex = 0;
 	while (SetupDiEnumDeviceInfo(DeviceInfoSet, DeviceIndex, &DeviceInfoData)) {
-		if (!SetupDiGetDeviceProperty(DeviceInfoSet,
+        fprintf(stderr, "dev %d\n", DeviceIndex);
+        DeviceIndex++;
+
+        if (!SetupDiGetDeviceProperty(DeviceInfoSet,
 					&DeviceInfoData,
 					&DEVPKEY_Device_HardwareIds,
 					&DevicePropertyType,
@@ -77,28 +87,90 @@ int __cdecl _tmain(int argc, PZPWSTR argv) {
 					sizeof(hwIdList2),
 					NULL,
 					0)) {
-			DeviceIndex++;
 			continue;
 		}
-		currentHwId = hwIdList2;
+
+        currentHwId = hwIdList2;
 		while (currentHwId[0]) {
-			if (_tcscmp(currentHwId, hwid)==0) {
-				fprintf(stderr, "Device already exists\n");
+            fprintf(stderr, "hwid: %S\n", currentHwId);
+			if (_tcscmp(currentHwId, hwid) == 0) {
+				fprintf(stderr, "Device already exists (known class)\n");
 				retcode = 0;
 				goto cleanup;
 			}
 			currentHwId += _tcslen(currentHwId)+1;
 		}
-		DeviceIndex++;
 	}
 
-	// reuse the same variable for new device
+    fprintf(stderr, "Device not found in known class, searching unknown\n");
+
+    SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+
+    DeviceInfoSet = SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT);
+    if (DeviceInfoSet == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "SetupDiGetClassDevs failed: %d\n", GetLastError());
+        retcode = 6;
+        goto cleanup;
+    }
+
+    ZeroMemory(&DeviceInfoData, sizeof(SP_DEVINFO_DATA));
+    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    DeviceIndex = 0;
+
+    // enumerate all devices
+    while (SetupDiEnumDeviceInfo(DeviceInfoSet, DeviceIndex, &DeviceInfoData)) {
+        fprintf(stderr, "dev %d\n", DeviceIndex);
+        DeviceIndex++;
+
+        // get device class
+        if (!SetupDiGetDeviceProperty(
+            DeviceInfoSet,
+            &DeviceInfoData,
+            &DEVPKEY_Device_Class,
+            &DevicePropertyType,
+            (PBYTE)&ClassGUID,
+            sizeof(ClassGUID),
+            NULL,
+            0) || DevicePropertyType != DEVPROP_TYPE_GUID) {
+
+            if (GetLastError() == ERROR_NOT_FOUND) {
+                fprintf(stderr, "unknown device class\n");
+                // get device hwid
+                if (!SetupDiGetDeviceProperty(DeviceInfoSet,
+                    &DeviceInfoData,
+                    &DEVPKEY_Device_HardwareIds,
+                    &DevicePropertyType,
+                    (LPBYTE)hwIdList2,
+                    sizeof(hwIdList2),
+                    NULL,
+                    0)) {
+                        continue;
+                }
+
+                currentHwId = hwIdList2;
+                while (currentHwId[0]) {
+                    fprintf(stderr, "hwid: %S\n", currentHwId);
+                    if (_tcscmp(currentHwId, hwid)==0) {
+                        fprintf(stderr, "Device already exists (unknown class)\n");
+                        retcode = 0;
+                        goto cleanup;
+                    }
+                    currentHwId += _tcslen(currentHwId)+1;
+                }
+            }
+        }
+    }
+
+    // reuse the same variable for new device
 	SetupDiDestroyDeviceInfoList(DeviceInfoSet);
 
+    fprintf(stderr, "adding new device\n");
     // Create the container for the to-be-created Device Information Element.
     DeviceInfoSet = SetupDiCreateDeviceInfoList(&ClassGUID,0);
-    if (DeviceInfoSet == INVALID_HANDLE_VALUE)
+    if (DeviceInfoSet == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "SetupDiCreateDeviceInfoList failed\n");
         goto cleanup;
+    }
 
     // Now create the element.
     // Use the Class GUID and Name from the INF file.
@@ -140,5 +212,6 @@ cleanup:
     if (DeviceInfoSet != INVALID_HANDLE_VALUE)
         SetupDiDestroyDeviceInfoList(DeviceInfoSet);
 
+    fprintf(stderr, "return: %d\n", retcode);
     return retcode;
 }
