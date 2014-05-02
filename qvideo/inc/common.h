@@ -1,7 +1,14 @@
 #pragma once
 
-// Enough to describe 20480000 4-byte pixels, which is roughly 4525x4525.
-#define	MAX_RETURNED_PFNS	20000
+#define PAGE_SIZE 0x1000
+
+#define	MAX_RESOLUTION_WIDTH	4000
+#define	MAX_RESOLUTION_HEIGHT	4000
+
+#define	MIN_RESOLUTION_WIDTH	320
+#define	MIN_RESOLUTION_HEIGHT	200
+
+#define	MAX_RETURNED_PFNS	(((MAX_RESOLUTION_WIDTH*MAX_RESOLUTION_HEIGHT*4) / PAGE_SIZE) + 1)
 
 #ifdef _X86_
 typedef ULONG PFN_NUMBER, *PPFN_NUMBER;
@@ -15,7 +22,6 @@ typedef struct _PFN_ARRAY
     PFN_NUMBER Pfn[MAX_RETURNED_PFNS];
 } PFN_ARRAY, *PPFN_ARRAY;
 
-#define PAGE_SIZE 0x1000
 
 // User mode -> display interface
 
@@ -34,12 +40,6 @@ typedef struct _PFN_ARRAY
 #define QV_SUPPORT_MODE_INVALID_RESOLUTION	3
 #define QV_SUPPORT_MODE_INVALID_BPP	4
 #define QV_INVALID_HANDLE	5
-
-#define	MAX_RESOLUTION_WIDTH	4000
-#define	MAX_RESOLUTION_HEIGHT	4000
-
-#define	MIN_RESOLUTION_WIDTH	320
-#define	MIN_RESOLUTION_HEIGHT	200
 
 #define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && ((uWidth) <= MAX_RESOLUTION_WIDTH) && (MIN_RESOLUTION_HEIGHT <= (uHeight)) && ((uHeight) <= MAX_RESOLUTION_HEIGHT))
 #define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
