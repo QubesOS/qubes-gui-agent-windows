@@ -8,49 +8,37 @@ LARGE_INTEGER g_RefreshInterval;
 ULONG g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
 BOOLEAN g_bUseDirtyBits = TRUE;
 
-// read maximum refresh FPS from the registry
-VOID ReadRegistryConfig(VOID)
+ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
 {
-    static BOOLEAN bInitialized = FALSE;
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
     HANDLE handleRegKey = NULL;
-    NTSTATUS status;
-    UNICODE_STRING RegistryKeyName;
-    OBJECT_ATTRIBUTES ObjectAttributes;
+    OBJECT_ATTRIBUTES attributes;
+    UNICODE_STRING usKeyName;
+    UNICODE_STRING usValueName;
     PKEY_VALUE_FULL_INFORMATION pKeyInfo = NULL;
-    UNICODE_STRING ValueName;
     ULONG ulKeyInfoSize = 0;
     ULONG ulKeyInfoSizeNeeded = 0;
-    ULONG ulUseDirtyBits = g_bUseDirtyBits;
 
-    if (bInitialized)
-        return;
-
-    bInitialized = TRUE;
-
-    // frequency doesn't change, query it once
-    KeQueryPerformanceCounter(&g_PCFrequency);
-
-    RtlInitUnicodeString(&RegistryKeyName, REG_CONFIG_KEY);
-    InitializeObjectAttributes(&ObjectAttributes, 
-        &RegistryKeyName,
+    RtlInitUnicodeString(&usKeyName, REG_CONFIG_KEY);
+    InitializeObjectAttributes(&attributes, 
+        &usKeyName,
         OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         NULL,    // handle
         NULL);
 
-    status = ZwOpenKey(&handleRegKey, KEY_READ, &ObjectAttributes);
+    status = ZwOpenKey(&handleRegKey, KEY_READ, &attributes);
     if (!NT_SUCCESS(status)) 
     {
-        // use the default value
-        WARNINGF("ZwOpenKey(%wZ) failed, using default refresh rate: %d", RegistryKeyName, DEFAULT_MAX_REFRESH_FPS);
+        WARNINGF("ZwOpenKey(%wZ) failed", usKeyName);
         goto cleanup;
     }
 
-    RtlInitUnicodeString(&ValueName, REG_CONFIG_FPS_VALUE);
+    RtlInitUnicodeString(&usValueName, valueName);
 
     // Determine the required size of keyInfo.
     status = ZwQueryValueKey(
         handleRegKey,
-        &ValueName,
+        &usValueName,
         KeyValueFullInformation,
         pKeyInfo,
         ulKeyInfoSize,
@@ -70,7 +58,7 @@ VOID ReadRegistryConfig(VOID)
         // Get the key data.
         status = ZwQueryValueKey(
             handleRegKey,
-            &ValueName,
+            &usValueName,
             KeyValueFullInformation,
             pKeyInfo,
             ulKeyInfoSize,
@@ -78,23 +66,53 @@ VOID ReadRegistryConfig(VOID)
 
         if ((status != STATUS_SUCCESS) || (ulKeyInfoSizeNeeded != ulKeyInfoSize) || (NULL == pKeyInfo))
         {
-            WARNINGF("ZwQueryValueKey(%wZ) failed: 0x%x", ValueName, status);
+            WARNINGF("ZwQueryValueKey(%wZ) failed: 0x%x", usValueName, status);
             goto cleanup;
         }
 
         if (pKeyInfo->Type != REG_DWORD)
         {
-            WARNINGF("config value '%wZ' is not DWORD but 0x%x", ValueName, pKeyInfo->Type);
+            WARNINGF("config value '%wZ' is not DWORD but 0x%x", usValueName, pKeyInfo->Type);
             goto cleanup;
         }
 
-        RtlCopyMemory(&g_MaxFps, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
+        RtlCopyMemory(value, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
+    }
 
-        if (g_MaxFps > MAX_REFRESH_FPS)
-        {
-            WARNINGF("invalid refresh FPS: %d, reverting to default %d", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
-            g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
-        }
+    status = STATUS_SUCCESS;
+
+cleanup:
+    if (pKeyInfo)
+        ExFreePoolWithTag(pKeyInfo, QVDISPLAY_TAG);
+
+    if (handleRegKey)
+        ZwClose(handleRegKey);
+
+    return status;
+}
+
+// read maximum refresh FPS from the registry
+VOID ReadRegistryConfig()
+{
+    static BOOLEAN bInitialized = FALSE;
+    ULONG ulUseDirtyBits = g_bUseDirtyBits;
+
+    if (bInitialized)
+        return;
+
+    // frequency doesn't change, query it once
+    KeQueryPerformanceCounter(&g_PCFrequency);
+
+    if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_FPS_VALUE, &g_MaxFps)))
+    {
+        WARNINGF("failed to read MaxFps config value");
+        g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
+    }
+
+    if (g_MaxFps > MAX_REFRESH_FPS)
+    {
+        WARNINGF("invalid refresh FPS: %d, reverting to default %d", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
+        g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
     }
 
     if (g_MaxFps != 0)
@@ -107,72 +125,18 @@ VOID ReadRegistryConfig(VOID)
         DEBUGF("FPS limit disabled");
     }
 
-cleanup:
-    if (pKeyInfo)
-        ExFreePoolWithTag(pKeyInfo, QVDISPLAY_TAG);
-    pKeyInfo = NULL;
-
-    // second config value
-    RtlInitUnicodeString(&ValueName, REG_CONFIG_DIRTY_VALUE);
-
-    ulKeyInfoSize = 0;
-    // Determine the required size of keyInfo.
-    status = ZwQueryValueKey(
-        handleRegKey,
-        &ValueName,
-        KeyValueFullInformation,
-        pKeyInfo,
-        ulKeyInfoSize,
-        &ulKeyInfoSizeNeeded);
-
-    if ((status == STATUS_BUFFER_TOO_SMALL) || (status == STATUS_BUFFER_OVERFLOW))
+    // dirty bits
+    if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_DIRTY_VALUE, &ulUseDirtyBits)))
     {
-        ulKeyInfoSize = ulKeyInfoSizeNeeded;
-        pKeyInfo = (PKEY_VALUE_FULL_INFORMATION) ExAllocatePoolWithTag(NonPagedPool, ulKeyInfoSizeNeeded, QVDISPLAY_TAG);
-        if (NULL == pKeyInfo)
-        {
-            ERRORF("No memory");
-            goto cleanup2;
-        }
-
-        RtlZeroMemory(pKeyInfo, ulKeyInfoSize);
-        // Get the key data.
-        status = ZwQueryValueKey(
-            handleRegKey,
-            &ValueName,
-            KeyValueFullInformation,
-            pKeyInfo,
-            ulKeyInfoSize,
-            &ulKeyInfoSizeNeeded);
-
-        if ((status != STATUS_SUCCESS) || (ulKeyInfoSizeNeeded != ulKeyInfoSize) || (NULL == pKeyInfo))
-        {
-            WARNINGF("ZwQueryValueKey(%wZ) failed: 0x%x", ValueName, status);
-            goto cleanup2;
-        }
-
-        if (pKeyInfo->Type != REG_DWORD)
-        {
-            WARNINGF("config value '%wZ' is not DWORD but 0x%x", ValueName, pKeyInfo->Type);
-            goto cleanup2;
-        }
-
-        RtlCopyMemory(&ulUseDirtyBits, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
-        g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
+        WARNINGF("failed to read dirty bits config value, using %d", g_bUseDirtyBits);
     }
     else
     {
-        WARNINGF("dirty status %x", status);
+        g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
+        DEBUGF("UseDirtyBits: %d", ulUseDirtyBits);
     }
 
-cleanup2:
-    if (pKeyInfo)
-        ExFreePoolWithTag(pKeyInfo, QVDISPLAY_TAG);
-
-    if (handleRegKey)
-        ZwClose(handleRegKey);
-
-    DEBUGF("Use dirty bits? %d", g_bUseDirtyBits);
+    bInitialized = TRUE;
 }
 
 // debug
