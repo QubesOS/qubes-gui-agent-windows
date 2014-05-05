@@ -1,7 +1,7 @@
 #include "qvcontrol.h"
 #include "log.h"
 
-#define QUBES_DRIVER_NAME	_T("Qubes Video Driver")
+#define QUBES_DRIVER_NAME L"Qubes Video Driver"
 
 #define CHANGE_DISPLAY_MODE_TRIES 5
 
@@ -39,7 +39,7 @@ ULONG CloseScreenSection()
 
 ULONG OpenScreenSection()
 {
-    TCHAR SectionName[100];
+    WCHAR SectionName[100];
     ULONG uLength = g_ScreenHeight * g_ScreenWidth * 4;
 
     // need to explicitly close sections before reopening them
@@ -49,7 +49,7 @@ ULONG OpenScreenSection()
     }
 
     StringCchPrintf(SectionName, _countof(SectionName),
-        _T("Global\\QubesSharedMemory_%x"), uLength);
+        L"Global\\QubesSharedMemory_%x", uLength);
     debugf("screen section: %s", SectionName);
 
     g_hScreenSection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
@@ -64,7 +64,7 @@ ULONG OpenScreenSection()
     {
         uLength /= PAGE_SIZE;
         StringCchPrintf(SectionName, _countof(SectionName),
-            _T("Global\\QvideoDirtyPages_%x"), sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
+            L"Global\\QvideoDirtyPages_%x", sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
         debugf("dirty section: %s", SectionName);
 
         g_hDirtySection = OpenFileMapping(FILE_MAP_READ, FALSE, SectionName);
@@ -266,30 +266,30 @@ cleanup:
 }
 
 ULONG ChangeVideoMode(
-    LPTSTR ptszDeviceName,
+    PWCHAR deviceName,
     ULONG uWidth,
     ULONG uHeight,
     ULONG uBpp
     )
 {
-    DEVMODE DevMode;
+    DEVMODE devMode;
     ULONG uResult = ERROR_SUCCESS;
     DWORD iModeNum;
     BOOL bFound = FALSE;
     DWORD iTriesLeft;
 
-    debugf("%s %dx%d @ %d", ptszDeviceName, uWidth, uHeight, uBpp);
-    if (!ptszDeviceName)
+    debugf("%s %dx%d @ %d", deviceName, uWidth, uHeight, uBpp);
+    if (!deviceName)
         return ERROR_INVALID_PARAMETER;
 
-    memset(&DevMode, 0, sizeof(DEVMODE));
-    DevMode.dmSize = sizeof(DEVMODE);
+    memset(&devMode, 0, sizeof(DEVMODE));
+    devMode.dmSize = sizeof(DEVMODE);
 
-    if (EnumDisplaySettings(ptszDeviceName, ENUM_CURRENT_SETTINGS, &DevMode))
+    if (EnumDisplaySettings(deviceName, ENUM_CURRENT_SETTINGS, &devMode))
     {
-        if (DevMode.dmPelsWidth == uWidth &&
-            DevMode.dmPelsHeight == uHeight &&
-            DevMode.dmBitsPerPel == uBpp)
+        if (devMode.dmPelsWidth == uWidth &&
+            devMode.dmPelsHeight == uHeight &&
+            devMode.dmBitsPerPel == uBpp)
         {
             // the current mode is good
             goto cleanup;
@@ -300,13 +300,13 @@ ULONG ChangeVideoMode(
     // Without this, win32k will try to match a specified mode in the cache,
     // will fail and return DISP_CHANGE_BADMODE.
     iModeNum = 0;
-    while (EnumDisplaySettings(ptszDeviceName, iModeNum, &DevMode))
+    while (EnumDisplaySettings(deviceName, iModeNum, &devMode))
     {
         logf("mode %d: %dx%d@%d\n",
-            iModeNum, DevMode.dmPelsWidth, DevMode.dmPelsHeight, DevMode.dmBitsPerPel);
-        if (DevMode.dmPelsWidth == uWidth &&
-            DevMode.dmPelsHeight == uHeight &&
-            DevMode.dmBitsPerPel == uBpp)
+            iModeNum, devMode.dmPelsWidth, devMode.dmPelsHeight, devMode.dmBitsPerPel);
+        if (devMode.dmPelsWidth == uWidth &&
+            devMode.dmPelsHeight == uHeight &&
+            devMode.dmBitsPerPel == uBpp)
         {
             bFound = TRUE;
             break;
@@ -325,14 +325,14 @@ ULONG ChangeVideoMode(
     iTriesLeft = CHANGE_DISPLAY_MODE_TRIES;
     while (iTriesLeft--)
     {
-        uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, CDS_TEST, NULL);
+        uResult = ChangeDisplaySettingsEx(deviceName, &devMode, NULL, CDS_TEST, NULL);
         if (DISP_CHANGE_SUCCESSFUL != uResult)
         {
             errorf("ChangeDisplaySettingsEx(CDS_TEST) failed: %d", uResult);
         }
         else
         {
-            uResult = ChangeDisplaySettingsEx(ptszDeviceName, &DevMode, NULL, 0, NULL);
+            uResult = ChangeDisplaySettingsEx(deviceName, &devMode, NULL, 0, NULL);
             if (DISP_CHANGE_SUCCESSFUL != uResult)
                 errorf("ChangeDisplaySettingsEx() failed: %d", uResult);
             else

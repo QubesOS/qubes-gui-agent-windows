@@ -1,6 +1,4 @@
 #define REG_CONFIG_KEY L"\\Registry\\Machine\\Software\\Invisible Things Lab\\Qubes Tools"
-#define REG_CONFIG_FPS_VALUE L"QvideoMaxFps"
-#define REG_CONFIG_DIRTY_VALUE L"UseDirtyBits"
 
 // default maximum refresh events per second
 // 0 = disable limiter

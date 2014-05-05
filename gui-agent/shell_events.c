@@ -5,7 +5,7 @@
 // qvideo's dirty page scan of surface memory buffer.
 BOOL g_bUseDirtyBits = FALSE;
 
-const TCHAR g_szClassName[] = _T("QubesShellHookClass");
+const WCHAR g_szClassName[] = L"QubesShellHookClass";
 ULONG g_uShellHookMessage = 0;
 HWND g_ShellEventsWnd = NULL;
 HANDLE g_hShellEventsThread = NULL;
@@ -265,7 +265,7 @@ ULONG AttachToInputDesktop()
 {
     ULONG uResult = ERROR_SUCCESS;
     HDESK desktop = 0, oldDesktop = 0;
-    TCHAR name[256];
+    WCHAR name[256];
     DWORD needed;
     DWORD sessionId;
     DWORD size;
@@ -342,7 +342,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 {
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
-    CHAR BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
+    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
     PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
     BOOL bRecheckWindows = FALSE;
     HWND hwndOldDesktop = g_DesktopHwnd;
@@ -395,11 +395,11 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     }
 
     if (!g_ExplorerHwnd || bRecheckWindows || !IsWindow(g_ExplorerHwnd))
-        g_ExplorerHwnd = FindWindow(NULL, _T("Program Manager"));
+        g_ExplorerHwnd = FindWindow(NULL, L"Program Manager");
 
     if (!g_TaskbarHwnd || bRecheckWindows || !IsWindow(g_TaskbarHwnd))
     {
-        g_TaskbarHwnd = FindWindow(_T("Shell_TrayWnd"), NULL);
+        g_TaskbarHwnd = FindWindow(L"Shell_TrayWnd", NULL);
 
         if (g_TaskbarHwnd)
             if (g_bFullScreenMode)
@@ -410,7 +410,7 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
 
     if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
     {
-        g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, _T("Button"), NULL);
+        g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, L"Button", NULL);
 
         if (g_StartButtonHwnd)
             if (g_bFullScreenMode)
@@ -804,7 +804,7 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
     if (!RegisterClassEx(&wc))
         return perror("RegisterClassEx");
 
-    hwnd = CreateWindow(g_szClassName, _T("QubesShellHook"),
+    hwnd = CreateWindow(g_szClassName, L"QubesShellHook",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, NULL, NULL, hInstance, NULL);
 
     if (hwnd == NULL)
@@ -830,7 +830,7 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
     }
     */
     if (!g_uShellHookMessage)
-        g_uShellHookMessage = RegisterWindowMessage(_T("SHELLHOOK"));
+        g_uShellHookMessage = RegisterWindowMessage(L"SHELLHOOK");
 
     if (!g_uShellHookMessage)
         return perror("RegisterWindowMessage");

@@ -2,11 +2,18 @@
 
 #define PAGE_SIZE 0x1000
 
-#define	MAX_RESOLUTION_WIDTH	4000
-#define	MAX_RESOLUTION_HEIGHT	4000
+// value names in registry config
+#define REG_CONFIG_LOG_VALUE L"LogDir"
+#define REG_CONFIG_FPS_VALUE L"QvideoMaxFps"
+#define REG_CONFIG_DIRTY_VALUE L"UseDirtyBits"
 
-#define	MIN_RESOLUTION_WIDTH	320
-#define	MIN_RESOLUTION_HEIGHT	200
+// these are just defaults if registry config can't be read
+#define	MAX_RESOLUTION_WIDTH	4096UL
+#define	MAX_RESOLUTION_HEIGHT	4096UL
+
+// these are hardcoded
+#define	MIN_RESOLUTION_WIDTH	320UL
+#define	MIN_RESOLUTION_HEIGHT	200UL
 
 #define	MAX_RETURNED_PFNS	(((MAX_RESOLUTION_WIDTH*MAX_RESOLUTION_HEIGHT*4) / PAGE_SIZE) + 1)
 

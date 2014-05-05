@@ -12,11 +12,11 @@
 #include "ntddvdeo.h"
 
 #pragma warning(pop)		// C4200: nonstandard extension used :
-					//        zero-sized array in struct/union
-					// C4201: nonstandard extension used:
-					//        nameless struct/union
-					// C4214: nonstandard extension used:
-					//        bit field types other than int
+                    //        zero-sized array in struct/union
+                    // C4201: nonstandard extension used:
+                    //        nameless struct/union
+                    // C4214: nonstandard extension used:
+                    //        bit field types other than int
 
 #include "debug.h"
 #include "common.h"
@@ -24,45 +24,45 @@
 typedef struct _SURFACE_DESCRIPTOR SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
 typedef struct _PDEV
 {
-	HANDLE hDriver;		// Handle to \Device\Screen
-	HDEV hdevEng;		// Engine's handle to PDEV
-	HSURF hsurfEng;		// Engine's handle to surface
-	HPALETTE hpalDefault;	// Handle to the default palette for device.
+    HANDLE hDriver;		// Handle to \Device\Screen
+    HDEV hdevEng;		// Engine's handle to PDEV
+    HSURF hsurfEng;		// Engine's handle to surface
+    HPALETTE hpalDefault;	// Handle to the default palette for device.
 
-	ULONG cxScreen;		// Visible screen width
-	ULONG cyScreen;		// Visible screen height
+    ULONG cxScreen;		// Visible screen width
+    ULONG cyScreen;		// Visible screen height
 
-	LONG lDeltaScreen;	// Distance from one scan to the next.
+    LONG lDeltaScreen;	// Distance from one scan to the next.
     ULONG ulBitCount;	// # of bits per pel: only 16, 24, 32 are supported.
 
-	PSURFACE_DESCRIPTOR pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
+    PSURFACE_DESCRIPTOR pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
 } PDEV, *PPDEV;
 
 #pragma pack(push, 1)
 typedef struct _BITMAP_HEADER
 {
-	BITMAPFILEHEADER FileHeader;
-	BITMAPV5HEADER V5Header;
+    BITMAPFILEHEADER FileHeader;
+    BITMAPV5HEADER V5Header;
 } BITMAP_HEADER, *PBITMAP_HEADER;
 #pragma pack(pop)
 
 typedef struct _SURFACE_DESCRIPTOR
 {
-	ULONG cx;
-	ULONG cy;
-	ULONG lDelta;
-	ULONG ulBitCount;
-	BOOLEAN bIsScreen;
+    ULONG cx;
+    ULONG cy;
+    ULONG lDelta;
+    ULONG ulBitCount;
+    BOOLEAN bIsScreen;
 
-	PPDEV ppdev;
-	HDRVOBJ hDriverObj;
-	PEVENT pDamageNotificationEvent;
+    PPDEV ppdev;
+    HDRVOBJ hDriverObj;
+    PEVENT pDamageNotificationEvent;
 
-	PVOID pSurfaceData;
-	HANDLE hSection;
-	PVOID SectionObject;
-	PVOID pMdl;
-	PFN_ARRAY PfnArray;
+    PVOID pSurfaceData;
+    HANDLE hSection;
+    PVOID SectionObject;
+    PVOID pMdl;
+    PFN_ARRAY PfnArray;
 
     // page numbers that changed in the surface buffer since the last check
     // this is exposed as a section so the user mode client can easily check what changed
@@ -75,10 +75,10 @@ typedef struct _SURFACE_DESCRIPTOR
 } SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
 
 BOOL bInitPDEV(
-	PPDEV,
-	PDEVMODEW,
-	GDIINFO *,
-	DEVINFO *
+    PPDEV,
+    PDEVMODEW,
+    GDIINFO *,
+    DEVINFO *
 );
 
 //

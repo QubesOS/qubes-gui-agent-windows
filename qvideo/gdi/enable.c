@@ -25,6 +25,9 @@ ULONG g_uWidth = 1280;
 ULONG g_uHeight = 800;
 ULONG g_uBpp = 32;
 
+ULONG g_MaxScreenWidth = 0;
+ULONG g_MaxScreenHeight = 0;
+
 #define flGlobalHooks HOOK_SYNCHRONIZE
 
 /******************************Public*Routine******************************\

@@ -11,11 +11,11 @@
 #include "resource.h"
 #include "log.h"
 
-#define FULLSCREEN_ON_EVENT_NAME TEXT("WGA_FULLSCREEN_ON")
-#define FULLSCREEN_OFF_EVENT_NAME TEXT("WGA_FULLSCREEN_OFF")
+#define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
+#define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
 
 // When signaled, causes agent to shutdown gracefully.
-#define WGA_SHUTDOWN_EVENT_NAME TEXT("Global\\WGA_SHUTDOWN")
+#define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
 
 CRITICAL_SECTION g_VchanCriticalSection;
 
@@ -61,7 +61,7 @@ char g_HostName[256] = "<unknown>";
 ULONG HideCursors();
 ULONG DisableEffects();
 
-HANDLE CreateNamedEvent(TCHAR *name)
+HANDLE CreateNamedEvent(WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
@@ -75,7 +75,7 @@ HANDLE CreateNamedEvent(TCHAR *name)
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-    ea.Trustee.ptstrName = TEXT("EVERYONE");
+    ea.Trustee.ptstrName = L"EVERYONE";
 
     if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
     {
@@ -560,7 +560,7 @@ void send_protocol_version()
 
 ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 {
-    LPTSTR ptszDeviceName = NULL;
+    PWCHAR ptszDeviceName = NULL;
     DISPLAY_DEVICE DisplayDevice;
 
     if (!IS_RESOLUTION_VALID(uWidth, uHeight))
@@ -577,7 +577,7 @@ ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
     if (ERROR_SUCCESS != FindQubesDisplayDevice(&DisplayDevice))
         return perror("FindQubesDisplayDevice");
 
-    ptszDeviceName = (LPTSTR) & DisplayDevice.DeviceName[0];
+    ptszDeviceName = (PWCHAR) &DisplayDevice.DeviceName[0];
 
     logf("DeviceName: %s\n", ptszDeviceName);
 
@@ -594,6 +594,7 @@ ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
 {
     ULONG uResult = SetVideoMode(width, height, bpp);
+
     if (ERROR_SUCCESS != uResult)
     {
         QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
@@ -612,7 +613,7 @@ ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
         g_ScreenHeight = QvGetSurfaceDataResponse.cy;
         g_bFullScreenMode = TRUE;
 
-        logf("keeping original %lux%lu\n", g_ScreenWidth, g_ScreenHeight);
+        logf("keeping original resolution %lux%lu\n", g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
@@ -684,6 +685,7 @@ ULONG handle_xconf()
     logf("host resolution: %lux%lu, mem: %lu, depth: %lu\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
+    //DebugBreak();
     return InitVideo(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
 }
 
@@ -1436,7 +1438,7 @@ ULONG ReadRegistryConfig()
     DWORD type;
     DWORD useDirtyBits;
     DWORD size;
-    TCHAR logPath[MAX_PATH];
+    WCHAR logPath[MAX_PATH];
 
     // first, read the log directory
     SetLastError(status = RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_KEY, &key));
@@ -1444,17 +1446,17 @@ ULONG ReadRegistryConfig()
     {
         // failed, use some safe default
         // todo: use event log
-        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        log_init(L"c:\\", L"gui-agent");
         logf("registry config: '%s'", REG_CONFIG_KEY);
         return perror("RegOpenKey");
     }
 
-    size = sizeof(logPath) -sizeof(TCHAR);
+    size = sizeof(logPath) - sizeof(TCHAR);
     RtlZeroMemory(logPath, sizeof(logPath));
     SetLastError(status = RegQueryValueEx(key, REG_CONFIG_LOG_VALUE, NULL, &type, (PBYTE)logPath, &size));
     if (status != ERROR_SUCCESS)
     {
-        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        log_init(L"c:\\", L"gui-agent");
         errorf("Failed to read log path from '%s\\%s'", REG_CONFIG_KEY, REG_CONFIG_LOG_VALUE);
         perror("RegQueryValueEx");
         status = ERROR_SUCCESS; // don't fail
@@ -1463,13 +1465,13 @@ ULONG ReadRegistryConfig()
 
     if (type != REG_SZ)
     {
-        log_init(TEXT("c:\\"), TEXT("gui-agent"));
+        log_init(L"c:\\", L"gui-agent");
         errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_LOG_VALUE, type);
         status = ERROR_SUCCESS; // don't fail
         goto cleanup;
     }
 
-    log_init(logPath, TEXT("gui-agent"));
+    log_init(logPath, L"gui-agent");
 
     // read the rest
     size = sizeof(useDirtyBits);
@@ -1544,10 +1546,9 @@ ULONG Init()
     return ERROR_SUCCESS;
 }
 
-// This is the entry point for a console application (BUILD_AS_SERVICE not defined).
-int _tmain(
+int wmain(
     ULONG argc,
-    PTCHAR argv[]
+    PWCHAR argv[]
 )
 {
     if (ERROR_SUCCESS != Init())
