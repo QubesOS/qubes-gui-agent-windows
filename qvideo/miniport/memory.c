@@ -69,7 +69,8 @@ VOID FreeSection(
     HANDLE hSection,
     PVOID pSectionObject,
     PMDL pMdl,
-    __in __drv_freesMem(Mem) PVOID BaseAddress,
+    PVOID BaseAddress,
+    PVOID pPfnArray,
     OPTIONAL HANDLE hDirtySection,
     OPTIONAL PVOID pDirtySectionObject,
     OPTIONAL PVOID pDirtySectionMemory
@@ -86,6 +87,9 @@ VOID FreeSection(
     ObDereferenceObject(pSectionObject);
     ZwClose(hSection);
 
+    if (pPfnArray)
+        ExFreePoolWithTag(pPfnArray, QVMINI_TAG);
+
     if (hDirtySection && pDirtySectionObject && pDirtySectionMemory)
     {
         MmUnmapViewInSystemSpace(pDirtySectionMemory);
@@ -95,19 +99,19 @@ VOID FreeSection(
 }
 
 NTSTATUS GetBufferPfnArray(
-    PVOID pVirtualAddress,
-    ULONG uLength,
-    PPFN_ARRAY pPfnArray,
-    KPROCESSOR_MODE ProcessorMode,
-    BOOLEAN bLockPages,
-    PMDL *ppMdl
+    IN PVOID pVirtualAddress,
+    IN ULONG uLength,
+    OUT OPTIONAL PPFN_ARRAY *ppPfnArray, // pfn array is allocated here
+    IN KPROCESSOR_MODE ProcessorMode,
+    IN BOOLEAN bLockPages,
+    OUT OPTIONAL PMDL *ppMdl
 )
 {
     NTSTATUS Status;
     PHYSICAL_ADDRESS PhysAddr;
     PMDL pMdl = NULL;
     PPFN_NUMBER pPfnNumber = NULL;
-    ULONG i;
+    ULONG i, uNumberOfPages;
 
     if (!pVirtualAddress || !uLength)
         return STATUS_INVALID_PARAMETER;
@@ -136,20 +140,17 @@ NTSTATUS GetBufferPfnArray(
 
     if (NT_SUCCESS(Status))
     {
-        if (pPfnArray)
+        if (ppPfnArray)
         {
-            pPfnArray->uNumberOf4kPages =
-                ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(pMdl), MmGetMdlByteCount(pMdl));
+            uNumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(pMdl), MmGetMdlByteCount(pMdl));
+            // size of PFN_ARRAY
+            *ppPfnArray = ExAllocatePoolWithTag(NonPagedPool, uNumberOfPages*sizeof(PFN_NUMBER)+sizeof(ULONG), QVMINI_TAG);
 
-            if (pPfnArray->uNumberOf4kPages > MAX_RETURNED_PFNS)
-            {
-                VideoDebugPrint((0, __FUNCTION__ ": Buffer is too large, needs %d PFNs to describe (returning first %d)\n",
-                    pPfnArray->uNumberOf4kPages, MAX_RETURNED_PFNS));
+            if (!(*ppPfnArray))
+                return STATUS_NO_MEMORY;
 
-                pPfnArray->uNumberOf4kPages = MAX_RETURNED_PFNS;
-            }
-            // sizeof(PFN_NUMBER) is 4 on x86 and 8 on x64.
-            RtlCopyMemory(&pPfnArray->Pfn, MmGetMdlPfnArray(pMdl), sizeof(PFN_NUMBER) * pPfnArray->uNumberOf4kPages);
+            (*ppPfnArray)->uNumberOf4kPages = uNumberOfPages;
+            RtlCopyMemory((*ppPfnArray)->Pfn, MmGetMdlPfnArray(pMdl), uNumberOfPages*sizeof(PFN_NUMBER));
         }
 
         if (!bLockPages)
@@ -171,13 +172,13 @@ NTSTATUS GetBufferPfnArray(
 
 PVOID AllocateMemory(
     ULONG uLength,
-    PPFN_ARRAY pPfnArray
+    PPFN_ARRAY *ppPfnArray
 )
 {
     PVOID pMemory = NULL;
     NTSTATUS Status;
 
-    if (!uLength || !pPfnArray)
+    if (!uLength || !ppPfnArray)
         return NULL;
 
     uLength = ALIGN(uLength, PAGE_SIZE);
@@ -188,10 +189,10 @@ PVOID AllocateMemory(
 
     VideoDebugPrint((0, __FUNCTION__": %p\n", pMemory));
 
-    Status = GetBufferPfnArray(pMemory, uLength, pPfnArray, KernelMode, FALSE, NULL);
+    Status = GetBufferPfnArray(pMemory, uLength, ppPfnArray, KernelMode, FALSE, NULL);
     if (!NT_SUCCESS(Status))
     {
-        FreeMemory(pMemory);
+        FreeMemory(pMemory, NULL); // ppPfnArray is only allocated on success
         return NULL;
     }
 
@@ -199,26 +200,19 @@ PVOID AllocateMemory(
 }
 
 VOID FreeMemory(
-    __in __drv_freesMem(Mem) PVOID pMemory
+    IN PVOID pMemory,
+    IN OPTIONAL PVOID pPfnArray
 )
 {
     if (!pMemory)
         return;
 
-    VideoDebugPrint((0, __FUNCTION__": %p\n", pMemory));
+    VideoDebugPrint((0, __FUNCTION__": %p, pfn: %p\n", pMemory, pPfnArray));
 
     ExFreePoolWithTag(pMemory, QVMINI_TAG);
+    if (pPfnArray)
+        ExFreePoolWithTag(pPfnArray, QVMINI_TAG);
     return;
-}
-
-BOOLEAN GetUserBufferPfnArrayBool(
-    PVOID pVirtualAddress,
-    ULONG uLength,
-    PPFN_ARRAY pPfnArray
-)
-{
-    // Do not lock the user memory from kernel. Instead, lock it with VirtualLock() before calling GetUserBufferPfnArrayBool().
-    return NT_SUCCESS(GetBufferPfnArray(pVirtualAddress, uLength, pPfnArray, UserMode, FALSE, NULL));
 }
 
 // Creates a named kernel mode section mapped in the system space, locks it,
@@ -228,7 +222,7 @@ PVOID AllocateSection(
     HANDLE *phSection,
     PVOID *ppSectionObject,
     PVOID *ppMdl,
-    PPFN_ARRAY pPfnArray,
+    PPFN_ARRAY *ppPfnArray,
     OPTIONAL HANDLE *phDirtySection,
     OPTIONAL PVOID *ppDirtySectionObject,
     OPTIONAL PVOID *ppDirtySectionMemory
@@ -242,7 +236,7 @@ PVOID AllocateSection(
     UNICODE_STRING usSectionName;
     WCHAR SectionName[100];
 
-    if (!uLength || !phSection || !ppSectionObject || !ppMdl || !pPfnArray)
+    if (!uLength || !phSection || !ppSectionObject || !ppMdl || !ppPfnArray)
         return NULL;
 
     *phSection = NULL;
@@ -257,10 +251,10 @@ PVOID AllocateSection(
         return NULL;
 
     // Lock the section memory and return its MDL.
-    Status = GetBufferPfnArray(BaseAddress, uLength, pPfnArray, KernelMode, TRUE, &pMdl);
+    Status = GetBufferPfnArray(BaseAddress, uLength, ppPfnArray, KernelMode, TRUE, &pMdl);
     if (!NT_SUCCESS(Status))
     {
-        FreeSection(hSection, SectionObject, NULL, BaseAddress, NULL, NULL, NULL);
+        FreeSection(hSection, SectionObject, NULL, BaseAddress, NULL, NULL, NULL, NULL);
         return NULL;
     }
 
@@ -287,7 +281,7 @@ PVOID AllocateSection(
         Status = GetBufferPfnArray(*ppDirtySectionMemory, uLength, NULL, KernelMode, TRUE, NULL);
         if (!NT_SUCCESS(Status))
         {
-            FreeSection(hSection, SectionObject, NULL, BaseAddress, *phDirtySection, *ppDirtySectionObject, *ppDirtySectionMemory);
+            FreeSection(hSection, SectionObject, NULL, BaseAddress, NULL, *phDirtySection, *ppDirtySectionObject, *ppDirtySectionMemory);
             return NULL;
         }
     }

@@ -9,25 +9,23 @@
 
 typedef struct _WATCHED_DC
 {
-	HWND hWnd;
-	HDC hDC;
+    HWND hWnd;
+    HDC hDC;
 
-	RECT	rcWindow;
-	LIST_ENTRY	le;
+    RECT	rcWindow;
+    LIST_ENTRY	le;
 
-	BOOL	bVisible;
-	BOOL	bOverrideRedirect;
+    BOOL	bVisible;
+    BOOL	bOverrideRedirect;
     HWND    ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
     ULONG   uTimeModalChecked; // time of last check for modal window
 
-	BOOL	bStyleChecked;
-	ULONG	uTimeAdded;
+    BOOL	bStyleChecked;
+    ULONG	uTimeAdded;
 
-	LONG	MaxWidth;
-	LONG	MaxHeight;
-	PUCHAR	pCompositionBuffer;
-	ULONG	uCompositionBufferSize;
-	PFN_ARRAY	PfnArray;
+    LONG	MaxWidth;
+    LONG	MaxHeight;
+    PPFN_ARRAY	pPfnArray;
 
 } WATCHED_DC, *PWATCHED_DC;
 
@@ -36,39 +34,34 @@ ULONG OpenScreenSection();
 ULONG CloseScreenSection();
 
 ULONG GetWindowData(
-	HWND hWnd,
-	PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse
+    HWND hWnd,
+    PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse,
+    PPFN_ARRAY pPfnArray
 );
 
 ULONG RegisterWatchedDC(
-	HDC hDC,
-	HANDLE hModificationEvent
+    HDC hDC,
+    HANDLE hModificationEvent
 );
 
 ULONG UnregisterWatchedDC(
-	HDC hDC
-);
-
-ULONG GetPfnList(
-	PVOID pVirtualAddress,
-	ULONG uRegionSize,
-	PPFN_ARRAY pPfnArray
+    HDC hDC
 );
 
 ULONG FindQubesDisplayDevice(
-	PDISPLAY_DEVICE pQubesDisplayDevice
+    PDISPLAY_DEVICE pQubesDisplayDevice
 );
 
 ULONG SupportVideoMode(
-	LPTSTR ptszQubesDeviceName,
-	ULONG uWidth,
-	ULONG uHeight,
-	ULONG uBpp
+    LPTSTR ptszQubesDeviceName,
+    ULONG uWidth,
+    ULONG uHeight,
+    ULONG uBpp
 );
 
 ULONG ChangeVideoMode(
-	LPTSTR ptszDeviceName,
-	ULONG uWidth,
-	ULONG uHeight,
-	ULONG uBpp
+    LPTSTR ptszDeviceName,
+    ULONG uWidth,
+    ULONG uHeight,
+    ULONG uBpp
 );

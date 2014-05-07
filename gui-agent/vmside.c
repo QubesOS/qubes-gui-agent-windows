@@ -143,20 +143,21 @@ ULONG PrepareShmCmd(
         debugf("fullcreen capture");
         // fullscreen capture
 
-        uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
+        pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+        pPfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+
+        uResult = GetWindowData(0, &QvGetSurfaceDataResponse, pPfnArray);
         if (ERROR_SUCCESS != uResult)
         {
             errorf("GetWindowData() failed with error %d\n", uResult);
             return uResult;
         }
 
-        uWidth = QvGetSurfaceDataResponse.cx;
-        uHeight = QvGetSurfaceDataResponse.cy;
+        uWidth = QvGetSurfaceDataResponse.uWidth;
+        uHeight = QvGetSurfaceDataResponse.uHeight;
         ulBitCount = QvGetSurfaceDataResponse.ulBitCount;
 
         bIsScreen = TRUE;
-
-        pPfnArray = &QvGetSurfaceDataResponse.PfnArray;
     }
     else
     {
@@ -168,7 +169,7 @@ ULONG PrepareShmCmd(
 
         bIsScreen = FALSE;
 
-        pPfnArray = &pWatchedDC->PfnArray;
+        pPfnArray = pWatchedDC->pPfnArray;
     }
 
     logf("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", uWidth, uHeight, ulBitCount,
@@ -200,6 +201,9 @@ ULONG PrepareShmCmd(
 
     *ppShmCmd = pShmCmd;
 
+    if (!pWatchedDC)
+        free(pPfnArray);
+
     //debugf("success");
     return ERROR_SUCCESS;
 }
@@ -225,7 +229,7 @@ void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
 
     if (pShmCmd->num_mfn == 0 || pShmCmd->num_mfn > MAX_MFN_COUNT)
     {
-        errorf("got num_mfn=0x%x for window 0x%x\n", pShmCmd->num_mfn, (int)hWnd);
+        errorf("too large num_mfn=%lu for window 0x%x\n", pShmCmd->num_mfn, (int)hWnd);
         free(pShmCmd);
         return;
     }
@@ -250,6 +254,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     struct msg_hdr hdr;
     struct msg_create mc;
     struct msg_map_info mmi;
+    PPFN_ARRAY pPfnArray = NULL;
 
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
@@ -263,15 +268,20 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
 
-        uResult = GetWindowData(NULL, &QvGetSurfaceDataResponse);
+        pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+        pPfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+
+        uResult = GetWindowData(NULL, &QvGetSurfaceDataResponse, pPfnArray);
         if (ERROR_SUCCESS != uResult)
         {
             errorf("GetWindowData() failed with error %d\n", uResult);
             return uResult;
         }
 
-        wi.rcWindow.right = QvGetSurfaceDataResponse.cx;
-        wi.rcWindow.bottom = QvGetSurfaceDataResponse.cy;
+        wi.rcWindow.right = QvGetSurfaceDataResponse.uWidth;
+        wi.rcWindow.bottom = QvGetSurfaceDataResponse.uHeight;
+
+        free(pPfnArray);
 
         hdr.window = 0;
     }
@@ -344,12 +354,10 @@ void send_screen_hints()
     struct msg_hdr hdr;
     struct msg_window_hints msg = {0};
 
-    msg.flags = 16|32; // min and max size, see http://tronche.com/gui/x/icccm/sec-4.html
+    msg.flags = 16 /*|32*/ ; // min size, see http://tronche.com/gui/x/icccm/sec-4.html
     msg.min_width = MIN_RESOLUTION_WIDTH;
     msg.min_height = MIN_RESOLUTION_HEIGHT;
-    msg.max_width = g_HostScreenWidth;
-    msg.max_height = g_HostScreenHeight;
-    debugf("min %dx%d, max %dx%d", msg.min_width, msg.min_height, msg.max_width, msg.max_height);
+    debugf("min %dx%d", msg.min_width, msg.min_height);
 
     hdr.window = 0; // screen
     hdr.type = MSG_WINDOW_HINTS;
@@ -597,20 +605,8 @@ ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
 
     if (ERROR_SUCCESS != uResult)
     {
-        QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
-
         logf("SetVideoMode() failed: %lu\n", uResult);
 
-        // resolution change failed, use fullscreen mode at current resolution
-        uResult = GetWindowData(0, &QvGetSurfaceDataResponse);
-        if (ERROR_SUCCESS != uResult)
-        {
-            errorf("GetWindowData() failed: %lu\n", uResult);
-            return uResult;
-        }
-
-        g_ScreenWidth = QvGetSurfaceDataResponse.cx;
-        g_ScreenHeight = QvGetSurfaceDataResponse.cy;
         g_bFullScreenMode = TRUE;
 
         logf("keeping original resolution %lux%lu\n", g_ScreenWidth, g_ScreenHeight);

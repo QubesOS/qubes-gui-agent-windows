@@ -62,7 +62,7 @@ typedef struct _SURFACE_DESCRIPTOR
     HANDLE hSection;
     PVOID SectionObject;
     PVOID pMdl;
-    PFN_ARRAY PfnArray;
+    PPFN_ARRAY pPfnArray; // this is allocated by the miniport part
 
     // page numbers that changed in the surface buffer since the last check
     // this is exposed as a section so the user mode client can easily check what changed

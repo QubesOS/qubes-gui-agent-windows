@@ -3,19 +3,16 @@
 #define PAGE_SIZE 0x1000
 
 // value names in registry config
-#define REG_CONFIG_LOG_VALUE L"LogDir"
-#define REG_CONFIG_FPS_VALUE L"QvideoMaxFps"
-#define REG_CONFIG_DIRTY_VALUE L"UseDirtyBits"
-
-// these are just defaults if registry config can't be read
-#define	MAX_RESOLUTION_WIDTH	4096UL
-#define	MAX_RESOLUTION_HEIGHT	4096UL
+#define REG_CONFIG_LOG_VALUE    L"LogDir"
+#define REG_CONFIG_FPS_VALUE    L"QvideoMaxFps"
+#define REG_CONFIG_DIRTY_VALUE  L"UseDirtyBits"
 
 // these are hardcoded
 #define	MIN_RESOLUTION_WIDTH	320UL
 #define	MIN_RESOLUTION_HEIGHT	200UL
 
-#define	MAX_RETURNED_PFNS	(((MAX_RESOLUTION_WIDTH*MAX_RESOLUTION_HEIGHT*4) / PAGE_SIZE) + 1)
+#define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
+#define	FRAMEBUFFER_PAGE_COUNT(width, height)	(ALIGN(((width)*(height)*4), PAGE_SIZE) / PAGE_SIZE)
 
 #ifdef _X86_
 typedef ULONG PFN_NUMBER, *PPFN_NUMBER;
@@ -23,12 +20,20 @@ typedef ULONG PFN_NUMBER, *PPFN_NUMBER;
 typedef ULONG64 PFN_NUMBER, *PPFN_NUMBER;
 #endif
 
+// size of PFN_ARRAY
+#define PFN_ARRAY_SIZE(width, height) ((FRAMEBUFFER_PAGE_COUNT(width, height) * sizeof(PFN_NUMBER)) + sizeof(ULONG))
+
+#pragma warning(push)
+#pragma warning(disable: 4200) // zero-sized array
+
+// NOTE: this struct is variable size, use FRAMEBUFFER_PAGE_COUNT
 typedef struct _PFN_ARRAY
 {
     ULONG uNumberOf4kPages;
-    PFN_NUMBER Pfn[MAX_RETURNED_PFNS];
+    PFN_NUMBER Pfn[0];
 } PFN_ARRAY, *PPFN_ARRAY;
 
+#pragma warning(pop)
 
 // User mode -> display interface
 
@@ -48,9 +53,9 @@ typedef struct _PFN_ARRAY
 #define QV_SUPPORT_MODE_INVALID_BPP	4
 #define QV_INVALID_HANDLE	5
 
-#define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && ((uWidth) <= MAX_RESOLUTION_WIDTH) && (MIN_RESOLUTION_HEIGHT <= (uHeight)) && ((uHeight) <= MAX_RESOLUTION_HEIGHT))
-#define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
+#define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && (MIN_RESOLUTION_HEIGHT <= (uHeight)))
 
+// wga-qvideo interface
 typedef struct _QV_SUPPORT_MODE
 {
     ULONG uMagic;		// must be present at the top of every QV_ structure
@@ -64,6 +69,14 @@ typedef struct _QV_GET_SURFACE_DATA
 {
     ULONG uMagic;		// must be present at the top of every QV_ structure
 
+    // Must be allocated by the user mode client (use FRAMEBUFFER_PAGE_COUNT).
+    // Driver will check if the size is sufficient and the buffer accessible.
+    // Driver *could* return the correct size first but that would require
+    // two calls because driver can't easily allocate user space memory.
+    // Must be here instead of the response struct because GDI
+    // doesn't copy contents of ExtEscape's output from user to kernel.
+    PPFN_ARRAY pPfnArray;
+
     // A surface handle is converted automatically by GDI from HDC to SURFOBJ, so do not pass it here
 } QV_GET_SURFACE_DATA, *PQV_GET_SURFACE_DATA;
 
@@ -71,29 +84,12 @@ typedef struct _QV_GET_SURFACE_DATA_RESPONSE
 {
     ULONG uMagic;		// must be present at the top of every QV_ structure
 
-    ULONG cx;
-    ULONG cy;
+    ULONG uWidth;
+    ULONG uHeight;
     ULONG lDelta;
     ULONG ulBitCount;
     BOOLEAN bIsScreen;
-
-    PFN_ARRAY PfnArray;
 } QV_GET_SURFACE_DATA_RESPONSE, *PQV_GET_SURFACE_DATA_RESPONSE;
-
-typedef struct _QV_GET_PFN_LIST
-{
-    ULONG uMagic;		// must be present at the top of every QV_ structure
-
-    PVOID pVirtualAddress;
-    ULONG uRegionSize;
-} QV_GET_PFN_LIST, *PQV_GET_PFN_LIST;
-
-typedef struct _QV_GET_PFN_LIST_RESPONSE
-{
-    ULONG uMagic;		// must be present at the top of every QV_ structure
-
-    PFN_ARRAY PfnArray;
-} QV_GET_PFN_LIST_RESPONSE, *PQV_GET_PFN_LIST_RESPONSE;
 
 typedef struct _QV_WATCH_SURFACE
 {
@@ -150,7 +146,6 @@ typedef struct _QV_DIRTY_PAGES
 #define IOCTL_QVMINI_FREE_MEMORY        (ULONG)(CTL_CODE(QVMINI_DEVICE, 2, METHOD_BUFFERED, FILE_ANY_ACCESS))
 #define IOCTL_QVMINI_ALLOCATE_SECTION   (ULONG)(CTL_CODE(QVMINI_DEVICE, 3, METHOD_BUFFERED, FILE_ANY_ACCESS))
 #define IOCTL_QVMINI_FREE_SECTION       (ULONG)(CTL_CODE(QVMINI_DEVICE, 4, METHOD_BUFFERED, FILE_ANY_ACCESS))
-#define IOCTL_QVMINI_GET_PFN_LIST       (ULONG)(CTL_CODE(QVMINI_DEVICE, 5, METHOD_BUFFERED, FILE_ANY_ACCESS))
 
 typedef struct _QVMINI_ALLOCATE_MEMORY
 {
@@ -160,12 +155,13 @@ typedef struct _QVMINI_ALLOCATE_MEMORY
 typedef struct _QVMINI_ALLOCATE_MEMORY_RESPONSE
 {
     PVOID pVirtualAddress;
-    PFN_ARRAY PfnArray;
+    PPFN_ARRAY pPfnArray;
 } QVMINI_ALLOCATE_MEMORY_RESPONSE, *PQVMINI_ALLOCATE_MEMORY_RESPONSE;
 
 typedef struct _QVMINI_FREE_MEMORY
 {
     PVOID pVirtualAddress;
+    PPFN_ARRAY pPfnArray;
 } QVMINI_FREE_MEMORY, *PQVMINI_FREE_MEMORY;
 
 typedef struct _QVMINI_ALLOCATE_SECTION
@@ -180,10 +176,10 @@ typedef struct _QVMINI_ALLOCATE_SECTION_RESPONSE
     PVOID SectionObject;
     HANDLE hSection;
     PVOID pMdl;
-    PFN_ARRAY PfnArray;
     PVOID DirtySectionObject;
     HANDLE hDirtySection;
     PQV_DIRTY_PAGES pDirtyPages;
+    PPFN_ARRAY pPfnArray;
 } QVMINI_ALLOCATE_SECTION_RESPONSE, *PQVMINI_ALLOCATE_SECTION_RESPONSE;
 
 typedef struct _QVMINI_FREE_SECTION
@@ -195,15 +191,5 @@ typedef struct _QVMINI_FREE_SECTION
     PVOID DirtySectionObject;
     HANDLE hDirtySection;
     PQV_DIRTY_PAGES pDirtyPages;
+    PPFN_ARRAY pPfnArray;
 } QVMINI_FREE_SECTION, *PQVMINI_FREE_SECTION;
-
-typedef struct _QVMINI_GET_PFN_LIST
-{
-    PVOID pVirtualAddress;
-    ULONG uRegionSize;
-} QVMINI_GET_PFN_LIST, *PQVMINI_GET_PFN_LIST;
-
-typedef struct _QVMINI_GET_PFN_LIST_RESPONSE
-{
-    PFN_ARRAY PfnArray;
-} QVMINI_GET_PFN_LIST_RESPONSE, *PQVMINI_GET_PFN_LIST_RESPONSE;

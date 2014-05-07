@@ -91,7 +91,6 @@ cleanup:
     return status;
 }
 
-// read maximum refresh FPS from the registry
 VOID ReadRegistryConfig()
 {
     static BOOLEAN bInitialized = FALSE;
@@ -103,15 +102,16 @@ VOID ReadRegistryConfig()
     // frequency doesn't change, query it once
     KeQueryPerformanceCounter(&g_PCFrequency);
 
+    // read maximum refresh FPS
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_FPS_VALUE, &g_MaxFps)))
     {
-        WARNINGF("failed to read MaxFps config value");
         g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
+        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
     }
 
     if (g_MaxFps > MAX_REFRESH_FPS)
     {
-        WARNINGF("invalid refresh FPS: %d, reverting to default %d", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
+        WARNINGF("invalid refresh FPS: %lu, reverting to default %lu", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
         g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
     }
 
@@ -128,12 +128,12 @@ VOID ReadRegistryConfig()
     // dirty bits
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_DIRTY_VALUE, &ulUseDirtyBits)))
     {
-        WARNINGF("failed to read dirty bits config value, using %d", g_bUseDirtyBits);
+        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_DIRTY_VALUE, g_bUseDirtyBits);
     }
     else
     {
         g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
-        DEBUGF("UseDirtyBits: %d", ulUseDirtyBits);
+        DEBUGF("%s: %lu", REG_CONFIG_DIRTY_VALUE, ulUseDirtyBits);
     }
 
     bInitialized = TRUE;

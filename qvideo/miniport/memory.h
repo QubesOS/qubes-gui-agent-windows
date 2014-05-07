@@ -4,36 +4,32 @@
 
 PVOID AllocateMemory(
     ULONG uLength,
-    PPFN_ARRAY pPfnArray
+    PPFN_ARRAY *ppPfnArray
 );
 
 VOID FreeMemory(
-    __in __drv_freesMem(Mem) PVOID pMemory
-);
-
-BOOLEAN GetUserBufferPfnArrayBool(
-    PVOID pVirtualAddress,
-    ULONG uLength,
-    PPFN_ARRAY pPfnArray
+    IN PVOID pMemory,
+    IN PVOID pPfnArray
 );
 
 PVOID AllocateSection(
     ULONG uLength,
     HANDLE *phSection,
-    PVOID * pSectionObject,
-    PVOID * ppMdl,
-    PPFN_ARRAY pPfnArray,
-    HANDLE *phDirtySection,
-    PVOID *pDirtySectionObject,
-    PVOID *pDirtySectionMemory
+    PVOID *ppSectionObject,
+    PVOID *ppMdl,
+    PPFN_ARRAY *ppPfnArray,
+    OPTIONAL HANDLE *phDirtySection,
+    OPTIONAL PVOID *ppDirtySectionObject,
+    OPTIONAL PVOID *ppDirtySectionMemory
 );
 
 VOID FreeSection(
     HANDLE hSection,
     PVOID pSectionObject,
     PVOID pMdl,
-    __in __drv_freesMem(Mem) PVOID BaseAddress,
-    HANDLE hDirtySection,
-    PVOID pDirtySectionObject,
-    PVOID pDirtySectionMemory
+    PVOID BaseAddress,
+    PVOID pPfnArray,
+    OPTIONAL HANDLE hDirtySection,
+    OPTIONAL PVOID pDirtySectionObject,
+    OPTIONAL PVOID pDirtySectionMemory
 );

@@ -25,9 +25,6 @@ ULONG g_uWidth = 1280;
 ULONG g_uHeight = 800;
 ULONG g_uBpp = 32;
 
-ULONG g_MaxScreenWidth = 0;
-ULONG g_MaxScreenHeight = 0;
-
 #define flGlobalHooks HOOK_SYNCHRONIZE
 
 /******************************Public*Routine******************************\
@@ -266,7 +263,7 @@ ULONG AllocateSurfaceMemory(
     }
 
     pSurfaceDescriptor->pSurfaceData = pQvminiAllocateMemoryResponse->pVirtualAddress;
-    memcpy(&pSurfaceDescriptor->PfnArray, &pQvminiAllocateMemoryResponse->PfnArray, sizeof(PFN_ARRAY));
+    pSurfaceDescriptor->pPfnArray = pQvminiAllocateMemoryResponse->pPfnArray;
 
     EngFreeMem(pQvminiAllocateMemoryResponse);
 
@@ -321,7 +318,7 @@ ULONG AllocateSection(
     pSurfaceDescriptor->pDirtyPages = pQvminiAllocateSectionResponse->pDirtyPages;
     pSurfaceDescriptor->LastCheck.QuadPart = 0;
 
-    memcpy(&pSurfaceDescriptor->PfnArray, &pQvminiAllocateSectionResponse->PfnArray, sizeof(PFN_ARRAY));
+    pSurfaceDescriptor->pPfnArray = pQvminiAllocateSectionResponse->pPfnArray;
 
     EngFreeMem(pQvminiAllocateSectionResponse);
 
@@ -351,6 +348,7 @@ VOID FreeSurfaceMemory(
     DISPDBG((0, "FreeSurfaceMemory(%p)\n", pSurfaceDescriptor->pSurfaceData));
 
     QvminiFreeMemory.pVirtualAddress = pSurfaceDescriptor->pSurfaceData;
+    QvminiFreeMemory.pPfnArray = pSurfaceDescriptor->pPfnArray;
 
     dwResult = EngDeviceIoControl(pSurfaceDescriptor->ppdev->hDriver,
         IOCTL_QVMINI_FREE_MEMORY, &QvminiFreeMemory, sizeof(QvminiFreeMemory), NULL, 0, &nbReturned);
@@ -379,6 +377,8 @@ VOID FreeSection(
     QvminiFreeSection.pDirtyPages = pSurfaceDescriptor->pDirtyPages;
     QvminiFreeSection.hDirtySection = pSurfaceDescriptor->hDirtySection;
     QvminiFreeSection.DirtySectionObject = pSurfaceDescriptor->DirtySectionObject;
+
+    QvminiFreeSection.pPfnArray = pSurfaceDescriptor->pPfnArray;
 
     dwResult = EngDeviceIoControl(pSurfaceDescriptor->ppdev->hDriver,
         IOCTL_QVMINI_FREE_SECTION, &QvminiFreeSection, sizeof(QvminiFreeSection), NULL, 0, &nbReturned);
@@ -517,10 +517,10 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 //            pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
         DISPDBG((0, "Surface %dx%d, data at %p (0x%x bytes), pfns: %d\n",
             sizl.cx, sizl.cy, pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
-            pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
+            pSurfaceDescriptor->pPfnArray->uNumberOf4kPages));
         DISPDBG((0, "First phys pages: 0x%x, 0x%x, 0x%x\n",
-            pSurfaceDescriptor->PfnArray.Pfn[0], pSurfaceDescriptor->PfnArray.Pfn[1],
-            pSurfaceDescriptor->PfnArray.Pfn[2]));
+            pSurfaceDescriptor->pPfnArray->Pfn[0], pSurfaceDescriptor->pPfnArray->Pfn[1],
+            pSurfaceDescriptor->pPfnArray->Pfn[2]));
     }
 
     *ppSurfaceDescriptor = pSurfaceDescriptor;
@@ -672,7 +672,7 @@ BOOL APIENTRY DrvAssertMode(
     return TRUE;
 }
 
-ULONG SupportVideoMode(
+ULONG UserSupportVideoMode(
     ULONG cjIn,
     PQV_SUPPORT_MODE pQvSupportMode
 )
@@ -694,60 +694,17 @@ ULONG SupportVideoMode(
     return QV_SUCCESS;
 }
 
-ULONG GetPfnList(
+ULONG UserGetSurfaceData(
     SURFOBJ *pso,
     ULONG cjIn,
-    PQV_GET_PFN_LIST pQvGetPfnList,
-    ULONG cjOut,
-    PQV_GET_PFN_LIST_RESPONSE pQvGetPfnListResponse
-)
-{
-    PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
-    DWORD dwResult;
-    QVMINI_GET_PFN_LIST QvminiGetPfnList;
-    ULONG nbReturned;
-
-    if (cjIn < sizeof(QV_GET_PFN_LIST) || !pQvGetPfnList || cjOut < sizeof(QV_GET_PFN_LIST_RESPONSE) || !pQvGetPfnListResponse)
-        return QV_INVALID_PARAMETER;
-
-    pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) pso->dhsurf;
-    if (!pSurfaceDescriptor || !pSurfaceDescriptor->ppdev)
-    {
-        // A surface is managed by GDI
-        return QV_INVALID_PARAMETER;
-    }
-
-    QvminiGetPfnList.pVirtualAddress = pQvGetPfnList->pVirtualAddress;
-    QvminiGetPfnList.uRegionSize = pQvGetPfnList->uRegionSize;
-
-    dwResult = EngDeviceIoControl(
-        pSurfaceDescriptor->ppdev->hDriver,
-        IOCTL_QVMINI_GET_PFN_LIST,
-        &QvminiGetPfnList,
-        sizeof(QvminiGetPfnList),
-        &pQvGetPfnListResponse->PfnArray,
-        sizeof(PFN_ARRAY),
-        &nbReturned);
-
-    if (0 != dwResult)
-    {
-        DISPDBG((0, "GetPfnList(): EngDeviceIoControl(IOCTL_QVMINI_GET_PFN_LIST) failed with error %d\n", dwResult));
-        return QV_INVALID_PARAMETER;
-    }
-
-    pQvGetPfnListResponse->uMagic = QVIDEO_MAGIC;
-
-    return QV_SUCCESS;
-}
-
-ULONG GetSurfaceData(
-    SURFOBJ *pso,
+    PQV_GET_SURFACE_DATA pQvGetSurfaceData,
     ULONG cjOut,
     PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse
 )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
-    if (!pso || cjOut < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !pQvGetSurfaceDataResponse)
+    if (!pso || cjOut < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !pQvGetSurfaceDataResponse
+        || cjIn < sizeof(QV_GET_SURFACE_DATA) || !pQvGetSurfaceData)
         return QV_INVALID_PARAMETER;
 
     pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) pso->dhsurf;
@@ -759,13 +716,14 @@ ULONG GetSurfaceData(
 
     pQvGetSurfaceDataResponse->uMagic = QVIDEO_MAGIC;
 
-    pQvGetSurfaceDataResponse->cx = pSurfaceDescriptor->cx;
-    pQvGetSurfaceDataResponse->cy = pSurfaceDescriptor->cy;
+    pQvGetSurfaceDataResponse->uWidth = pSurfaceDescriptor->cx;
+    pQvGetSurfaceDataResponse->uHeight = pSurfaceDescriptor->cy;
     pQvGetSurfaceDataResponse->lDelta = pSurfaceDescriptor->lDelta;
     pQvGetSurfaceDataResponse->ulBitCount = pSurfaceDescriptor->ulBitCount;
     pQvGetSurfaceDataResponse->bIsScreen = pSurfaceDescriptor->bIsScreen;
 
-    memcpy(&pQvGetSurfaceDataResponse->PfnArray, &pSurfaceDescriptor->PfnArray, sizeof(PFN_ARRAY));
+    memcpy(pQvGetSurfaceData->pPfnArray, pSurfaceDescriptor->pPfnArray,
+        PFN_ARRAY_SIZE(pSurfaceDescriptor->cx, pSurfaceDescriptor->cy));
 
     return QV_SUCCESS;
 }
@@ -787,7 +745,7 @@ BOOL CALLBACK UnmapDamageNotificationEventProc(
     return TRUE;
 }
 
-ULONG WatchSurface(
+ULONG UserWatchSurface(
     SURFOBJ *pso,
     ULONG cjIn,
     PQV_WATCH_SURFACE pQvWatchSurface
@@ -844,7 +802,7 @@ ULONG WatchSurface(
     return QV_SUCCESS;
 }
 
-ULONG StopWatchingSurface(
+ULONG UserStopWatchingSurface(
     SURFOBJ *pso
 )
 {
@@ -894,22 +852,21 @@ ULONG APIENTRY DrvEscape(
         return 0;
     }
 
+    // FIXME: validate user buffers!
+
     switch (iEsc)
     {
     case QVESC_SUPPORT_MODE:
-        return SupportVideoMode(cjIn, pvIn);
+        return UserSupportVideoMode(cjIn, pvIn);
 
     case QVESC_GET_SURFACE_DATA:
-        return GetSurfaceData(pso, cjOut, pvOut);
+        return UserGetSurfaceData(pso, cjIn, pvIn, cjOut, pvOut);
 
     case QVESC_WATCH_SURFACE:
-        return WatchSurface(pso, cjIn, pvIn);
+        return UserWatchSurface(pso, cjIn, pvIn);
 
     case QVESC_STOP_WATCHING_SURFACE:
-        return StopWatchingSurface(pso);
-
-    case QVESC_GET_PFN_LIST:
-        return GetPfnList(pso, cjIn, pvIn, cjOut, pvOut);
+        return UserStopWatchingSurface(pso);
 
     case QVESC_SYNCHRONIZE:
         if (!g_bUseDirtyBits)

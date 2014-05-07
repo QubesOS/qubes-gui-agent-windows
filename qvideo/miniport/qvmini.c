@@ -117,8 +117,6 @@ BOOLEAN QubesVideoStartIO(
     PQVMINI_ALLOCATE_SECTION pQvminiAllocateSection = NULL;
     PQVMINI_ALLOCATE_SECTION_RESPONSE pQvminiAllocateSectionResponse = NULL;
     PQVMINI_FREE_SECTION pQvminiFreeSection = NULL;
-    PQVMINI_GET_PFN_LIST pQvminiGetPfnList = NULL;
-    PQVMINI_GET_PFN_LIST_RESPONSE pQvminiGetPfnListResponse = NULL;
 
     ULONG uLength;
 
@@ -153,11 +151,11 @@ BOOLEAN QubesVideoStartIO(
         uLength = pQvminiAllocateMemory->uLength;
 
         pQvminiAllocateMemoryResponse->pVirtualAddress =
-            AllocateMemory(pQvminiAllocateMemory->uLength, &pQvminiAllocateMemoryResponse->PfnArray);
+            AllocateMemory(pQvminiAllocateMemory->uLength, &pQvminiAllocateMemoryResponse->pPfnArray);
 
         if (!pQvminiAllocateMemoryResponse->pVirtualAddress)
         {
-            VideoDebugPrint((0, "AllocateMemory(%d) failed.\n", uLength));
+            VideoDebugPrint((0, "AllocateMemory(%d) failed\n", uLength));
 
             RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
             RequestPacket->StatusBlock->Information = 0;
@@ -184,7 +182,7 @@ BOOLEAN QubesVideoStartIO(
 
 //      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
 
-        FreeMemory(pQvminiFreeMemory->pVirtualAddress);
+        FreeMemory(pQvminiFreeMemory->pVirtualAddress, pQvminiFreeMemory->pPfnArray);
 
         RequestPacket->StatusBlock->Status = NO_ERROR;
         RequestPacket->StatusBlock->Information = 0;
@@ -216,7 +214,7 @@ BOOLEAN QubesVideoStartIO(
             pQvminiAllocateSectionResponse->pVirtualAddress =
                 AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
                 &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-                &pQvminiAllocateSectionResponse->PfnArray,
+                &pQvminiAllocateSectionResponse->pPfnArray,
                 &pQvminiAllocateSectionResponse->hDirtySection,
                 &pQvminiAllocateSectionResponse->DirtySectionObject,
                 &pQvminiAllocateSectionResponse->pDirtyPages);
@@ -226,7 +224,7 @@ BOOLEAN QubesVideoStartIO(
             pQvminiAllocateSectionResponse->pVirtualAddress =
                 AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
                 &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-                &pQvminiAllocateSectionResponse->PfnArray,
+                &pQvminiAllocateSectionResponse->pPfnArray,
                 NULL, NULL, NULL
                 );
             pQvminiAllocateSectionResponse->DirtySectionObject = NULL;
@@ -265,44 +263,12 @@ BOOLEAN QubesVideoStartIO(
 
         FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject,
             pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress,
+            pQvminiFreeSection->pPfnArray,
             pQvminiFreeSection->hDirtySection, pQvminiFreeSection->DirtySectionObject,
             pQvminiFreeSection->pDirtyPages);
 
         RequestPacket->StatusBlock->Status = NO_ERROR;
         RequestPacket->StatusBlock->Information = 0;
-        break;
-
-    case IOCTL_QVMINI_GET_PFN_LIST:
-
-        if (RequestPacket->InputBufferLength < sizeof(QVMINI_GET_PFN_LIST))
-        {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_GET_PFN_LIST);
-            break;
-        }
-
-        if (RequestPacket->OutputBufferLength < sizeof(QVMINI_GET_PFN_LIST_RESPONSE))
-        {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = 0;
-            break;
-        }
-
-        pQvminiGetPfnList = RequestPacket->InputBuffer;
-        pQvminiGetPfnListResponse = RequestPacket->OutputBuffer;
-
-        // The specified buffer will be probed in the UserMode access mode.
-        if (!GetUserBufferPfnArrayBool(pQvminiGetPfnList->pVirtualAddress, pQvminiGetPfnList->uRegionSize,
-            &pQvminiGetPfnListResponse->PfnArray))
-        {
-            RequestPacket->StatusBlock->Status = ERROR_INVALID_PARAMETER;
-            RequestPacket->StatusBlock->Information = 0;
-        }
-        else
-        {
-            RequestPacket->StatusBlock->Status = NO_ERROR;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_GET_PFN_LIST_RESPONSE);
-        }
         break;
 
     default:

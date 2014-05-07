@@ -161,7 +161,8 @@ ULONG SupportVideoMode(
 
 ULONG GetWindowData(
     HWND hWnd,
-    PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse
+    PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse,
+    PPFN_ARRAY pPfnArray
     )
 {
     HDC hDC;
@@ -177,9 +178,10 @@ ULONG GetWindowData(
         return perror("GetDC");
 
     QvGetSurfaceData.uMagic = QVIDEO_MAGIC;
+    QvGetSurfaceData.pPfnArray = pPfnArray;
 
     iRet = ExtEscape(hDC, QVESC_GET_SURFACE_DATA, sizeof(QV_GET_SURFACE_DATA),
-        (LPCSTR) & QvGetSurfaceData, sizeof(QV_GET_SURFACE_DATA_RESPONSE), (LPSTR) pQvGetSurfaceDataResponse);
+        (LPCSTR) &QvGetSurfaceData, sizeof(QV_GET_SURFACE_DATA_RESPONSE), (LPSTR) pQvGetSurfaceDataResponse);
 
     ReleaseDC(hWnd, hDC);
 
@@ -196,72 +198,9 @@ ULONG GetWindowData(
     }
 
     debugf("hdc 0x%0x, IsScreen %d, %dx%d@%d, delta %d", hDC, pQvGetSurfaceDataResponse->bIsScreen,
-        pQvGetSurfaceDataResponse->cx, pQvGetSurfaceDataResponse->cy,
+        pQvGetSurfaceDataResponse->uWidth, pQvGetSurfaceDataResponse->uHeight,
         pQvGetSurfaceDataResponse->ulBitCount, pQvGetSurfaceDataResponse->lDelta);
 
-    return ERROR_SUCCESS;
-}
-
-ULONG GetPfnList(
-    PVOID pVirtualAddress,
-    ULONG uRegionSize,
-    PPFN_ARRAY pPfnArray
-    )
-{
-    HDC hDC;
-    QV_GET_PFN_LIST QvGetPfnList;
-    PQV_GET_PFN_LIST_RESPONSE pQvGetPfnListResponse = NULL;
-    int iRet;
-    DWORD retval = ERROR_SUCCESS;
-
-    debugf("start");
-    if (!pVirtualAddress || !uRegionSize || !pPfnArray)
-    {
-        retval = ERROR_INVALID_PARAMETER;
-        goto cleanup;
-    }
-
-    pQvGetPfnListResponse = (PQV_GET_PFN_LIST_RESPONSE) malloc(sizeof(QV_GET_PFN_LIST_RESPONSE));
-    if (!pQvGetPfnListResponse)
-    {
-        retval = ERROR_NOT_ENOUGH_MEMORY;
-        goto cleanup;
-    }
-
-    hDC = GetDC(0);
-    if (!hDC)
-    {
-        retval = perror("GetDC");
-        goto cleanup;
-    }
-
-    QvGetPfnList.uMagic = QVIDEO_MAGIC;
-    QvGetPfnList.pVirtualAddress = pVirtualAddress;
-    QvGetPfnList.uRegionSize = uRegionSize;
-
-    iRet = ExtEscape(hDC, QVESC_GET_PFN_LIST, sizeof(QV_GET_PFN_LIST),
-        (LPCSTR) & QvGetPfnList, sizeof(QV_GET_PFN_LIST_RESPONSE), (LPSTR) pQvGetPfnListResponse);
-
-    ReleaseDC(0, hDC);
-
-    if (iRet <= 0)
-    {
-        errorf("ExtEscape(QVESC_GET_PFN_LIST) failed, error %d\n", iRet);
-        retval = ERROR_NOT_SUPPORTED;
-        goto cleanup;
-    }
-
-    if (QVIDEO_MAGIC != pQvGetPfnListResponse->uMagic)
-    {
-        errorf("The response to QVESC_GET_PFN_LIST is not valid\n");
-        retval = ERROR_NOT_SUPPORTED;
-        goto cleanup;
-    }
-
-    memcpy(pPfnArray, &pQvGetPfnListResponse->PfnArray, sizeof(PFN_ARRAY));
-
-cleanup:
-    free(pQvGetPfnListResponse);
     return ERROR_SUCCESS;
 }
 
@@ -362,7 +301,7 @@ ULONG RegisterWatchedDC(
     QvWatchSurface.uMagic = QVIDEO_MAGIC;
     QvWatchSurface.hUserModeEvent = hModificationEvent;
 
-    iRet = ExtEscape(hDC, QVESC_WATCH_SURFACE, sizeof(QV_WATCH_SURFACE), (LPCSTR) & QvWatchSurface, 0, NULL);
+    iRet = ExtEscape(hDC, QVESC_WATCH_SURFACE, sizeof(QV_WATCH_SURFACE), (LPCSTR) &QvWatchSurface, 0, NULL);
 
     if (iRet <= 0)
     {
@@ -383,7 +322,7 @@ ULONG UnregisterWatchedDC(HDC hDC)
     QvStopWatchingSurface.uMagic = QVIDEO_MAGIC;
 
     iRet = ExtEscape(hDC, QVESC_STOP_WATCHING_SURFACE, sizeof(QV_STOP_WATCHING_SURFACE),
-        (LPCSTR) & QvStopWatchingSurface, 0, NULL);
+        (LPCSTR) &QvStopWatchingSurface, 0, NULL);
 
     if (iRet <= 0)
     {

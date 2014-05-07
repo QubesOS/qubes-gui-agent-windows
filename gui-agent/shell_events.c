@@ -588,8 +588,10 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
 
-    pWatchedDC->MaxHeight = g_ScreenHeight;
+    pWatchedDC->pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+
     pWatchedDC->MaxWidth = g_ScreenWidth;
+    pWatchedDC->MaxHeight = g_ScreenHeight;
 
     if (g_bVchanClientConnected)
     {
@@ -641,8 +643,7 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
         return ERROR_INVALID_PARAMETER;
 
     debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
-    VirtualUnlock(pWatchedDC->pCompositionBuffer, pWatchedDC->uCompositionBufferSize);
-    VirtualFree(pWatchedDC->pCompositionBuffer, 0, MEM_RELEASE);
+    free(pWatchedDC->pPfnArray);
 
     if (g_bVchanClientConnected)
     {
