@@ -19,7 +19,7 @@ ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
     ULONG ulKeyInfoSize = 0;
     ULONG ulKeyInfoSizeNeeded = 0;
 
-    RtlInitUnicodeString(&usKeyName, REG_CONFIG_KEY);
+    RtlInitUnicodeString(&usKeyName, REG_CONFIG_KERNEL_KEY);
     InitializeObjectAttributes(&attributes, 
         &usKeyName,
         OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,

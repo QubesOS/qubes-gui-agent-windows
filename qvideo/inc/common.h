@@ -2,10 +2,23 @@
 
 #define PAGE_SIZE 0x1000
 
+// registry configuration key, user mode and kernel mode names
+#define REG_CONFIG_USER_KEY     L"Software\\Invisible Things Lab\\Qubes Tools"
+#define REG_CONFIG_KERNEL_KEY   L"\\Registry\\Machine\\Software\\Invisible Things Lab\\Qubes Tools"
+
 // value names in registry config
-#define REG_CONFIG_LOG_VALUE    L"LogDir"
-#define REG_CONFIG_FPS_VALUE    L"QvideoMaxFps"
-#define REG_CONFIG_DIRTY_VALUE  L"UseDirtyBits"
+#define REG_CONFIG_LOG_VALUE        L"LogDir"
+#define REG_CONFIG_FPS_VALUE        L"QvideoMaxFps"
+#define REG_CONFIG_DIRTY_VALUE      L"UseDirtyBits"
+
+// path to the executable to launch at system start (done by helper service)
+#define REG_CONFIG_AUTOSTART_VALUE  L"Autostart"
+
+// event created by the helper service, trigger to simulate SAS (ctrl-alt-delete)
+#define WGA_SAS_EVENT_NAME L"Global\\WGA_SAS_TRIGGER"
+
+// When signaled, causes agent to shutdown gracefully.
+#define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
 
 // these are hardcoded
 #define	MIN_RESOLUTION_WIDTH	320UL

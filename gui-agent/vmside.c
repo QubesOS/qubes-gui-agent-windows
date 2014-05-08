@@ -14,9 +14,6 @@
 #define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
 #define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
 
-// When signaled, causes agent to shutdown gracefully.
-#define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
-
 CRITICAL_SECTION g_VchanCriticalSection;
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
@@ -690,6 +687,11 @@ int bitset(BYTE *keys, int num)
     return (keys[num / 8] >> (num % 8)) & 1;
 }
 
+BOOL IsKeyDown(int virtualKey)
+{
+    return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+}
+
 void handle_keymap_notify()
 {
     int i;
@@ -715,7 +717,7 @@ void handle_keymap_notify()
     while (modifier_keys[i])
     {
         win_key = X11ToVk[modifier_keys[i]];
-        if (!bitset(remote_keys, i) && GetAsyncKeyState(X11ToVk[modifier_keys[i]]) & 0x8000)
+        if (!bitset(remote_keys, i) && IsKeyDown(X11ToVk[modifier_keys[i]]))
         {
             inputEvent.type = INPUT_KEYBOARD;
             inputEvent.ki.time = 0;
@@ -733,6 +735,22 @@ void handle_keymap_notify()
         }
         i++;
     }
+}
+
+// tell helper service to simulate ctrl-alt-del
+void SignalSASEvent()
+{
+    static HANDLE sasEvent = NULL;
+
+    debugf("start");
+    if (!sasEvent)
+    {
+        sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SAS_EVENT_NAME);
+        if (!sasEvent)
+            perror("OpenEvent");
+    }
+
+    SetEvent(sasEvent);
 }
 
 void handle_keypress(HWND hWnd)
@@ -781,6 +799,10 @@ void handle_keypress(HWND hWnd)
         perror("SendInput");
         return;
     }
+
+    // TODO: allow customization of SAS sequence?
+    if (IsKeyDown(VK_CONTROL) && IsKeyDown(VK_MENU) && IsKeyDown(VK_HOME))
+        SignalSASEvent();
 }
 
 void handle_button(HWND hWnd)

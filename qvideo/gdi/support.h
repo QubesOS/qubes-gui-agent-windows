@@ -1,4 +1,3 @@
-#define REG_CONFIG_KEY L"\\Registry\\Machine\\Software\\Invisible Things Lab\\Qubes Tools"
 
 // default maximum refresh events per second
 // 0 = disable limiter

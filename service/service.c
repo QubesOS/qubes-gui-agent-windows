@@ -2,16 +2,11 @@
 #include <WtsApi32.h>
 #include <Shlwapi.h>
 #include <tchar.h>
+#include "..\qvideo\inc\common.h"
 #include "log.h"
 
 #define SERVICE_NAME TEXT("QTWHelper")
-// Value below should contain path to the executable to launch at system start.
-#define CONFIG_REG_KEY TEXT("Software\\Invisible Things Lab\\Qubes Tools")
-#define CONFIG_REG_AUTOSTART_VALUE TEXT("Autostart")
-#define CONFIG_REG_LOG_VALUE TEXT("LogDir")
 
-// When signaled, causes agent to shutdown gracefully.
-#define WGA_SHUTDOWN_EVENT_NAME TEXT("Global\\WGA_SHUTDOWN")
 #define WGA_TERMINATE_TIMEOUT 5000
 // FIXME: move shared definitions to one common file
 
@@ -21,6 +16,9 @@ HANDLE g_ConsoleEvent;
 
 void WINAPI ServiceMain(DWORD argc, TCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
+
+// this is not defined in WDK headers
+void (WINAPI *SendSAS)(BOOL AsUser) = NULL;
 
 WCHAR *g_SessionEventName[] = {
     L"<invalid>",
@@ -115,49 +113,69 @@ DWORD WINAPI WorkerThread(void *param)
     DWORD size;
     HANDLE currentToken;
     HANDLE currentProcess = GetCurrentProcess();
+    HANDLE events[2];
+    DWORD signaledEvent = 3;
 
     cmdline = (TCHAR*) param;
     PathUnquoteSpaces(cmdline);
     exeName = PathFindFileName(cmdline);
 
+    events[0] = g_ConsoleEvent;
+    // Default security for the SAS event, only SYSTEM processes can signal it.
+    events[1] = CreateEvent(NULL, FALSE, FALSE, WGA_SAS_EVENT_NAME);
+
     while (1)
     {
         // Wait until the interactive session changes (to winlogon console).
-        WaitForSingleObject(g_ConsoleEvent, INFINITE);
+        signaledEvent = WaitForMultipleObjects(2, events, FALSE, INFINITE) - WAIT_OBJECT_0;
 
-        // Make sure process is not running.
-        TerminateTargetProcess(exeName);
-
-        // Get access token from ourselves.
-        OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
-        // Session ID is stored in the access token. For services it's normally 0.
-        GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
-        logf("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
-
-        // We need to create a primary token for CreateProcessAsUser.
-        if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
+        switch (signaledEvent)
         {
-            return perror("DuplicateTokenEx");
-        }
-        CloseHandle(currentProcess);
+        case 0: // console event: restart wga
+            // Make sure process is not running.
+            TerminateTargetProcess(exeName);
 
-        sessionId = WTSGetActiveConsoleSessionId();
-        // Change the session ID in the new access token to the target session ID.
-        // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
-        if (!SetTokenInformation(newToken, TokenSessionId, &sessionId, sizeof(sessionId)))
-        {
-            return perror("SetTokenInformation(TokenSessionId)");
-        }
+            // Get access token from ourselves.
+            OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
+            // Session ID is stored in the access token. For services it's normally 0.
+            GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
+            logf("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
 
-        logf("Running process '%s' in session %d", cmdline, sessionId);
-        // Create process with the new token.
-        ZeroMemory(&si, sizeof(si));
-        si.cb = sizeof(si);
-        // Don't forget to set the correct desktop.
-        si.lpDesktop = TEXT("WinSta0\\Winlogon");
-        if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-        {
-            perror("CreateProcessAsUser");
+            // We need to create a primary token for CreateProcessAsUser.
+            if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
+            {
+                return perror("DuplicateTokenEx");
+            }
+            CloseHandle(currentProcess);
+
+            sessionId = WTSGetActiveConsoleSessionId();
+            // Change the session ID in the new access token to the target session ID.
+            // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
+            if (!SetTokenInformation(newToken, TokenSessionId, &sessionId, sizeof(sessionId)))
+            {
+                return perror("SetTokenInformation(TokenSessionId)");
+            }
+
+            logf("Running process '%s' in session %d", cmdline, sessionId);
+            // Create process with the new token.
+            ZeroMemory(&si, sizeof(si));
+            si.cb = sizeof(si);
+            // Don't forget to set the correct desktop.
+            si.lpDesktop = TEXT("WinSta0\\Winlogon");
+            if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+            {
+                perror("CreateProcessAsUser");
+            }
+            break;
+
+        case 1: // SAS event
+            logf("SAS event signaled");
+            if (SendSAS)
+                SendSAS(FALSE); // calling as service
+            break;
+
+        default:
+            logf("Wait failed, result 0x%x", signaledEvent+WAIT_OBJECT_0);
         }
     }
 
@@ -173,18 +191,19 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     DWORD type;
     DWORD result;
     TCHAR logPath[MAX_PATH];
+    HANDLE sasDll;
 
     // Read the registry configuration.
-    if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, CONFIG_REG_KEY, &key))
+    if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_USER_KEY, &key))
     {
         log_init(TEXT("c:\\"), SERVICE_NAME);
-        errorf("Opening config key '%s' failed, exiting", CONFIG_REG_KEY);
+        errorf("Opening config key '%s' failed, exiting", REG_CONFIG_USER_KEY);
         goto cleanup;
     }
 
     RtlZeroMemory(logPath, sizeof(logPath));
     size = sizeof(logPath) - sizeof(TCHAR);
-    result = RegQueryValueEx(key, CONFIG_REG_LOG_VALUE, NULL, &type, (BYTE*)logPath, &size);
+    result = RegQueryValueEx(key, REG_CONFIG_LOG_VALUE, NULL, &type, (BYTE*)logPath, &size);
     if (ERROR_SUCCESS != result)
     {
         log_init(TEXT("c:\\"), SERVICE_NAME);
@@ -198,12 +217,12 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     if (type != REG_SZ)
     {
         log_init(TEXT("c:\\"), SERVICE_NAME);
-        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", CONFIG_REG_LOG_VALUE, type);
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_LOG_VALUE, type);
         // don't fail
     }
 
     size = sizeof(cmdline);
-    result = RegQueryValueEx(key, CONFIG_REG_AUTOSTART_VALUE, NULL, &type, (BYTE*)cmdline, &size);
+    result = RegQueryValueEx(key, REG_CONFIG_AUTOSTART_VALUE, NULL, &type, (BYTE*)cmdline, &size);
     if (ERROR_SUCCESS != result)
     {
         SetLastError(result);
@@ -213,8 +232,21 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
 
     if (type != REG_SZ)
     {
-        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", CONFIG_REG_LOG_VALUE, type);
+        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_AUTOSTART_VALUE, type);
         goto cleanup;
+    }
+
+    // Get SendSAS address.
+    sasDll = LoadLibrary(TEXT("sas.dll"));
+    if (sasDll)
+    {
+        SendSAS = GetProcAddress(sasDll, "SendSAS");
+        if (!SendSAS)
+            logf("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
+    }
+    else
+    {
+        logf("Failed to load sas.dll, simulating CTRL+ALT+DELETE will not be possible");
     }
 
     g_Status.dwServiceType        = SERVICE_WIN32;
