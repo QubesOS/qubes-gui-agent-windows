@@ -1,11 +1,11 @@
 #include <windows.h>
 #include <WtsApi32.h>
 #include <Shlwapi.h>
-#include <tchar.h>
+#include <string.h>
 #include "..\qvideo\inc\common.h"
 #include "log.h"
 
-#define SERVICE_NAME TEXT("QTWHelper")
+#define SERVICE_NAME L"QTWHelper"
 
 #define WGA_TERMINATE_TIMEOUT 5000
 // FIXME: move shared definitions to one common file
@@ -14,7 +14,7 @@ SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
 HANDLE g_ConsoleEvent;
 
-void WINAPI ServiceMain(DWORD argc, TCHAR *argv[]);
+void WINAPI ServiceMain(DWORD argc, WCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
 
 // this is not defined in WDK headers
@@ -36,7 +36,7 @@ WCHAR *g_SessionEventName[] = {
 };
 
 // Entry point.
-int main(int argc, TCHAR *argv[])
+int main(int argc, WCHAR *argv[])
 {
     SERVICE_TABLE_ENTRY	serviceTable[] = {
         {SERVICE_NAME, ServiceMain},
@@ -46,7 +46,7 @@ int main(int argc, TCHAR *argv[])
     StartServiceCtrlDispatcher(serviceTable);
 }
 
-void TerminateTargetProcess(TCHAR *exeName)
+void TerminateTargetProcess(WCHAR *exeName)
 {
     WTS_PROCESS_INFO *processInfo = NULL;
     DWORD count = 0, i;
@@ -75,7 +75,7 @@ void TerminateTargetProcess(TCHAR *exeName)
 
     for (i=0; i<count; i++)
     {
-        if (0 == _tcsnicmp(exeName, processInfo[i].pProcessName, _tcslen(exeName))) // match
+        if (0 == _wcsnicmp(exeName, processInfo[i].pProcessName, wcslen(exeName))) // match
         {
             logf("Process '%s' running as PID %d in session %d, waiting for %dms",
                 exeName, processInfo[i].ProcessId, processInfo[i].SessionId, WGA_TERMINATE_TIMEOUT);
@@ -104,8 +104,8 @@ cleanup:
 
 DWORD WINAPI WorkerThread(void *param)
 {
-    TCHAR *cmdline;
-    TCHAR *exeName;
+    WCHAR *cmdline;
+    WCHAR *exeName;
     PROCESS_INFORMATION pi;
     STARTUPINFO si;
     HANDLE newToken;
@@ -116,7 +116,7 @@ DWORD WINAPI WorkerThread(void *param)
     HANDLE events[2];
     DWORD signaledEvent = 3;
 
-    cmdline = (TCHAR*) param;
+    cmdline = (WCHAR*) param;
     PathUnquoteSpaces(cmdline);
     exeName = PathFindFileName(cmdline);
 
@@ -161,7 +161,7 @@ DWORD WINAPI WorkerThread(void *param)
             ZeroMemory(&si, sizeof(si));
             si.cb = sizeof(si);
             // Don't forget to set the correct desktop.
-            si.lpDesktop = TEXT("WinSta0\\Winlogon");
+            si.lpDesktop = L"WinSta0\\Winlogon";
             if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
             {
                 perror("CreateProcessAsUser");
@@ -182,31 +182,31 @@ DWORD WINAPI WorkerThread(void *param)
     return ERROR_SUCCESS;
 }
 
-void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
+void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
 {
-    TCHAR cmdline[MAX_PATH];
+    WCHAR cmdline[MAX_PATH];
     HANDLE workerHandle = 0;
     HKEY key = 0;
     DWORD size;
     DWORD type;
     DWORD result;
-    TCHAR logPath[MAX_PATH];
+    WCHAR logPath[MAX_PATH];
     HANDLE sasDll;
 
     // Read the registry configuration.
     if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_USER_KEY, &key))
     {
-        log_init(TEXT("c:\\"), SERVICE_NAME);
+        log_init(L"c:\\", SERVICE_NAME);
         errorf("Opening config key '%s' failed, exiting", REG_CONFIG_USER_KEY);
         goto cleanup;
     }
 
     RtlZeroMemory(logPath, sizeof(logPath));
-    size = sizeof(logPath) - sizeof(TCHAR);
+    size = sizeof(logPath) - sizeof(WCHAR);
     result = RegQueryValueEx(key, REG_CONFIG_LOG_VALUE, NULL, &type, (BYTE*)logPath, &size);
     if (ERROR_SUCCESS != result)
     {
-        log_init(TEXT("c:\\"), SERVICE_NAME);
+        log_init(L"c:\\", SERVICE_NAME);
         SetLastError(result);
         perror("RegQueryValueEx(LogPath)");
         // don't fail
@@ -216,7 +216,7 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
 
     if (type != REG_SZ)
     {
-        log_init(TEXT("c:\\"), SERVICE_NAME);
+        log_init(L"c:\\", SERVICE_NAME);
         errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_LOG_VALUE, type);
         // don't fail
     }
@@ -237,7 +237,7 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     }
 
     // Get SendSAS address.
-    sasDll = LoadLibrary(TEXT("sas.dll"));
+    sasDll = LoadLibrary(L"sas.dll");
     if (sasDll)
     {
         SendSAS = GetProcAddress(sasDll, "SendSAS");
