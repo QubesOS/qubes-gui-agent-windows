@@ -750,7 +750,8 @@ void SignalSASEvent()
             perror("OpenEvent");
     }
 
-    SetEvent(sasEvent);
+    if (sasEvent)
+        SetEvent(sasEvent);
 }
 
 void handle_keypress(HWND hWnd)
