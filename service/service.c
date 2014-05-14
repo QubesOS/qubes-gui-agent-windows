@@ -17,8 +17,9 @@ HANDLE g_ConsoleEvent;
 void WINAPI ServiceMain(DWORD argc, WCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
 
+typedef void (WINAPI *SendSASFunction)(BOOL);
 // this is not defined in WDK headers
-void (WINAPI *SendSAS)(BOOL AsUser) = NULL;
+SendSASFunction SendSAS = NULL;
 
 WCHAR *g_SessionEventName[] = {
     L"<invalid>",
@@ -240,7 +241,7 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     sasDll = LoadLibrary(L"sas.dll");
     if (sasDll)
     {
-        SendSAS = GetProcAddress(sasDll, "SendSAS");
+        SendSAS = (SendSASFunction) GetProcAddress(sasDll, "SendSAS");
         if (!SendSAS)
             logf("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
     }
