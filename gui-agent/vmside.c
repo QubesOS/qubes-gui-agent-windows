@@ -602,7 +602,7 @@ ULONG InitVideo(ULONG width, ULONG height, ULONG bpp)
 
     if (ERROR_SUCCESS != uResult)
     {
-        logf("SetVideoMode() failed: %lu\n", uResult);
+        errorf("SetVideoMode() failed: %lu\n", uResult);
 
         g_bFullScreenMode = TRUE;
 

@@ -489,7 +489,7 @@ DWORD WINAPI ResetWatch(PVOID param)
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
 
-    debugf("start");
+    logf("start");
 
     StopShellEventsThread();
 
@@ -527,7 +527,7 @@ DWORD WINAPI ResetWatch(PVOID param)
         ProcessUpdatedWindows(TRUE);
     }
 
-    //debugf("success");
+    logf("success");
     return ERROR_SUCCESS;
 }
 
@@ -810,6 +810,7 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
 
     if (hwnd == NULL)
         return perror("CreateWindow");
+    logf("shell hook window: 0x%x", hwnd);
 
     ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
@@ -862,6 +863,7 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
 {
     ULONG uResult;
 
+    logf("shell events thread started");
     if (ERROR_SUCCESS != AttachToInputDesktop())
         return perror("AttachToInputDesktop");
 
@@ -896,13 +898,13 @@ ULONG StartShellEventsThread()
     if (!g_hShellEventsThread)
         return perror("CreateThread(ShellEventsThread)");
 
-    debugf("new thread ID: %d", threadId);
+    logf("shell events thread ID: %d (created)", threadId);
     return ERROR_SUCCESS;
 }
 
 ULONG StopShellEventsThread()
 {
-    debugf("start");
+    logf("shell hook window: 0x%x", g_ShellEventsWnd);
     if (!g_hShellEventsThread)
         return ERROR_SUCCESS;
 
@@ -917,6 +919,6 @@ ULONG StopShellEventsThread()
 
     g_hShellEventsThread = NULL;
 
-    //debugf("success");
+    logf("shell events thread terminated");
     return ERROR_SUCCESS;
 }
