@@ -7,7 +7,7 @@ BOOL g_bUseDirtyBits = FALSE;
 
 const WCHAR g_szClassName[] = L"QubesShellHookClass";
 ULONG g_uShellHookMessage = 0;
-HWND g_ShellEventsWnd = NULL;
+HWND g_ShellEventsWindow = NULL;
 HANDLE g_hShellEventsThread = NULL;
 
 LIST_ENTRY g_WatchedWindowsList;
@@ -785,7 +785,7 @@ update:
     return 0;
 }
 
-ULONG CreateShellHookWindow(HWND *pHwnd)
+ULONG CreateShellHookWindow(HWND *pWindow)
 {
     WNDCLASSEX wc;
     HWND hwnd;
@@ -793,7 +793,8 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
     ULONG uResult;
 
     debugf("start");
-    if (!pHwnd)
+
+    if (!pWindow)
         return ERROR_INVALID_PARAMETER;
 
     memset(&wc, 0, sizeof(wc));
@@ -837,7 +838,7 @@ ULONG CreateShellHookWindow(HWND *pHwnd)
     if (!g_uShellHookMessage)
         return perror("RegisterWindowMessage");
 
-    *pHwnd = hwnd;
+    *pWindow = hwnd;
 
     //debugf("success");
     return ERROR_SUCCESS;
@@ -867,7 +868,7 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
     if (ERROR_SUCCESS != AttachToInputDesktop())
         return perror("AttachToInputDesktop");
 
-    if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWnd))
+    if (ERROR_SUCCESS != CreateShellHookWindow(&g_ShellEventsWindow))
         return perror("CreateShellHookWindow");
 
     InvalidateRect(NULL, NULL, TRUE); // repaint everything
@@ -894,30 +895,50 @@ ULONG StartShellEventsThread()
         g_Initialized = TRUE;
     }
 
+    if (g_hShellEventsThread)
+    {
+        logf("shell events thread already running: handle 0x%x, window 0x%x", g_hShellEventsThread, g_ShellEventsWindow);
+        // this is abnormal, returning error here will cause termination
+        return ERROR_ALREADY_EXISTS;
+    }
+
     g_hShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
     if (!g_hShellEventsThread)
         return perror("CreateThread(ShellEventsThread)");
 
-    logf("shell events thread ID: %d (created)", threadId);
+    logf("shell events thread ID: 0x%x (created)", threadId);
     return ERROR_SUCCESS;
 }
 
 ULONG StopShellEventsThread()
 {
-    logf("shell hook window: 0x%x", g_ShellEventsWnd);
+    ULONG retval;
+    DWORD waitResult;
+
+    logf("shell hook window: 0x%x", g_ShellEventsWindow);
     if (!g_hShellEventsThread)
         return ERROR_SUCCESS;
 
-    if (!PostMessage(g_ShellEventsWnd, WM_CLOSE, 0, 0))
-        return perror("PostMessage(WM_CLOSE)");
+    // SendMessage waits until the message is processed
+    if (!SendMessage(g_ShellEventsWindow, WM_CLOSE, 0, 0))
+    {
+        retval = perror("PostMessage(WM_CLOSE)");
+        errorf("Terminating shell events thread forcibly");
+        TerminateThread(g_hShellEventsThread, 0);
+    }
 
     debugf("waiting for thread to exit");
-    // FIXME: timeout
-    WaitForSingleObject(g_hShellEventsThread, INFINITE);
+    waitResult = WaitForSingleObject(g_hShellEventsThread, 5000);
+    if (waitResult != WAIT_OBJECT_0)
+    {
+        errorf("wait failed or timed out, killing thread forcibly");
+        TerminateThread(g_hShellEventsThread, 0);
+    }
 
     CloseHandle(g_hShellEventsThread);
 
     g_hShellEventsThread = NULL;
+    g_ShellEventsWindow = NULL;
 
     logf("shell events thread terminated");
     return ERROR_SUCCESS;

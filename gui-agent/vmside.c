@@ -13,15 +13,15 @@
 
 // window hints constants
 // http://tronche.com/gui/x/icccm/sec-4.html
-#define USPosition  1       // User-specified x, y 
-#define USSize      2       // User-specified width, height 
-#define PPosition   4       // Program-specified position 
-#define PSize       8       // Program-specified size 
-#define PMinSize    16      // Program-specified minimum size 
-#define PMaxSize    32      // Program-specified maximum size 
-#define PResizeInc  64      // Program-specified resize increments 
-#define PAspect     128 	// Program-specified min and max aspect ratios 
-#define PBaseSize   256 	// Program-specified base size 
+#define USPosition  1       // User-specified x, y
+#define USSize      2       // User-specified width, height
+#define PPosition   4       // Program-specified position
+#define PSize       8       // Program-specified size
+#define PMinSize    16      // Program-specified minimum size
+#define PMaxSize    32      // Program-specified maximum size
+#define PResizeInc  64      // Program-specified resize increments
+#define PAspect     128 	// Program-specified min and max aspect ratios
+#define PBaseSize   256 	// Program-specified base size
 #define PWinGravity 512 	// Program-specified window gravity
 
 #define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
