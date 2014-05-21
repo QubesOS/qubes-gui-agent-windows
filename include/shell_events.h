@@ -5,6 +5,7 @@
 #include <WtsApi32.h>
 #include "qvcontrol.h"
 #include "common.h"
+#include "qubes-gui-protocol.h"
 
 #define REG_CONFIG_KEY L"Software\\Invisible Things Lab\\Qubes Tools"
 
@@ -72,6 +73,11 @@ ULONG send_window_unmap(
 
 ULONG send_window_map(
     PWATCHED_DC pWatchedDC
+);
+
+void send_window_hints(
+    HWND hWnd,
+    uint32_t flags
 );
 
 DWORD WINAPI ResetWatch(PVOID param);

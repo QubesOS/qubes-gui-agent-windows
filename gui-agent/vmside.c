@@ -11,6 +11,19 @@
 #include "resource.h"
 #include "log.h"
 
+// window hints constants
+// http://tronche.com/gui/x/icccm/sec-4.html
+#define USPosition  1       // User-specified x, y 
+#define USSize      2       // User-specified width, height 
+#define PPosition   4       // Program-specified position 
+#define PSize       8       // Program-specified size 
+#define PMinSize    16      // Program-specified minimum size 
+#define PMaxSize    32      // Program-specified maximum size 
+#define PResizeInc  64      // Program-specified resize increments 
+#define PAspect     128 	// Program-specified min and max aspect ratios 
+#define PBaseSize   256 	// Program-specified base size 
+#define PWinGravity 512 	// Program-specified window gravity
+
 #define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
 #define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
 
@@ -310,6 +323,9 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     if (pWatchedDC && pWatchedDC->bVisible)
         send_window_map(pWatchedDC);
 
+    if (pWatchedDC)
+        send_window_hints(pWatchedDC->hWnd, PPosition); // program-specified position
+
     return ERROR_SUCCESS;
 }
 
@@ -346,12 +362,28 @@ ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
     return ERROR_SUCCESS;
 }
 
+void send_window_hints(HWND hWnd, uint32_t flags)
+{
+    struct msg_hdr hdr;
+    struct msg_window_hints msg = {0};
+
+    msg.flags = flags;
+    debugf("flags: 0x%lx", flags);
+
+    hdr.window = (uint32_t)hWnd;
+    hdr.type = MSG_WINDOW_HINTS;
+
+    EnterCriticalSection(&g_VchanCriticalSection);
+    write_message(hdr, msg);
+    LeaveCriticalSection(&g_VchanCriticalSection);
+}
+
 void send_screen_hints()
 {
     struct msg_hdr hdr;
     struct msg_window_hints msg = {0};
 
-    msg.flags = 16 /*|32*/ ; // min size, see http://tronche.com/gui/x/icccm/sec-4.html
+    msg.flags = PMinSize; // minimum size
     msg.min_width = MIN_RESOLUTION_WIDTH;
     msg.min_height = MIN_RESOLUTION_HEIGHT;
     debugf("min %dx%d", msg.min_width, msg.min_height);
