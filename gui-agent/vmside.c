@@ -68,9 +68,6 @@ struct RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = {0};
 
 char g_HostName[256] = "<unknown>";
 
-ULONG HideCursors();
-ULONG DisableEffects();
-
 HANDLE CreateNamedEvent(WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;

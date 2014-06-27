@@ -29,6 +29,9 @@ extern BOOL g_bUseDirtyBits;
 extern BOOL g_bVchanClientConnected;
 extern PQV_DIRTY_PAGES g_pDirtyPages;
 
+ULONG HideCursors();
+ULONG DisableEffects();
+
 ULONG AttachToInputDesktop();
 
 ULONG StartShellEventsThread();
@@ -78,6 +81,12 @@ ULONG send_window_map(
 void send_window_hints(
     HWND hWnd,
     uint32_t flags
+);
+
+ULONG send_window_flags(
+    HWND hWnd,
+    uint32_t flags_set,
+    uint32_t flags_unset
 );
 
 DWORD WINAPI ResetWatch(PVOID param);

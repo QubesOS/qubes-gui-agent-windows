@@ -392,6 +392,8 @@ ULONG ProcessUpdatedWindows(BOOL bUpdateEverything)
     {
         bRecheckWindows = TRUE;
         debugf("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
+        HideCursors();
+        DisableEffects();
     }
 
     if (!g_ExplorerHwnd || bRecheckWindows || !IsWindow(g_ExplorerHwnd))
