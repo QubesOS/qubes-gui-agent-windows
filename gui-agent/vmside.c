@@ -1013,6 +1013,23 @@ void handle_close(HWND hWnd)
     PostMessage(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
 }
 
+void handle_window_flags(HWND hWnd)
+{
+    struct msg_window_flags flags;
+
+    read_all_vchan_ext((char *)&flags, sizeof(flags));
+    debugf("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
+
+    if (flags.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
+    {
+        ShowWindowAsync(hWnd, SW_RESTORE);
+    }
+    else if (flags.flags_set & WINDOW_FLAG_MINIMIZE) // minimize
+    {
+        ShowWindowAsync(hWnd, SW_MINIMIZE);
+    }
+}
+
 ULONG handle_server_data()
 {
     struct msg_hdr hdr;
@@ -1045,6 +1062,9 @@ ULONG handle_server_data()
         break;
     case MSG_KEYMAP_NOTIFY:
         handle_keymap_notify();
+        break;
+    case MSG_WINDOW_FLAGS:
+        handle_window_flags((HWND)hdr.window);
         break;
     default:
         logf("got unknown msg type %d, ignoring\n", hdr.type);

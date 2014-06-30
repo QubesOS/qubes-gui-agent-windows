@@ -158,6 +158,21 @@ ULONG CheckWatchedWindowUpdates(
 
     pWatchedDC->bVisible = bCurrentlyVisible;
 
+    if (IsIconic(pWatchedDC->hWnd))
+    {
+        if (!pWatchedDC->bIconic)
+        {
+            debugf("0x%x IsIconic: minimizing", pWatchedDC->hWnd);
+            send_window_flags(pWatchedDC->hWnd, WINDOW_FLAG_MINIMIZE, 0);
+            pWatchedDC->bIconic = TRUE;
+        }
+        return ERROR_SUCCESS; // window is minimized, ignore everything else
+    }
+    else
+    {
+        pWatchedDC->bIconic = FALSE;
+    }
+
     bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
         wi.rcWindow.top != pWatchedDC->rcWindow.top ||
         wi.rcWindow.right != pWatchedDC->rcWindow.right ||

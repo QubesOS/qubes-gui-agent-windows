@@ -23,6 +23,8 @@ typedef struct _WATCHED_DC
     BOOL	bStyleChecked;
     ULONG	uTimeAdded;
 
+    BOOL	bIconic;
+
     LONG	MaxWidth;
     LONG	MaxHeight;
     PPFN_ARRAY	pPfnArray;
