@@ -304,7 +304,7 @@ void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
     else
         logf("<unknown event: %d>, session id %d", eventType, sn->dwSessionId);
 
-    if (eventType == WTS_CONSOLE_CONNECT)
+    if (eventType == WTS_CONSOLE_CONNECT || eventType == WTS_SESSION_LOGON)
     {
         // Signal trigger event for the worker thread.
         SetEvent(g_ConsoleEvent);
