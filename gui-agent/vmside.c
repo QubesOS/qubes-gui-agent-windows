@@ -1,15 +1,18 @@
 #define OEMRESOURCE
+#define WIN32_LEAN_AND_MEAN
+
 #include <windows.h>
 #include <aclapi.h>
 #include <winsock2.h>
-#include "tchar.h"
+#include <tchar.h>
+
 #include "qubes-gui-protocol.h"
-#include "libvchan.h"
-#include "glue.h"
+#include "vchan.h"
 #include "qvcontrol.h"
 #include "shell_events.h"
 #include "resource.h"
 #include "log.h"
+#include "xorg-keymap.h"
 
 // window hints constants
 // http://tronche.com/gui/x/icccm/sec-4.html
@@ -248,8 +251,8 @@ void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
     hdr.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_struct(hdr);
-    write_data(pShmCmd, sizeof(struct shm_cmd) + size);
+    VCHAN_SEND(hdr);
+    VchanSendBuffer(pShmCmd, sizeof(struct shm_cmd) + size);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     free(pShmCmd);
@@ -260,7 +263,6 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     WINDOWINFO wi;
     struct msg_hdr hdr;
     struct msg_create mc;
-    struct msg_map_info mmi;
     PPFN_ARRAY pPfnArray = NULL;
 
     wi.cbSize = sizeof(wi);
@@ -313,7 +315,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     mc.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, mc);
+    VCHAN_SEND_MSG(hdr, mc);
 
     LeaveCriticalSection(&g_VchanCriticalSection);
 
@@ -335,7 +337,7 @@ ULONG send_window_destroy(HWND hWnd)
     hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_struct(hdr);
+    VCHAN_SEND(hdr);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -353,7 +355,7 @@ ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
     flags.flags_set = flags_set;
     flags.flags_unset = flags_unset;
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, flags);
+    VCHAN_SEND_MSG(hdr, flags);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -371,7 +373,7 @@ void send_window_hints(HWND hWnd, uint32_t flags)
     hdr.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, msg);
+    VCHAN_SEND_MSG(hdr, msg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
@@ -389,7 +391,7 @@ void send_screen_hints()
     hdr.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, msg);
+    VCHAN_SEND_MSG(hdr, msg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
@@ -403,7 +405,7 @@ ULONG send_window_unmap(HWND hWnd)
     hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_struct(hdr);
+    VCHAN_SEND(hdr);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -437,7 +439,7 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
         mmi.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, mmi);
+    VCHAN_SEND_MSG(hdr, mmi);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
@@ -495,7 +497,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
     * will follow */
     if (mc.width > 0 && mc.height > 0)
     {
-        write_message(hdr, mc);
+        VCHAN_SEND_MSG(hdr, mc);
     }
 
     if (pWatchedDC && pWatchedDC->bVisible)
@@ -504,7 +506,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
 
         hdr.type = MSG_MAP;
-        write_message(hdr, mmi);
+        VCHAN_SEND_MSG(hdr, mmi);
     }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
@@ -516,7 +518,6 @@ ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t hei
 {
     struct msg_hdr hdr;
     struct msg_configure mc;
-    struct msg_map_info mmi;
 
     debugf("(%d,%d) %dx%d", x, y, width, height);
     hdr.window = 0; // 0 = screen
@@ -530,7 +531,7 @@ ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t hei
     mc.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, mc);
+    VCHAN_SEND_MSG(hdr, mc);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
@@ -555,7 +556,7 @@ void send_window_damage_event(
     mx.width = width;
     mx.height = height;
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, mx);
+    VCHAN_SEND_MSG(hdr, mx);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
@@ -582,14 +583,14 @@ void send_wmname(HWND hWnd)
     hdr.window = (uint32_t) hWnd;
     hdr.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
-    write_message(hdr, msg);
+    VCHAN_SEND_MSG(hdr, msg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
 void send_protocol_version()
 {
     uint32_t version = QUBES_GUI_PROTOCOL_VERSION_WINDOWS;
-    write_struct(version);
+    VCHAN_SEND(version);
 }
 
 ULONG SetVideoMode(ULONG uWidth, ULONG uHeight, ULONG uBpp)
@@ -703,7 +704,7 @@ ULONG handle_xconf()
     struct msg_xconf xconf;
 
     //debugf("start");
-    read_all_vchan_ext(&xconf, sizeof(xconf));
+    VchanReceiveBuffer(&xconf, sizeof(xconf));
     logf("host resolution: %lux%lu, mem: %lu, depth: %lu\n", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
@@ -741,7 +742,7 @@ void handle_keymap_notify()
     };
 
     debugf("start");
-    read_all_vchan_ext((char *) remote_keys, sizeof(remote_keys));
+    VchanReceiveBuffer((char *) remote_keys, sizeof(remote_keys));
     i = 0;
     while (modifier_keys[i])
     {
@@ -790,7 +791,7 @@ void handle_keypress(HWND hWnd)
     int local_capslock_state;
 
     debugf("0x%x", hWnd);
-    read_all_vchan_ext((char *) &key, sizeof(key));
+    VchanReceiveBuffer((char *) &key, sizeof(key));
 
     /* ignore x, y */
     /* TODO: send to correct window */
@@ -842,7 +843,7 @@ void handle_button(HWND hWnd)
     RECT rect = {0};
 
     debugf("0x%x", hWnd);
-    read_all_vchan_ext((char *) &button, sizeof(button));
+    VchanReceiveBuffer((char *) &button, sizeof(button));
 
     if (hWnd)
         GetWindowRect(hWnd, &rect);
@@ -893,7 +894,7 @@ void handle_motion(HWND hWnd)
     RECT rect = {0};
 
     debugf("0x%x", hWnd);
-    read_all_vchan_ext((char *) &motion, sizeof(motion));
+    VchanReceiveBuffer((char *) &motion, sizeof(motion));
 
     if (hWnd)
         GetWindowRect(hWnd, &rect);
@@ -949,7 +950,7 @@ void handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
-    read_all_vchan_ext((char *) &configure, sizeof(configure));
+    VchanReceiveBuffer((char *) &configure, sizeof(configure));
     debugf("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
     
     if (hWnd != 0) // 0 is full screen
@@ -999,7 +1000,7 @@ void handle_focus(HWND hWnd)
     struct msg_focus focus;
 
     debugf("0x%x", hWnd);
-    read_all_vchan_ext((char *) &focus, sizeof(focus));
+    VchanReceiveBuffer((char *) &focus, sizeof(focus));
 
     BringWindowToTop(hWnd);
     SetForegroundWindow(hWnd);
@@ -1017,7 +1018,7 @@ void handle_window_flags(HWND hWnd)
 {
     struct msg_window_flags flags;
 
-    read_all_vchan_ext((char *)&flags, sizeof(flags));
+    VchanReceiveBuffer((char *)&flags, sizeof(flags));
     debugf("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
 
     if (flags.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
@@ -1033,12 +1034,12 @@ void handle_window_flags(HWND hWnd)
 ULONG handle_server_data()
 {
     struct msg_hdr hdr;
-    char discard[256];
+    BYTE discard[256];
     int nbRead;
 
-    read_all_vchan_ext((char *)&hdr, sizeof(hdr));
+    VchanReceiveBuffer(&hdr, sizeof(hdr));
 
-    debugf("received message type %d for 0x%x\n", hdr.type, hdr.window);
+    debugf("received message type %d for 0x%x", hdr.type, hdr.window);
 
     switch (hdr.type)
     {
@@ -1067,12 +1068,12 @@ ULONG handle_server_data()
         handle_window_flags((HWND)hdr.window);
         break;
     default:
-        logf("got unknown msg type %d, ignoring\n", hdr.type);
+        logf("got unknown msg type %d, ignoring", hdr.type);
 
         /* discard unsupported message body */
         while (hdr.untrusted_len > 0)
         {
-            nbRead = read_all_vchan_ext(discard, min(hdr.untrusted_len, sizeof(discard)));
+            nbRead = VchanReceiveBuffer(discard, min(hdr.untrusted_len, sizeof(discard)));
             if (nbRead <= 0)
                 break;
             hdr.untrusted_len -= nbRead;
@@ -1113,7 +1114,7 @@ void SetFullscreenMode()
 
 ULONG WINAPI WatchForEvents()
 {
-    EVTCHN evtchn;
+    HANDLE vchan;
     OVERLAPPED ol;
     unsigned int fired_port;
     ULONG uEventNumber;
@@ -1128,25 +1129,23 @@ ULONG WINAPI WatchForEvents()
     HANDLE hShutdownEvent;
     HDC hDC;
     ULONG uDamage = 0;
-
     struct shm_cmd *pShmCmd = NULL;
 
     debugf("start");
     hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
-    uResult = peer_server_init(6000);
-    if (uResult)
+    if (!VchanInitServer(6000))
     {
-        errorf("peer_server_init() failed");
-        return ERROR_INVALID_FUNCTION;
+        errorf("VchanInitServer() failed");
+        return GetLastError();
     }
 
-    logf("Awaiting for a vchan client, write ring size: %d\n", buffer_space_vchan_ext());
+    logf("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
 
-    evtchn = libvchan_fd_for_select(ctrl);
+    vchan = VchanGetHandle();
 
-    memset(&ol, 0, sizeof(ol));
+    ZeroMemory(&ol, sizeof(ol));
     ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
@@ -1179,11 +1178,11 @@ ULONG WINAPI WatchForEvents()
 
         uResult = ERROR_SUCCESS;
 
-        libvchan_prepare_to_select(ctrl);
+        VchanPrepareToSelect();
         // read 1 byte instead of sizeof(fired_port) to not flush fired port
         // from evtchn buffer; evtchn driver will read only whole fired port
         // numbers (sizeof(fired_port)), so this will end in zero-length read
-        if (!bVchanIoInProgress && !ReadFile(evtchn, &fired_port, 1, NULL, &ol))
+        if (!bVchanIoInProgress && !ReadFile(vchan, &fired_port, 1, NULL, &ol))
         {
             uResult = GetLastError();
             if (ERROR_IO_PENDING != uResult)
@@ -1256,15 +1255,14 @@ ULONG WINAPI WatchForEvents()
                 // other process)
                 if (!g_bVchanClientConnected)
                 {
-                    libvchan_wait(ctrl);
+                    VchanWait();
 
                     bVchanIoInProgress = FALSE;
 
                     logf("A vchan client has connected\n");
 
                     // Remove the xenstore device/vchan/N entry.
-                    uResult = libvchan_server_handle_connected(ctrl);
-                    if (uResult)
+                    if (!VchanIsServerConnected())
                     {
                         errorf("libvchan_server_handle_connected() failed");
                         bExitLoop = TRUE;
@@ -1311,7 +1309,7 @@ ULONG WINAPI WatchForEvents()
                     break;
                 }
 
-                if (!GetOverlappedResult(evtchn, &ol, &i, FALSE))
+                if (!GetOverlappedResult(vchan, &ol, &i, FALSE))
                 {
                     if (GetLastError() == ERROR_IO_DEVICE)
                     {
@@ -1341,17 +1339,17 @@ ULONG WINAPI WatchForEvents()
                 }
 
                 EnterCriticalSection(&g_VchanCriticalSection);
-                libvchan_wait(ctrl);
+                VchanWait();
 
                 bVchanIoInProgress = FALSE;
 
-                if (libvchan_is_eof(ctrl))
+                if (VchanIsEof())
                 {
                     bExitLoop = TRUE;
                     break;
                 }
 
-                while (read_ready_vchan_ext())
+                while (VchanGetReadBufferSize())
                 {
                     uResult = handle_server_data();
                     if (ERROR_SUCCESS != uResult)
@@ -1374,7 +1372,7 @@ ULONG WINAPI WatchForEvents()
     logf("main loop finished");
 
     if (bVchanIoInProgress)
-        if (CancelIo(evtchn))
+        if (CancelIo(vchan))
         {
             // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
             // OVERLAPPED structure.
@@ -1384,15 +1382,11 @@ ULONG WINAPI WatchForEvents()
     if (!g_bVchanClientConnected)
     {
         // Remove the xenstore device/vchan/N entry.
-        libvchan_server_handle_connected(ctrl);
+        VchanIsServerConnected();
     }
 
     if (g_bVchanClientConnected)
-        libvchan_close(ctrl);
-
-    // This is actually CloseHandle(evtchn)
-
-    xc_evtchn_close(ctrl->evfd);
+        VchanClose();
 
     CloseHandle(ol.hEvent);
     CloseHandle(hWindowDamageEvent);
@@ -1404,17 +1398,6 @@ ULONG WINAPI WatchForEvents()
     logf("exiting");
 
     return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
-}
-
-static ULONG CheckForXenInterface()
-{
-    EVTCHN xc;
-
-    xc = xc_evtchn_open();
-    if (INVALID_HANDLE_VALUE == xc)
-        return ERROR_NOT_SUPPORTED;
-    xc_evtchn_close(xc);
-    return ERROR_SUCCESS;
 }
 
 ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)

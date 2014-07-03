@@ -7,6 +7,7 @@ USE_MSVCRT=1
 
 UMENTRY = wmain
 C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
+#C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
 INCLUDES=$(INCLUDES); \
                     ..\include; \
@@ -17,7 +18,7 @@ INCLUDES=$(INCLUDES); \
                     ..\..\core\win\include; \
                     ..\gui-common\include; \
 
-SOURCES=vmside.c txrx-vchan.c qvcontrol.c xorg-keymap.c shell_events.c wga.rc
+SOURCES=vmside.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c wga.rc
 
 TARGETLIBS=\
         $(SDK_LIB_PATH)\kernel32.lib \
