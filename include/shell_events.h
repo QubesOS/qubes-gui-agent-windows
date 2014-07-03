@@ -26,7 +26,7 @@ extern LONG g_ScreenWidth;
 extern LONG g_ScreenHeight;
 extern BOOL g_bFullScreenMode;
 extern BOOL g_bUseDirtyBits;
-extern BOOL g_bVchanClientConnected;
+extern BOOL g_VchanClientConnected;
 extern PQV_DIRTY_PAGES g_pDirtyPages;
 
 ULONG HideCursors();

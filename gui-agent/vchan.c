@@ -1,6 +1,8 @@
 #include <windows.h>
 #include "libvchan.h"
 
+CRITICAL_SECTION g_VchanCriticalSection;
+
 static struct libvchan *g_Vchan;
 
 int VchanSendBuffer(const void *buf, int size)

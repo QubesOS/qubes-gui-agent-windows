@@ -1,4 +1,5 @@
 #include "qvcontrol.h"
+#include "main.h"
 #include "log.h"
 
 #define QUBES_DRIVER_NAME L"Qubes Video Driver"
@@ -11,10 +12,6 @@ HANDLE g_hScreenSection = NULL;
 // bit array of dirty pages in the screen buffer (changed since last check)
 PQV_DIRTY_PAGES g_pDirtyPages = NULL;
 HANDLE g_hDirtySection = NULL;
-
-extern BOOL g_bUseDirtyBits;
-extern LONG g_ScreenHeight;
-extern LONG g_ScreenWidth;
 
 ULONG CloseScreenSection()
 {

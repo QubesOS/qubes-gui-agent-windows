@@ -1,10 +1,6 @@
 #include "shell_events.h"
 #include "log.h"
 
-// If set, only invalidate parts of the screen that changed according to
-// qvideo's dirty page scan of surface memory buffer.
-BOOL g_bUseDirtyBits = FALSE;
-
 const WCHAR g_szClassName[] = L"QubesShellHookClass";
 ULONG g_uShellHookMessage = 0;
 HWND g_ShellEventsWindow = NULL;
@@ -13,9 +9,6 @@ HANDLE g_hShellEventsThread = NULL;
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
 BOOL g_Initialized = FALSE;
-
-LONG g_ScreenHeight = 0;
-LONG g_ScreenWidth = 0;
 
 HWND g_DesktopHwnd = NULL;
 HWND g_ExplorerHwnd = NULL;
@@ -100,7 +93,7 @@ ULONG CheckWatchedWindowUpdates(
         memcpy(&wi, pwi, sizeof(wi));
 
     bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
-    if (g_bVchanClientConnected)
+    if (g_VchanClientConnected)
     {
         // visibility change
         if (bCurrentlyVisible && !pWatchedDC->bVisible)
@@ -189,7 +182,7 @@ ULONG CheckWatchedWindowUpdates(
         //			 wi.rcWindow.bottom);
         pWatchedDC->rcWindow = wi.rcWindow;
 
-        if (g_bVchanClientConnected)
+        if (g_VchanClientConnected)
         {
             RECT intersection;
 
@@ -610,7 +603,7 @@ PWATCHED_DC AddWindowWithInfo(
     pWatchedDC->MaxWidth = g_ScreenWidth;
     pWatchedDC->MaxHeight = g_ScreenHeight;
 
-    if (g_bVchanClientConnected)
+    if (g_VchanClientConnected)
     {
         send_window_create(pWatchedDC);
         send_wmname(hWnd);
@@ -662,7 +655,7 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
     free(pWatchedDC->pPfnArray);
 
-    if (g_bVchanClientConnected)
+    if (g_VchanClientConnected)
     {
         send_window_unmap(pWatchedDC->hWnd);
         if (pWatchedDC->hWnd) // never destroy screen "window"
