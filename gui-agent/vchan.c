@@ -104,13 +104,13 @@ void VchanClose(void)
     xc_evtchn_close(g_Vchan->evfd);
 }
 
-BOOL CheckForXenInterface(void)
+ULONG CheckForXenInterface(void)
 {
     EVTCHN xc;
 
     xc = xc_evtchn_open();
     if (INVALID_HANDLE_VALUE == xc)
-        return FALSE;
+        return ERROR_NOT_SUPPORTED;
     xc_evtchn_close(xc);
-    return TRUE;
+    return ERROR_SUCCESS;
 }
