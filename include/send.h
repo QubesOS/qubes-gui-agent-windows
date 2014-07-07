@@ -1,7 +1,10 @@
 #pragma once
 #include <stdint.h>
+
+#include "main.h"
 #include "vchan.h"
-#include "qvcontrol.h"
+
+#include "qubes-gui-protocol.h"
 
 // window hints constants
 // http://tronche.com/gui/x/icccm/sec-4.html

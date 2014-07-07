@@ -1,15 +1,15 @@
-TARGETNAME=wga
-TARGETTYPE=PROGRAM
-TARGETPATH=bin
+TARGETNAME = wga
+TARGETTYPE = PROGRAM
+TARGETPATH = bin
 
-UMTYPE=windows
-USE_MSVCRT=1
+UMTYPE = windows
+USE_MSVCRT = 1
 
 UMENTRY = wmain
 C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
 #C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
-INCLUDES=$(INCLUDES); \
+INCLUDES = $(INCLUDES); \
                     ..\include; \
                     ..\qvideo\inc; \
                     $(QUBES_INCLUDES); \
@@ -18,9 +18,9 @@ INCLUDES=$(INCLUDES); \
                     ..\..\core\win\include; \
                     ..\gui-common\include; \
 
-SOURCES=main.c handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c wga.rc
+SOURCES = main.c handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c util.c wga.rc
 
-TARGETLIBS=\
+TARGETLIBS = \
         $(SDK_LIB_PATH)\kernel32.lib \
         $(SDK_LIB_PATH)\user32.lib \
         $(SDK_LIB_PATH)\gdi32.lib \

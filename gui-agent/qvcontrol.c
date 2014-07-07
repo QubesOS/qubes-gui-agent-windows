@@ -1,5 +1,10 @@
-#include "qvcontrol.h"
+#include <windows.h>
+#include <tchar.h>
+#include <strsafe.h>
+
+#include "common.h"
 #include "main.h"
+
 #include "log.h"
 
 #define QUBES_DRIVER_NAME L"Qubes Video Driver"
@@ -45,7 +50,7 @@ ULONG OpenScreenSection()
         return ERROR_NOT_SUPPORTED;
     }
 
-    StringCchPrintf(SectionName, _countof(SectionName),
+    StringCchPrintf(SectionName, RTL_NUMBER_OF(SectionName),
         L"Global\\QubesSharedMemory_%x", uLength);
     debugf("screen section: %s", SectionName);
 
@@ -60,7 +65,7 @@ ULONG OpenScreenSection()
     if (g_bUseDirtyBits)
     {
         uLength /= PAGE_SIZE;
-        StringCchPrintf(SectionName, _countof(SectionName),
+        StringCchPrintf(SectionName, RTL_NUMBER_OF(SectionName),
             L"Global\\QvideoDirtyPages_%x", sizeof(QV_DIRTY_PAGES) + (uLength >> 3) + 1);
         debugf("dirty section: %s", SectionName);
 
@@ -328,5 +333,21 @@ ULONG UnregisterWatchedDC(HDC hDC)
     }
 
     //debugf("success");
+    return ERROR_SUCCESS;
+}
+
+ULONG SynchronizeDirtyBits(HDC hDC)
+{
+    QV_SYNCHRONIZE qvs;
+    int iRet;
+
+    qvs.uMagic = QVIDEO_MAGIC;
+    iRet = ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(qvs), (LPCSTR)&qvs, 0, NULL);
+    if (iRet <= 0)
+    {
+        errorf("ExtEscape(QVESC_SYNCHRONIZE) failed, error %d\n", iRet);
+        return ERROR_NOT_SUPPORTED;
+    }
+
     return ERROR_SUCCESS;
 }

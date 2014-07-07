@@ -1,11 +1,16 @@
 #include <windows.h>
+#include <stdlib.h>
+
 #include "common.h"
 #include "send.h"
 #include "main.h"
 #include "qvcontrol.h"
 #include "vchan.h"
+
 #include "qubes-gui-protocol.h"
 #include "log.h"
+
+#include <strsafe.h>
 
 // Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
 static ULONG PrepareShmCmd(PWATCHED_DC pWatchedDC, struct shm_cmd **ppShmCmd)

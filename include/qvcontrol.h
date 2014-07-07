@@ -2,34 +2,9 @@
 
 #include <windows.h>
 #include <tchar.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <strsafe.h>
 #include "common.h"
 
-typedef struct _WATCHED_DC
-{
-    HWND hWnd;
-    HDC hDC;
-
-    RECT	rcWindow;
-    LIST_ENTRY	le;
-
-    BOOL	bVisible;
-    BOOL	bOverrideRedirect;
-    HWND    ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
-    ULONG   uTimeModalChecked; // time of last check for modal window
-
-    BOOL	bStyleChecked;
-    ULONG	uTimeAdded;
-
-    BOOL	bIconic;
-
-    LONG	MaxWidth;
-    LONG	MaxHeight;
-    PPFN_ARRAY	pPfnArray;
-
-} WATCHED_DC, *PWATCHED_DC;
+extern PQV_DIRTY_PAGES g_pDirtyPages;
 
 ULONG OpenScreenSection();
 
@@ -47,6 +22,10 @@ ULONG RegisterWatchedDC(
 );
 
 ULONG UnregisterWatchedDC(
+    HDC hDC
+);
+
+ULONG SynchronizeDirtyBits(
     HDC hDC
 );
 

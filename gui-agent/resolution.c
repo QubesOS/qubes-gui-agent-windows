@@ -1,9 +1,12 @@
 #include <windows.h>
+
 #include "resolution.h"
 #include "main.h"
 #include "qvcontrol.h"
 #include "shell_events.h"
 #include "send.h"
+#include "util.h"
+
 #include "log.h"
 
 // Signal to actually change resolution to g_ResolutionChangeParams.
