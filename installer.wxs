@@ -32,6 +32,12 @@
             <Directory Id='BinDir' Name='bin'>
               <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
                 <File Id='wga.exe' DiskId='1' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
+                <File Id='QubesGuiHook32.dll' DiskId='1' Source='hook-dll\bin\i386\QubesGuiHook32.dll'/>
+				<!-- We only support x64 but just for the future... -->
+				<?if $(env._BUILDARCH) = AMD64 ?>
+					<File Id='QubesGuiHook64.dll' DiskId='1' Source='hook-dll\bin\$(var.ARCHDIR)\QubesGuiHook64.dll'/>
+					<File Id='QGuiHookServer32.exe' DiskId='1' Source='hook-server-32\bin\i386\QGuiHookServer32.exe'/>
+				<?endif ?>
                 <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]wga.exe"'/>
                 <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
                 <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="QvideoMaxFps" Type="integer" Value='0'/>

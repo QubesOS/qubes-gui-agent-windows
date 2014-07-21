@@ -10,6 +10,8 @@
 #include "send.h"
 #include "handlers.h"
 #include "util.h"
+#include "hook-messages.h"
+#include "register-hooks.h"
 
 // windows-utils
 #include "log.h"
@@ -667,11 +669,11 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
 // main event loop
 static ULONG WINAPI WatchForEvents(void)
 {
-    HANDLE vchan;
-    OVERLAPPED ol;
+    HANDLE vchan, mailslot;
+    OVERLAPPED olVchan, olMailslot;
     unsigned int fired_port;
-    ULONG uEventNumber;
-    DWORD i, dwSignaledEvent;
+    ULONG eventCount;
+    DWORD i, dwSignaledEvent, size;
     BOOL bVchanIoInProgress;
     ULONG uResult;
     BOOL bExitLoop;
@@ -683,6 +685,8 @@ static ULONG WINAPI WatchForEvents(void)
     HDC screenDC;
     ULONG uDamage = 0;
     struct shm_cmd *pShmCmd = NULL;
+    QH_MESSAGE qhm;
+    HANDLE hookServerProcess;
 
     debugf("start");
     hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -698,8 +702,11 @@ static ULONG WINAPI WatchForEvents(void)
 
     vchan = VchanGetHandle();
 
-    ZeroMemory(&ol, sizeof(ol));
-    ol.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    ZeroMemory(&olVchan, sizeof(olVchan));
+    olVchan.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+    ZeroMemory(&olMailslot, sizeof(olMailslot));
+    olMailslot.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
     if (!hShutdownEvent)
@@ -714,20 +721,34 @@ static ULONG WINAPI WatchForEvents(void)
     if (!g_ResolutionChangeEvent)
         return GetLastError();
 
+    // Create IPC object for hook DLLs.
+    mailslot = CreateMailslot(HOOK_IPC_NAME, 0, MAILSLOT_WAIT_FOREVER, NULL);
+    if (!mailslot)
+        return perror("CreateMailslot");
+
+    // Start 64-bit hooks.
+    if (ERROR_SUCCESS != SetHooks(HOOK_DLL_NAME_64))
+        return GetLastError();
+
+    // Start the 32-bit hook server. It exits when the wga shutdown event is signaled.
+    if (ERROR_SUCCESS != StartProcess(HOOK_SERVER_NAME_32, &hookServerProcess))
+        return GetLastError();
+
     g_VchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
     bExitLoop = FALSE;
 
     while (TRUE)
     {
-        uEventNumber = 0;
+        eventCount = 0;
 
         // Order matters.
-        WatchedEvents[uEventNumber++] = hShutdownEvent;
-        WatchedEvents[uEventNumber++] = hWindowDamageEvent;
-        WatchedEvents[uEventNumber++] = hFullScreenOnEvent;
-        WatchedEvents[uEventNumber++] = hFullScreenOffEvent;
-        WatchedEvents[uEventNumber++] = g_ResolutionChangeEvent;
+        WatchedEvents[eventCount++] = hShutdownEvent;
+        WatchedEvents[eventCount++] = hWindowDamageEvent;
+        WatchedEvents[eventCount++] = hFullScreenOnEvent;
+        WatchedEvents[eventCount++] = hFullScreenOffEvent;
+        WatchedEvents[eventCount++] = g_ResolutionChangeEvent;
+        WatchedEvents[eventCount++] = olMailslot.hEvent;
 
         uResult = ERROR_SUCCESS;
 
@@ -735,7 +756,7 @@ static ULONG WINAPI WatchForEvents(void)
         // read 1 byte instead of sizeof(fired_port) to not flush fired port
         // from evtchn buffer; evtchn driver will read only whole fired port
         // numbers (sizeof(fired_port)), so this will end in zero-length read
-        if (!bVchanIoInProgress && !ReadFile(vchan, &fired_port, 1, NULL, &ol))
+        if (!bVchanIoInProgress && !ReadFile(vchan, &fired_port, 1, NULL, &olVchan))
         {
             uResult = GetLastError();
             if (ERROR_IO_PENDING != uResult)
@@ -748,9 +769,13 @@ static ULONG WINAPI WatchForEvents(void)
 
         bVchanIoInProgress = TRUE;
 
-        WatchedEvents[uEventNumber++] = ol.hEvent;
+        WatchedEvents[eventCount++] = olVchan.hEvent;
 
-        dwSignaledEvent = WaitForMultipleObjects(uEventNumber, WatchedEvents, FALSE, INFINITE);
+        // Start hook maislot async read.
+        // Even if there is data available right away, processing is done in the event handler.
+        uResult = ReadFile(mailslot, &qhm, sizeof(qhm), NULL, &olMailslot);
+
+        dwSignaledEvent = WaitForMultipleObjects(eventCount, WatchedEvents, FALSE, INFINITE);
         if (dwSignaledEvent >= MAXIMUM_WAIT_OBJECTS)
         {
             uResult = perror("WaitForMultipleObjects");
@@ -797,7 +822,29 @@ static ULONG WINAPI WatchForEvents(void)
                 ChangeResolution(&screenDC, hWindowDamageEvent);
                 break;
 
-            case 5: // vchan receive
+            case 5: // mailslot read: message from our gui hook
+                if (!GetOverlappedResult(mailslot, &olMailslot, &size, FALSE))
+                {
+                    perror("GetOverlappedResult(mailslot)");
+                    bExitLoop = TRUE;
+                    break;
+                }
+
+                if (size != sizeof(qhm))
+                {
+                    errorf("Invalid hook message size: %d (expected %d)", size, sizeof(qhm));
+                    // non-fatal although shouldn't happen
+                    break;
+                }
+                //logf("%8x: %s %8x %8x\n",
+                logf("%8x: %4x %8x %8x\n",
+                    qhm.WindowHandle,
+                    qhm.Message,
+                    //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
+                    qhm.wParam, qhm.lParam);
+                break;
+
+            case 6: // vchan receive
                 // the following will never block; we need to do this to
                 // clear libvchan_fd pending state
                 //
@@ -862,7 +909,7 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
-                if (!GetOverlappedResult(vchan, &ol, &i, FALSE))
+                if (!GetOverlappedResult(vchan, &olVchan, &i, FALSE))
                 {
                     if (GetLastError() == ERROR_IO_DEVICE)
                     {
@@ -929,7 +976,7 @@ static ULONG WINAPI WatchForEvents(void)
         {
             // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
             // OVERLAPPED structure.
-            WaitForSingleObject(ol.hEvent, INFINITE);
+            WaitForSingleObject(olVchan.hEvent, INFINITE);
         }
 
     if (!g_VchanClientConnected)
@@ -941,7 +988,16 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         VchanClose();
 
-    CloseHandle(ol.hEvent);
+    // Signal the shutdown event to cause QGuiHookServer32 shutdown.
+    SetEvent(hShutdownEvent);
+
+    if (WAIT_OBJECT_0 != WaitForSingleObject(hookServerProcess, 1000))
+    {
+        logf("QGuiHookServer32 didn't exit in time, killing it");
+        TerminateProcess(hookServerProcess, 0);
+    }
+
+    CloseHandle(olVchan.hEvent);
     CloseHandle(hWindowDamageEvent);
 
     StopShellEventsThread();

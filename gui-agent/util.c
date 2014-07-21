@@ -7,7 +7,7 @@
 
 #include "log.h"
 
-HANDLE CreateNamedEvent(WCHAR *name)
+HANDLE CreateNamedEvent(IN const WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
@@ -17,7 +17,7 @@ HANDLE CreateNamedEvent(WCHAR *name)
 
     // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
     ea.grfAccessMode = GRANT_ACCESS;
-    ea.grfAccessPermissions = EVENT_MODIFY_STATE | READ_CONTROL;
+    ea.grfAccessPermissions = EVENT_MODIFY_STATE | READ_CONTROL | SYNCHRONIZE;
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
@@ -56,6 +56,21 @@ cleanup:
     if (acl)
         LocalFree(acl);
     return event;
+}
+
+ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
+{
+    STARTUPINFO si = { 0 };
+    PROCESS_INFORMATION pi;
+    
+    si.cb = sizeof(si);
+    //si.wShowWindow = SW_HIDE;
+    //si.dwFlags = STARTF_USESHOWWINDOW;
+    if (!CreateProcess(NULL, executable, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+        return perror("CreateProcess");
+    CloseHandle(pi.hThread);
+    *processHandle = pi.hProcess;
+    return ERROR_SUCCESS;
 }
 
 ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)

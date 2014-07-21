@@ -1,0 +1,4 @@
+TARGETNAME = QubesGuiHook32
+
+!include sources.common
+SOURCES_USED = sources.common

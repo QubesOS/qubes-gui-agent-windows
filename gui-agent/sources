@@ -6,8 +6,8 @@ UMTYPE = windows
 USE_MSVCRT = 1
 
 UMENTRY = wmain
-C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
-#C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
+#C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
 INCLUDES = $(INCLUDES); \
                     ..\include; \
@@ -18,7 +18,7 @@ INCLUDES = $(INCLUDES); \
                     ..\..\core\win\include; \
                     ..\gui-common\include; \
 
-SOURCES = main.c handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c util.c wga.rc
+SOURCES = main.c handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c util.c register-hooks.c wga.rc
 
 TARGETLIBS = \
         $(SDK_LIB_PATH)\kernel32.lib \
