@@ -14,7 +14,7 @@ void SignalSASEvent(void)
 {
     static HANDLE sasEvent = NULL;
 
-    debugf("start");
+    LogVerbose("start");
     if (!sasEvent)
     {
         sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SAS_EVENT_NAME);
@@ -23,16 +23,19 @@ void SignalSASEvent(void)
     }
 
     if (sasEvent)
+    {
+        LogDebug("Setting SAS event '%s'", WGA_SAS_EVENT_NAME);
         SetEvent(sasEvent);
+    }
 }
 
 ULONG handle_xconf(void)
 {
     struct msg_xconf xconf;
 
-    //debugf("start");
+    LogVerbose("start");
     VchanReceiveBuffer(&xconf, sizeof(xconf));
-    logf("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
+    LogInfo("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
     return SetVideoMode(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
@@ -67,7 +70,7 @@ void handle_keymap_notify(void)
         0
     };
 
-    //debugf("start");
+    LogVerbose("start");
     VchanReceiveBuffer((char *)remote_keys, sizeof(remote_keys));
     i = 0;
     while (modifier_keys[i])
@@ -87,7 +90,7 @@ void handle_keymap_notify(void)
                 perror("SendInput");
                 return;
             }
-            debugf("unsetting key %d", win_key);
+            LogDebug("unsetting key %d", win_key);
         }
         i++;
     }
@@ -99,7 +102,7 @@ void handle_keypress(HWND hWnd)
     INPUT inputEvent;
     int local_capslock_state;
 
-    debugf("0x%x", hWnd);
+    LogVerbose("0x%x", hWnd);
     VchanReceiveBuffer((char *)&key, sizeof(key));
 
     /* ignore x, y */
@@ -133,6 +136,7 @@ void handle_keypress(HWND hWnd)
 
     inputEvent.ki.wVk = X11ToVk[key.keycode];
     inputEvent.ki.dwFlags = key.type == KeyPress ? 0 : KEYEVENTF_KEYUP;
+    LogDebug("window 0x%x, VK 0x%x, flags 0x%x", hWnd, inputEvent.ki.wVk, inputEvent.ki.dwFlags);
 
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
@@ -151,7 +155,7 @@ void handle_button(HWND hWnd)
     INPUT inputEvent;
     RECT rect = { 0 };
 
-    debugf("0x%x", hWnd);
+    LogVerbose("0x%x", hWnd);
     VchanReceiveBuffer((char *)&button, sizeof(button));
 
     if (hWnd)
@@ -187,8 +191,10 @@ void handle_button(HWND hWnd)
         inputEvent.mi.mouseData = (button.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
         break;
     default:
-        logf("unknown button pressed/released 0x%x", button.button);
+        LogWarning("unknown button pressed/released 0x%x", button.button);
     }
+
+    LogDebug("window 0x%x, (%d,%d), flags 0x%x", hWnd, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
         perror("SendInput");
@@ -202,7 +208,7 @@ void handle_motion(HWND hWnd)
     INPUT inputEvent;
     RECT rect = { 0 };
 
-    //debugf("0x%x", hWnd);
+    LogVerbose("0x%x", hWnd);
     VchanReceiveBuffer((char *)&motion, sizeof(motion));
 
     if (hWnd)
@@ -230,7 +236,7 @@ void handle_configure(HWND hWnd)
     struct msg_configure configure;
 
     VchanReceiveBuffer((char *)&configure, sizeof(configure));
-    debugf("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
+    LogDebug("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
 
     if (hWnd != 0) // 0 is full screen
         SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
@@ -247,7 +253,7 @@ void handle_configure(HWND hWnd)
 
         if (!IS_RESOLUTION_VALID(configure.width, configure.height))
         {
-            logf("Ignoring invalid resolution %dx%d", configure.width, configure.height);
+            LogWarning("Ignoring invalid resolution %dx%d", configure.width, configure.height);
             // send back current resolution to keep daemon up to date
             send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
             return;
@@ -264,7 +270,7 @@ void handle_focus(HWND hWnd)
 {
     struct msg_focus focus;
 
-    debugf("0x%x", hWnd);
+    LogVerbose("0x%x", hWnd);
     VchanReceiveBuffer((char *)&focus, sizeof(focus));
 
     BringWindowToTop(hWnd);
@@ -275,7 +281,7 @@ void handle_focus(HWND hWnd)
 
 void handle_close(HWND hWnd)
 {
-    debugf("0x%x", hWnd);
+    LogDebug("0x%x", hWnd);
     PostMessage(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
 }
 
@@ -284,7 +290,7 @@ void handle_window_flags(HWND hWnd)
     struct msg_window_flags flags;
 
     VchanReceiveBuffer((char *)&flags, sizeof(flags));
-    debugf("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
+    LogDebug("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
 
     if (flags.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
     {
@@ -304,7 +310,7 @@ ULONG handle_server_data(void)
 
     VchanReceiveBuffer(&hdr, sizeof(hdr));
 
-    debugf("received message type %d for 0x%x", hdr.type, hdr.window);
+    LogVerbose("received message type %d for 0x%x", hdr.type, hdr.window);
 
     switch (hdr.type)
     {
@@ -333,7 +339,7 @@ ULONG handle_server_data(void)
         handle_window_flags((HWND)hdr.window);
         break;
     default:
-        logf("got unknown msg type %d, ignoring", hdr.type);
+        LogWarning("got unknown msg type %d, ignoring", hdr.type);
 
         /* discard unsupported message body */
         while (hdr.untrusted_len > 0)

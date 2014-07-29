@@ -54,7 +54,7 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     if (!pWatchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
+    LogDebug("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
     free(pWatchedDC->pPfnArray);
 
     if (g_VchanClientConnected)
@@ -74,11 +74,11 @@ ULONG StartShellEventsThread(void)
 {
     DWORD threadId;
 
-    debugf("start");
+    LogVerbose("start");
 
     if (g_hShellEventsThread)
     {
-        logf("shell events thread already running: handle 0x%x, window 0x%x", g_hShellEventsThread, g_ShellEventsWindow);
+        LogError("shell events thread already running: handle 0x%x, window 0x%x", g_hShellEventsThread, g_ShellEventsWindow);
         // this is abnormal, returning error here will cause termination
         return ERROR_ALREADY_EXISTS;
     }
@@ -87,7 +87,7 @@ ULONG StartShellEventsThread(void)
     if (!g_hShellEventsThread)
         return perror("CreateThread(ShellEventsThread)");
 
-    logf("shell events thread ID: 0x%x (created)", threadId);
+    LogInfo("shell events thread ID: 0x%x (created)", threadId);
     return ERROR_SUCCESS;
 }
 
@@ -96,7 +96,7 @@ ULONG StopShellEventsThread(void)
     ULONG retval;
     DWORD waitResult;
 
-    logf("shell hook window: 0x%x", g_ShellEventsWindow);
+    LogVerbose("shell hook window: 0x%x", g_ShellEventsWindow);
     if (!g_hShellEventsThread)
         return ERROR_SUCCESS;
 
@@ -104,15 +104,15 @@ ULONG StopShellEventsThread(void)
     if (!SendMessage(g_ShellEventsWindow, WM_CLOSE, 0, 0))
     {
         retval = perror("PostMessage(WM_CLOSE)");
-        errorf("Terminating shell events thread forcibly");
+        LogWarning("Terminating shell events thread forcibly");
         TerminateThread(g_hShellEventsThread, 0);
     }
 
-    debugf("waiting for thread to exit");
+    LogVerbose("waiting for thread to exit");
     waitResult = WaitForSingleObject(g_hShellEventsThread, 5000);
     if (waitResult != WAIT_OBJECT_0)
     {
-        errorf("wait failed or timed out, killing thread forcibly");
+        LogWarning("wait failed or timed out, killing thread forcibly");
         TerminateThread(g_hShellEventsThread, 0);
     }
 
@@ -121,7 +121,7 @@ ULONG StopShellEventsThread(void)
     g_hShellEventsThread = NULL;
     g_ShellEventsWindow = NULL;
 
-    logf("shell events thread terminated");
+    LogDebug("shell events thread terminated");
     return ERROR_SUCCESS;
 }
 
@@ -134,11 +134,11 @@ DWORD WINAPI ResetWatch(PVOID param)
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
 
-    logf("start");
+    LogVerbose("start");
 
     StopShellEventsThread();
 
-    debugf("removing watches");
+    LogDebug("removing watches");
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
@@ -172,14 +172,14 @@ DWORD WINAPI ResetWatch(PVOID param)
         ProcessUpdatedWindows(TRUE, GetDC(NULL));
     }
 
-    logf("success");
+    LogVerbose("success");
     return ERROR_SUCCESS;
 }
 
 // set fullscreen/seamless mode
 static void SetFullscreenMode(void)
 {
-    logf("Full screen mode changed to %d", g_bFullScreenMode);
+    LogInfo("Full screen mode changed to %d", g_bFullScreenMode);
 
     // ResetWatch kills the shell event thread and removes all watched windows.
     // If fullscreen is off the shell event thread is also restarted.
@@ -195,7 +195,7 @@ static void SetFullscreenMode(void)
         // change the resolution to match host, if different
         if (g_ScreenWidth != g_HostScreenWidth || g_ScreenHeight != g_HostScreenHeight)
         {
-            logf("Changing resolution to match host's");
+            LogDebug("Changing resolution to match host's");
             RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 32, 0, 0);
         }
         // hide the screen window
@@ -207,7 +207,7 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
 {
     PWATCHED_DC pWatchedDC;
 
-    debugf("%x", hWnd);
+    LogVerbose("%x", hWnd);
     pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
     while (pWatchedDC != (PWATCHED_DC)& g_WatchedWindowsList)
     {
@@ -241,7 +241,7 @@ static BOOL WINAPI FindModalChildProc(
         return TRUE;
 
     msp->ModalWindow = hwnd;
-    debugf("0x%x: seems OK", hwnd);
+    LogVerbose("0x%x: seems OK", hwnd);
     return FALSE; // stop enumeration
 }
 
@@ -263,7 +263,7 @@ ULONG CheckWatchedWindowUpdates(
     if (!pWatchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    debugf("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
+    LogDebug("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
 
     if (!pwi)
     {
@@ -314,11 +314,11 @@ ULONG CheckWatchedWindowUpdates(
     {
         // possibly showing a modal window
         pWatchedDC->uTimeModalChecked = GetTickCount();
-        debugf("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
         modalParams.ParentWindow = pWatchedDC->hWnd;
         modalParams.ModalWindow = NULL;
         EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
-        debugf("result: 0x%x", modalParams.ModalWindow);
+        LogDebug("result: 0x%x", modalParams.ModalWindow);
         if (modalParams.ModalWindow) // found a modal "child"
         {
             PWATCHED_DC modalDc = FindWindowByHwnd(modalParams.ModalWindow);
@@ -337,7 +337,7 @@ ULONG CheckWatchedWindowUpdates(
     {
         if (!pWatchedDC->bIconic)
         {
-            debugf("0x%x IsIconic: minimizing", pWatchedDC->hWnd);
+            LogDebug("0x%x IsIconic: minimizing", pWatchedDC->hWnd);
             send_window_flags(pWatchedDC->hWnd, WINDOW_FLAG_MINIMIZE, 0);
             pWatchedDC->bIconic = TRUE;
         }
@@ -345,7 +345,7 @@ ULONG CheckWatchedWindowUpdates(
     }
     else
     {
-        debugf("0x%x not iconic", pWatchedDC->hWnd);
+        LogVerbose("0x%x not iconic", pWatchedDC->hWnd);
         pWatchedDC->bIconic = FALSE;
     }
 
@@ -408,7 +408,7 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
         pwi = &wi;
     }
 
-    //debugf("0x%x: %x %x", hWnd, pwi->dwStyle, pwi->dwExStyle);
+    //LogVerbose("0x%x: %x %x", hWnd, pwi->dwStyle, pwi->dwExStyle);
     if (!IsWindowVisible(hWnd))
         return FALSE;
 
@@ -490,7 +490,7 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
         // tell qvideo that we're done reading dirty bits
         SynchronizeDirtyBits(screenDC);
 
-        debugf("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
+        LogDebug("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
             rcDirtyArea.left, rcDirtyArea.top, rcDirtyArea.right, rcDirtyArea.bottom);
 
         if (uDirtyPages == 0) // nothing changed according to qvideo
@@ -501,7 +501,7 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
     if (hwndOldDesktop != g_DesktopHwnd)
     {
         bRecheckWindows = TRUE;
-        debugf("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
+        LogDebug("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
         HideCursors();
         DisableEffects();
     }
@@ -531,7 +531,7 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
             ShowWindow(g_StartButtonHwnd, SW_HIDE);
     }
 
-    debugf("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
+    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
         g_DesktopHwnd, g_ExplorerHwnd, g_TaskbarHwnd, g_StartButtonHwnd);
 
     if (g_bFullScreenMode)
@@ -588,7 +588,6 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -600,7 +599,7 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
     if (!pwi)
         return NULL;
 
-    debugf("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
+    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
         hWnd, pwi->rcWindow.left, pwi->rcWindow.top, pwi->rcWindow.right, pwi->rcWindow.bottom, pwi->dwStyle, pwi->dwExStyle);
 
     pWatchedDC = FindWindowByHwnd(hWnd);
@@ -660,7 +659,6 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
 
     InsertTailList(&g_WatchedWindowsList, &pWatchedDC->le);
 
-    //debugf("success");
     return pWatchedDC;
 }
 
@@ -684,17 +682,17 @@ static ULONG WINAPI WatchForEvents(void)
     ULONG uDamage = 0;
     struct shm_cmd *pShmCmd = NULL;
 
-    debugf("start");
+    LogDebug("start");
     hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
     if (!VchanInitServer(6000))
     {
-        errorf("VchanInitServer() failed");
+        LogError("VchanInitServer() failed");
         return GetLastError();
     }
 
-    logf("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
+    LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
 
     vchan = VchanGetHandle();
 
@@ -770,7 +768,7 @@ static ULONG WINAPI WatchForEvents(void)
             {
             case 1: // damage event
 
-                debugf("Damage %d\n", uDamage++);
+                LogVerbose("Damage %d\n", uDamage++);
 
                 if (g_VchanClientConnected)
                 {
@@ -812,12 +810,12 @@ static ULONG WINAPI WatchForEvents(void)
 
                     bVchanIoInProgress = FALSE;
 
-                    logf("A vchan client has connected\n");
+                    LogInfo("A vchan client has connected\n");
 
                     // Remove the xenstore device/vchan/N entry.
                     if (!VchanIsServerConnected())
                     {
-                        errorf("libvchan_server_handle_connected() failed");
+                        LogError("VchanIsServerConnected() failed");
                         bExitLoop = TRUE;
                         break;
                     }
@@ -847,13 +845,13 @@ static ULONG WINAPI WatchForEvents(void)
 
                     if (g_bFullScreenMode)
                     {
-                        debugf("init in fullscreen mode");
+                        LogDebug("init in fullscreen mode");
                         send_window_map(NULL);
                     }
                     else
                         if (ERROR_SUCCESS != StartShellEventsThread())
                         {
-                            errorf("StartShellEventsThread failed, exiting");
+                            LogError("StartShellEventsThread failed, exiting");
                             bExitLoop = TRUE;
                             break;
                         }
@@ -908,7 +906,7 @@ static ULONG WINAPI WatchForEvents(void)
                     if (ERROR_SUCCESS != uResult)
                     {
                         bExitLoop = TRUE;
-                        errorf("handle_server_data() failed: 0x%x", uResult);
+                        LogError("handle_server_data() failed: 0x%x", uResult);
                         break;
                     }
                 }
@@ -922,7 +920,7 @@ static ULONG WINAPI WatchForEvents(void)
             break;
     }
 
-    logf("main loop finished");
+    LogDebug("main loop finished");
 
     if (bVchanIoInProgress)
         if (CancelIo(vchan))
@@ -948,7 +946,7 @@ static ULONG WINAPI WatchForEvents(void)
     UnregisterWatchedDC(screenDC);
     CloseScreenSection();
     ReleaseDC(NULL, screenDC);
-    logf("exiting");
+    LogInfo("exiting");
 
     return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
@@ -957,15 +955,15 @@ static ULONG Init(void)
 {
     ULONG uResult;
     WSADATA wsaData;
+    WCHAR moduleName[CFG_MODULE_MAX];
 
-    log_init_default(L"gui-agent");
+    LogDebug("start");
+    uResult  = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
-    debugf("start");
-
-    uResult = CfgReadDword(REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits);
+    uResult = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits, NULL);
     if (ERROR_SUCCESS != uResult)
     {
-        logf("Failed to read %s config value, disabling that feature", REG_CONFIG_DIRTY_VALUE);
+        LogWarning("Failed to read '%s' config value, disabling that feature", REG_CONFIG_DIRTY_VALUE);
         g_bUseDirtyBits = FALSE;
     }
 
@@ -992,13 +990,13 @@ static ULONG Init(void)
     {
         if (0 != gethostname(g_HostName, sizeof(g_HostName)))
         {
-            errorf("gethostname failed: 0x%x", uResult);
+            LogWarning("gethostname failed: 0x%x", uResult);
         }
         WSACleanup();
     }
     else
     {
-        errorf("WSAStartup failed: 0x%x", uResult);
+        LogWarning("WSAStartup failed: 0x%x", uResult);
         // this is not fatal, only used to get host name for full desktop window title
     }
 
@@ -1020,6 +1018,6 @@ int wmain(ULONG argc, PWCHAR argv[])
 
     DeleteCriticalSection(&g_VchanCriticalSection);
 
-    logf("exiting");
+    LogInfo("exiting");
     return ERROR_SUCCESS;
 }
