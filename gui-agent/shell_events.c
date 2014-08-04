@@ -16,7 +16,7 @@ void AddWindow(HWND hWnd)
 {
     WINDOWINFO wi;
 
-    debugf("0x%x", hWnd);
+    LogDebug("0x%x", hWnd);
     if (hWnd == 0)
         return;
 
@@ -35,15 +35,13 @@ void AddWindow(HWND hWnd)
     AddWindowWithInfo(hWnd, &wi);
 
     LeaveCriticalSection(&g_csWatchedWindows);
-
-    //debugf("success");
 }
 
 void RemoveWindow(HWND hWnd)
 {
     PWATCHED_DC pWatchedDC;
 
-    debugf("0x%x", hWnd);
+    LogDebug("0x%x", hWnd);
     EnterCriticalSection(&g_csWatchedWindows);
 
     pWatchedDC = FindWindowByHwnd(hWnd);
@@ -58,8 +56,6 @@ void RemoveWindow(HWND hWnd)
     pWatchedDC = NULL;
 
     LeaveCriticalSection(&g_csWatchedWindows);
-
-    //debugf("success");
 }
 
 // called from shell hook proc
@@ -68,7 +64,7 @@ ULONG CheckWindowUpdates(HWND hWnd)
     WINDOWINFO wi;
     PWATCHED_DC pWatchedDC = NULL;
 
-    debugf("0x%x", hWnd);
+    LogDebug("0x%x", hWnd);
     wi.cbSize = sizeof(wi);
     if (!GetWindowInfo(hWnd, &wi))
         return perror("GetWindowInfo");
@@ -79,7 +75,7 @@ ULONG CheckWindowUpdates(HWND hWnd)
     pWatchedDC = AddWindowWithInfo(hWnd, &wi);
     if (!pWatchedDC)
     {
-        logf("AddWindowWithInfo returned NULL");
+        LogDebug("AddWindowWithInfo returned NULL");
         LeaveCriticalSection(&g_csWatchedWindows);
         return ERROR_SUCCESS;
     }
@@ -90,7 +86,6 @@ ULONG CheckWindowUpdates(HWND hWnd)
 
     send_wmname(hWnd);
 
-    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -116,16 +111,16 @@ LRESULT CALLBACK ShellHookWndProc(
             break;
 
         case HSHELL_REDRAW:
-            debugf("HSHELL_REDRAW");
+            LogDebug("HSHELL_REDRAW");
             goto update;
         case HSHELL_RUDEAPPACTIVATED:
-            debugf("HSHELL_RUDEAPPACTIVATED");
+            LogDebug("HSHELL_RUDEAPPACTIVATED");
             goto update;
         case HSHELL_WINDOWACTIVATED:
-            debugf("HSHELL_RUDEAPPACTIVATED");
+            LogDebug("HSHELL_RUDEAPPACTIVATED");
             goto update;
         case HSHELL_GETMINRECT:
-            debugf("HSHELL_GETMINRECT");
+            LogDebug("HSHELL_GETMINRECT");
             targetWindow = ((SHELLHOOKINFO*)lParam)->hwnd;
 update:
             CheckWindowUpdates(targetWindow);
@@ -146,18 +141,18 @@ update:
     switch (uMsg)
     {
     case WM_WTSSESSION_CHANGE:
-        logf("session change: event 0x%x, session %d", wParam, lParam);
+        LogInfo("session change: event 0x%x, session %d", wParam, lParam);
         //if (!CreateThread(0, 0, ResetWatch, NULL, 0, NULL))
         //    perror("CreateThread(ResetWatch)");
         break;
     case WM_CLOSE:
-        debugf("WM_CLOSE");
+        LogDebug("WM_CLOSE");
         //if (!WTSUnRegisterSessionNotification(hwnd))
         //    perror("WTSUnRegisterSessionNotification");
         DestroyWindow(hwnd);
         break;
     case WM_DESTROY:
-        debugf("WM_DESTROY");
+        LogDebug("WM_DESTROY");
         PostQuitMessage(0);
         break;
     default:
@@ -173,7 +168,7 @@ ULONG CreateShellHookWindow(HWND *pWindow)
     HINSTANCE hInstance = GetModuleHandle(NULL);
     ULONG uResult;
 
-    debugf("start");
+    LogVerbose("start");
 
     if (!pWindow)
         return ERROR_INVALID_PARAMETER;
@@ -192,7 +187,7 @@ ULONG CreateShellHookWindow(HWND *pWindow)
 
     if (hwnd == NULL)
         return perror("CreateWindow");
-    logf("shell hook window: 0x%x", hwnd);
+    LogDebug("shell hook window: 0x%x", hwnd);
 
     ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
@@ -221,7 +216,6 @@ ULONG CreateShellHookWindow(HWND *pWindow)
 
     *pWindow = hwnd;
 
-    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -230,14 +224,14 @@ ULONG ShellHookMessageLoop()
     MSG Msg;
     HINSTANCE hInstance = GetModuleHandle(NULL);
 
-    debugf("start");
+    LogDebug("start");
     while (GetMessage(&Msg, NULL, 0, 0) > 0)
     {
         TranslateMessage(&Msg);
         DispatchMessage(&Msg);
     }
 
-    debugf("exiting");
+    LogDebug("exiting");
     return ERROR_SUCCESS;
 }
 
@@ -245,7 +239,7 @@ ULONG WINAPI ShellEventsThread(PVOID pParam)
 {
     ULONG uResult;
 
-    logf("shell events thread started");
+    LogDebug("start");
     if (ERROR_SUCCESS != AttachToInputDesktop())
         return perror("AttachToInputDesktop");
 

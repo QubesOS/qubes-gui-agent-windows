@@ -4,6 +4,7 @@
 #include <string.h>
 #include "..\qvideo\inc\common.h"
 #include "log.h"
+#include "config.h"
 
 #define SERVICE_NAME L"QTWHelper"
 
@@ -54,18 +55,18 @@ void TerminateTargetProcess(WCHAR *exeName)
     HANDLE targetProcess;
     HANDLE shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
 
-    logf("Process name: %s", exeName);
+    LogInfo("Process name: %s", exeName);
     if (!shutdownEvent)
     {
-        logf("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
+        LogDebug("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
     }
     else
     {
-        logf("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
+        LogDebug("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
         SetEvent(shutdownEvent);
         CloseHandle(shutdownEvent);
 
-        logf("Waiting for process shutdown");
+        LogDebug("Waiting for process shutdown");
     }
 
     if (!WTSEnumerateProcesses(WTS_CURRENT_SERVER, 0, 1, &processInfo, &count))
@@ -78,7 +79,7 @@ void TerminateTargetProcess(WCHAR *exeName)
     {
         if (0 == _wcsnicmp(exeName, processInfo[i].pProcessName, wcslen(exeName))) // match
         {
-            logf("Process '%s' running as PID %d in session %d, waiting for %dms",
+            LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
                 exeName, processInfo[i].ProcessId, processInfo[i].SessionId, WGA_TERMINATE_TIMEOUT);
             targetProcess = OpenProcess(SYNCHRONIZE|PROCESS_TERMINATE, FALSE, processInfo[i].ProcessId);
             if (!targetProcess)
@@ -90,7 +91,7 @@ void TerminateTargetProcess(WCHAR *exeName)
             // wait for exit
             if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, WGA_TERMINATE_TIMEOUT))
             {
-                logf("Process didn't exit in time, killing it");
+                LogWarning("Process didn't exit in time, killing it");
                 TerminateProcess(targetProcess, 0);
             }
             CloseHandle(targetProcess);
@@ -125,6 +126,8 @@ DWORD WINAPI WorkerThread(void *param)
     // Default security for the SAS event, only SYSTEM processes can signal it.
     events[1] = CreateEvent(NULL, FALSE, FALSE, WGA_SAS_EVENT_NAME);
 
+    LogDebug("start");
+
     while (1)
     {
         // Wait until the interactive session changes (to winlogon console).
@@ -140,7 +143,7 @@ DWORD WINAPI WorkerThread(void *param)
             OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
             // Session ID is stored in the access token. For services it's normally 0.
             GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
-            logf("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
+            LogDebug("current session: %d, console session: %d", sessionId,  WTSGetActiveConsoleSessionId());
 
             // We need to create a primary token for CreateProcessAsUser.
             if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
@@ -157,7 +160,7 @@ DWORD WINAPI WorkerThread(void *param)
                 return perror("SetTokenInformation(TokenSessionId)");
             }
 
-            logf("Running process '%s' in session %d", cmdline, sessionId);
+            LogInfo("Running process '%s' in session %d", cmdline, sessionId);
             // Create process with the new token.
             ZeroMemory(&si, sizeof(si));
             si.cb = sizeof(si);
@@ -170,13 +173,13 @@ DWORD WINAPI WorkerThread(void *param)
             break;
 
         case 1: // SAS event
-            logf("SAS event signaled");
+            LogInfo("SAS event signaled");
             if (SendSAS)
                 SendSAS(FALSE); // calling as service
             break;
 
         default:
-            logf("Wait failed, result 0x%x", signaledEvent+WAIT_OBJECT_0);
+            LogWarning("Wait failed, result 0x%x", signaledEvent+WAIT_OBJECT_0);
         }
     }
 
@@ -186,54 +189,17 @@ DWORD WINAPI WorkerThread(void *param)
 void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
 {
     WCHAR cmdline[MAX_PATH];
+    WCHAR moduleName[CFG_MODULE_MAX];
     HANDLE workerHandle = 0;
-    HKEY key = 0;
-    DWORD size;
-    DWORD type;
-    DWORD result;
-    WCHAR logPath[MAX_PATH];
+    DWORD status;
     HANDLE sasDll;
 
     // Read the registry configuration.
-    if (ERROR_SUCCESS != RegOpenKey(HKEY_LOCAL_MACHINE, REG_CONFIG_USER_KEY, &key))
+    CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
+    status = CfgReadString(moduleName, REG_CONFIG_AUTOSTART_VALUE, cmdline, RTL_NUMBER_OF(cmdline), NULL);
+    if (ERROR_SUCCESS != status)
     {
-        log_init(L"c:\\", SERVICE_NAME);
-        errorf("Opening config key '%s' failed, exiting", REG_CONFIG_USER_KEY);
-        goto cleanup;
-    }
-
-    RtlZeroMemory(logPath, sizeof(logPath));
-    size = sizeof(logPath) - sizeof(WCHAR);
-    result = RegQueryValueEx(key, REG_CONFIG_LOG_VALUE, NULL, &type, (BYTE*)logPath, &size);
-    if (ERROR_SUCCESS != result)
-    {
-        log_init(L"c:\\", SERVICE_NAME);
-        SetLastError(result);
-        perror("RegQueryValueEx(LogPath)");
-        // don't fail
-    }
-
-    log_init(logPath, SERVICE_NAME);
-
-    if (type != REG_SZ)
-    {
-        log_init(L"c:\\", SERVICE_NAME);
-        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_LOG_VALUE, type);
-        // don't fail
-    }
-
-    size = sizeof(cmdline);
-    result = RegQueryValueEx(key, REG_CONFIG_AUTOSTART_VALUE, NULL, &type, (BYTE*)cmdline, &size);
-    if (ERROR_SUCCESS != result)
-    {
-        SetLastError(result);
         perror("RegQueryValueEx(Autostart)");
-        goto cleanup;
-    }
-
-    if (type != REG_SZ)
-    {
-        errorf("Invalid type of config value '%s', 0x%x instead of REG_SZ", REG_CONFIG_AUTOSTART_VALUE, type);
         goto cleanup;
     }
 
@@ -243,11 +209,11 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     {
         SendSAS = (SendSASFunction) GetProcAddress(sasDll, "SendSAS");
         if (!SendSAS)
-            logf("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
+            LogWarning("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
     }
     else
     {
-        logf("Failed to load sas.dll, simulating CTRL+ALT+DELETE will not be possible");
+        LogWarning("Failed to load sas.dll, simulating CTRL+ALT+DELETE will not be possible");
     }
 
     g_Status.dwServiceType        = SERVICE_WIN32;
@@ -272,7 +238,7 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     g_ConsoleEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // Start the worker thread.
-    logf("Starting worker thread");
+    LogInfo("Starting worker thread");
     workerHandle = CreateThread(NULL, 0, WorkerThread, cmdline, 0, NULL);
     if (!workerHandle)
     {
@@ -287,22 +253,20 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     WaitForSingleObject(workerHandle, INFINITE);
 
 cleanup:
-    if (key)
-        RegCloseKey(key);
     g_Status.dwCurrentState = SERVICE_STOPPED;
     g_Status.dwWin32ExitCode = GetLastError();
     SetServiceStatus(g_StatusHandle, &g_Status);
 
-    logf("exiting");
+    LogInfo("exiting");
     return;
 }
 
 void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
 {
     if (eventType < RTL_NUMBER_OF(g_SessionEventName))
-        logf("%s, session ID %d", g_SessionEventName[eventType], sn->dwSessionId);
+        LogDebug("%s, session ID %d", g_SessionEventName[eventType], sn->dwSessionId);
     else
-        logf("<unknown event: %d>, session id %d", eventType, sn->dwSessionId);
+        LogDebug("<unknown event: %d>, session id %d", eventType, sn->dwSessionId);
 
     if (eventType == WTS_CONSOLE_CONNECT || eventType == WTS_SESSION_LOGON)
     {
@@ -319,7 +283,7 @@ DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEvent
     case SERVICE_CONTROL_SHUTDOWN:
         g_Status.dwWin32ExitCode = 0;
         g_Status.dwCurrentState = SERVICE_STOPPED;
-        logf("stopping...");
+        LogInfo("stopping...");
         SetServiceStatus(g_StatusHandle, &g_Status);
         break;
 
@@ -328,7 +292,7 @@ DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEvent
         break;
 
     default:
-        logf("code 0x%x, event 0x%x", dwControl, dwEventType);
+        LogDebug("code 0x%x, event 0x%x", dwControl, dwEventType);
         break;
     }
 

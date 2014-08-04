@@ -37,18 +37,18 @@ DWORD WINAPI ResolutionChangeThread(void *param)
     {
         // Wait indefinitely for an initial "change resolution" event.
         WaitForSingleObject(g_ResolutionChangeRequestedEvent, INFINITE);
-        debugf("resolution change requested: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        LogDebug("resolution change requested: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
 
         do
         {
             // If event is signaled again before timeout expires: ignore and wait for another one.
             waitResult = WaitForSingleObject(g_ResolutionChangeRequestedEvent, RESOLUTION_CHANGE_TIMEOUT);
-            debugf("second wait result: %lu", waitResult);
+            LogVerbose("second wait result: %lu", waitResult);
         } while (waitResult == WAIT_OBJECT_0);
 
         // If we're here, that means the wait finally timed out.
         // We can change the resolution now.
-        logf("resolution change: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
         SetEvent(g_ResolutionChangeEvent); // handled in WatchForEvents, actual resolution change
     }
     return 0;
@@ -81,11 +81,11 @@ static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 
     if (!IS_RESOLUTION_VALID(uWidth, uHeight))
     {
-        errorf("Resolution is invalid: %lux%lu", uWidth, uHeight);
+        LogError("Resolution is invalid: %lux%lu", uWidth, uHeight);
         return ERROR_INVALID_PARAMETER;
     }
 
-    logf("New resolution: %lux%lu@%lu", uWidth, uHeight, uBpp);
+    LogInfo("New resolution: %lux%lu@%lu", uWidth, uHeight, uBpp);
     // ChangeDisplaySettings fails if thread's desktop != input desktop...
     // This can happen on "quick user switch".
     AttachToInputDesktop();
@@ -95,7 +95,7 @@ static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 
     ptszDeviceName = (PWCHAR)&DisplayDevice.DeviceName[0];
 
-    logf("DeviceName: %s", ptszDeviceName);
+    LogDebug("DeviceName: %s", ptszDeviceName);
 
     if (ERROR_SUCCESS != SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp))
         return perror("SupportVideoMode");
@@ -103,7 +103,6 @@ static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
     if (ERROR_SUCCESS != ChangeVideoMode(ptszDeviceName, uWidth, uHeight, uBpp))
         return perror("ChangeVideoMode");
 
-    //debugf("success");
     return ERROR_SUCCESS;
 }
 
@@ -114,11 +113,9 @@ ULONG SetVideoMode(ULONG width, ULONG height, ULONG bpp)
 
     if (ERROR_SUCCESS != uResult)
     {
-        errorf("SetVideoMode() failed: %lu", uResult);
-
         g_bFullScreenMode = TRUE;
 
-        logf("keeping original resolution %lux%lu", g_ScreenWidth, g_ScreenHeight);
+        LogDebug("SetVideoMode() failed: %lu, keeping original resolution %lux%lu", uResult, g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
@@ -134,7 +131,7 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
 {
     ULONG uResult;
 
-    logf("deinitializing");
+    LogDebug("deinitializing");
     if (ERROR_SUCCESS != (uResult = StopShellEventsThread()))
         return uResult;
     if (ERROR_SUCCESS != (uResult = UnregisterWatchedDC(*screenDC)))
@@ -144,7 +141,7 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
     if (!ReleaseDC(NULL, *screenDC))
         return GetLastError();
 
-    logf("reinitializing");
+    LogDebug("reinitializing");
     uResult = SetVideoMode(g_ResolutionChangeParams.width, g_ResolutionChangeParams.height, g_ResolutionChangeParams.bpp);
 
     if (ERROR_SUCCESS != uResult)
@@ -176,7 +173,7 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
         if (ERROR_SUCCESS != StartShellEventsThread())
             return uResult;
     }
-    logf("done");
+    LogDebug("done");
 
     // Reply to the daemon's request (with just the same data).
     // Otherwise daemon won't send screen resize requests again.

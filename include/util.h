@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 
+extern DWORD g_DisableCursor;
+
 ULONG HideCursors(void);
 ULONG DisableEffects(void);
 HANDLE CreateNamedEvent(IN const WCHAR *name);

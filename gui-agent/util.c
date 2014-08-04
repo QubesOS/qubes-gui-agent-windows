@@ -7,6 +7,8 @@
 
 #include "log.h"
 
+DWORD g_DisableCursor = TRUE;
+
 HANDLE CreateNamedEvent(IN const WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
@@ -63,6 +65,8 @@ ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
     STARTUPINFO si = { 0 };
     PROCESS_INFORMATION pi;
     
+    LogDebug("%s", executable);
+
     si.cb = sizeof(si);
     //si.wShowWindow = SW_HIDE;
     //si.dwFlags = STARTF_USESHOWWINDOW;
@@ -87,7 +91,7 @@ ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNe
     if (!GetProcessWorkingSetSize(GetCurrentProcess(), &uMinimumWorkingSetSize, &uMaximumWorkingSetSize))
         return perror("GetProcessWorkingSetSize");
 
-    logf("New working set size: %d pages\n", uMaximumWorkingSetSize >> 12);
+    LogDebug("New working set size: %d pages\n", uMaximumWorkingSetSize >> 12);
 
     return ERROR_SUCCESS;
 }
@@ -113,7 +117,13 @@ ULONG HideCursors(void)
         OCR_WAIT		// Hourglass
     };
 
-    debugf("start");
+    LogVerbose("start");
+
+    if (!g_DisableCursor)
+        return ERROR_SUCCESS;
+
+    LogDebug("disabling cursors");
+
     hBlankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
     if (!hBlankCursor)
         return perror("LoadImage");
@@ -142,7 +152,7 @@ ULONG DisableEffects(void)
 {
     ANIMATIONINFO AnimationInfo;
 
-    debugf("start");
+    LogDebug("start");
     if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID)FALSE, SPIF_UPDATEINIFILE))
         return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
 
@@ -167,7 +177,7 @@ ULONG AttachToInputDesktop(void)
     HANDLE currentToken;
     HANDLE currentProcess = GetCurrentProcess();
 
-    //debugf("start");
+    LogVerbose("start");
     desktop = OpenInputDesktop(0, FALSE,
         DESKTOP_CREATEMENU | DESKTOP_CREATEWINDOW | DESKTOP_ENUMERATE | DESKTOP_HOOKCONTROL
         | DESKTOP_JOURNALPLAYBACK | DESKTOP_READOBJECTS | DESKTOP_WRITEOBJECTS);
@@ -190,7 +200,7 @@ ULONG AttachToInputDesktop(void)
         // Session ID is stored in the access token.
         GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
         CloseHandle(currentToken);
-        debugf("current input desktop: %s, current session: %d, console session: %d",
+        LogDebug("current input desktop: %s, current session: %d, console session: %d",
             name, sessionId, WTSGetActiveConsoleSessionId());
     }
 #endif
@@ -209,7 +219,6 @@ cleanup:
     if (oldDesktop)
     if (!CloseDesktop(oldDesktop))
         perror("CloseDesktop(previous)");
-    //debugf("result: %d", uResult);
     return uResult;
 }
 
