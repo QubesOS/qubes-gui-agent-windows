@@ -6,6 +6,9 @@
 #include "resource.h"
 
 #include "log.h"
+#include "config.h"
+
+DWORD g_DisableCursor = TRUE;
 
 HANDLE CreateNamedEvent(WCHAR *name)
 {
@@ -98,7 +101,13 @@ ULONG HideCursors(void)
         OCR_WAIT		// Hourglass
     };
 
-    LogDebug("start");
+    LogVerbose("start");
+
+    if (!g_DisableCursor)
+        return ERROR_SUCCESS;
+
+    LogDebug("disabling cursors");
+
     hBlankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
     if (!hBlankCursor)
         return perror("LoadImage");

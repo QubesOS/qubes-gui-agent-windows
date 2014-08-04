@@ -967,6 +967,13 @@ static ULONG Init(void)
         g_bUseDirtyBits = FALSE;
     }
 
+    uResult = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
+    if (ERROR_SUCCESS != uResult)
+    {
+        LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_CURSOR_VALUE);
+        g_DisableCursor = TRUE;
+    }
+
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
     HideCursors();

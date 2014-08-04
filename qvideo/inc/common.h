@@ -10,6 +10,7 @@
 #define REG_CONFIG_LOG_VALUE        L"LogDir"
 #define REG_CONFIG_FPS_VALUE        L"QvideoMaxFps"
 #define REG_CONFIG_DIRTY_VALUE      L"UseDirtyBits"
+#define REG_CONFIG_CURSOR_VALUE     L"DisableCursor"
 
 // path to the executable to launch at system start (done by helper service)
 #define REG_CONFIG_AUTOSTART_VALUE  L"Autostart"
