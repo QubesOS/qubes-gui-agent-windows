@@ -16,7 +16,7 @@
 
 int __cdecl wmain(int argc, WCHAR* argv[])
 {
-    HANDLE shutdownEvent = OpenEvent(SYNCHRONIZE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
+    HANDLE shutdownEvent = OpenEvent(SYNCHRONIZE, FALSE, WGA32_SHUTDOWN_EVENT_NAME);
     DWORD status;
 
     if (!shutdownEvent)

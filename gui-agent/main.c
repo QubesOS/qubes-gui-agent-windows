@@ -685,6 +685,7 @@ static ULONG WINAPI WatchForEvents(void)
     struct shm_cmd *pShmCmd = NULL;
     QH_MESSAGE qhm;
     HANDLE hookServerProcess;
+    HANDLE hookShutdownEvent;
 
     LogDebug("start");
     hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -696,8 +697,6 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
     }
 
-    LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
-
     vchan = VchanGetHandle();
 
     ZeroMemory(&olVchan, sizeof(olVchan));
@@ -708,6 +707,9 @@ static ULONG WINAPI WatchForEvents(void)
 
     hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
     if (!hShutdownEvent)
+        return GetLastError();
+    hookShutdownEvent = CreateNamedEvent(WGA32_SHUTDOWN_EVENT_NAME);
+    if (!hookShutdownEvent)
         return GetLastError();
     hFullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!hFullScreenOnEvent)
@@ -735,6 +737,8 @@ static ULONG WINAPI WatchForEvents(void)
     g_VchanClientConnected = FALSE;
     bVchanIoInProgress = FALSE;
     bExitLoop = FALSE;
+
+    LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
 
     while (TRUE)
     {
@@ -986,8 +990,8 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         VchanClose();
 
-    // Signal the shutdown event to cause QGuiHookServer32 shutdown.
-    SetEvent(hShutdownEvent);
+    // Shutdown QGuiHookServer32.
+    SetEvent(hookShutdownEvent);
 
     if (WAIT_OBJECT_0 != WaitForSingleObject(hookServerProcess, 1000))
     {
