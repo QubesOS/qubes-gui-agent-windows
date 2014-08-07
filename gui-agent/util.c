@@ -1,6 +1,7 @@
 #define OEMRESOURCE
 #include <windows.h>
 #include <aclapi.h>
+#include <strsafe.h>
 
 #include "main.h"
 #include "resource.h"
@@ -64,13 +65,16 @@ ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
 {
     STARTUPINFO si = { 0 };
     PROCESS_INFORMATION pi;
+    WCHAR exePath[MAX_PATH]; // cmdline can't be read-only
     
     LogDebug("%s", executable);
+
+    StringCchCopy(exePath, RTL_NUMBER_OF(exePath), executable);
 
     si.cb = sizeof(si);
     //si.wShowWindow = SW_HIDE;
     //si.dwFlags = STARTF_USESHOWWINDOW;
-    if (!CreateProcess(NULL, executable, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    if (!CreateProcess(NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
         return perror("CreateProcess");
     CloseHandle(pi.hThread);
     *processHandle = pi.hProcess;
