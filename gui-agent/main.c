@@ -632,6 +632,10 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
     if (pwi->rcWindow.right - pwi->rcWindow.left == g_ScreenWidth
         && pwi->rcWindow.bottom - pwi->rcWindow.top == g_ScreenHeight)
     {
+        LogDebug("popup too large: %dx%d, screen %dx%d",
+            pwi->rcWindow.right - pwi->rcWindow.left,
+            pwi->rcWindow.bottom - pwi->rcWindow.top,
+            g_ScreenWidth, g_ScreenHeight);
         pWatchedDC->bOverrideRedirect = FALSE;
     }
     else
@@ -647,6 +651,13 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
         else
             pWatchedDC->bOverrideRedirect = TRUE;
     }
+
+    if (pWatchedDC->bOverrideRedirect)
+        LogDebug("popup: %dx%d, screen %dx%d",
+            pwi->rcWindow.right - pwi->rcWindow.left,
+            pwi->rcWindow.bottom - pwi->rcWindow.top,
+            g_ScreenWidth, g_ScreenHeight);
+
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
