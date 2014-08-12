@@ -1,6 +1,9 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <stdlib.h>
+#include <strsafe.h>
+
+#include <xenstore.h>
 
 #include "main.h"
 #include "vchan.h"
@@ -34,7 +37,7 @@ BOOL g_bFullScreenMode = FALSE;
 LONG g_HostScreenWidth = 0;
 LONG g_HostScreenHeight = 0;
 
-char g_HostName[256] = "<unknown>";
+char g_DomainName[256] = "<unknown>";
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
@@ -951,6 +954,43 @@ static ULONG WINAPI WatchForEvents(void)
     return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
 
+static DWORD GetDomainName(char *nameBuffer, DWORD nameLength)
+{
+    DWORD status = ERROR_SUCCESS;
+    struct xs_handle *xs;
+    char *domainName = NULL;
+
+    xs = xs_domain_open();
+    if (!xs)
+    {
+        LogError("Failed to open xenstore connection");
+        status = ERROR_DEVICE_NOT_CONNECTED;
+        goto cleanup;
+    }
+
+    domainName = xs_read(xs, XBT_NULL, "name", NULL);
+    if (!domainName)
+    {
+        LogError("Failed to read domain name");
+        status = ERROR_NOT_FOUND;
+        goto cleanup;
+    }
+
+    LogDebug("%S", domainName);
+    status = StringCchCopyA(nameBuffer, nameLength, domainName);
+    if (FAILED(status))
+    {
+        perror2(status, "StringCchCopyA");
+    }
+
+cleanup:
+    free(domainName);
+    if (xs)
+        xs_daemon_close(xs);
+
+    return status;
+}
+
 static ULONG Init(void)
 {
     ULONG uResult;
@@ -992,20 +1032,29 @@ static ULONG Init(void)
         return perror("CheckForXenInterface");
     }
 
-    uResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (uResult == 0)
+    // Read domain name from xenstore.
+    uResult = GetDomainName(g_DomainName, RTL_NUMBER_OF(g_DomainName));
+    if (ERROR_SUCCESS != uResult)
     {
-        if (0 != gethostname(g_HostName, sizeof(g_HostName)))
+        LogWarning("Failed to read domain name from xenstore, using host name");
+
+        uResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (uResult == 0)
         {
-            LogWarning("gethostname failed: 0x%x", uResult);
+            if (0 != gethostname(g_DomainName, sizeof(g_DomainName)))
+            {
+                LogWarning("gethostname failed: 0x%x", uResult);
+            }
+            WSACleanup();
         }
-        WSACleanup();
+        else
+        {
+            LogWarning("WSAStartup failed: 0x%x", uResult);
+            // this is not fatal, only used to get host name for full desktop window title
+        }
     }
-    else
-    {
-        LogWarning("WSAStartup failed: 0x%x", uResult);
-        // this is not fatal, only used to get host name for full desktop window title
-    }
+
+    LogInfo("Fullscreen desktop name: %S", g_DomainName);
 
     InitializeListHead(&g_WatchedWindowsList);
     InitializeCriticalSection(&g_csWatchedWindows);
