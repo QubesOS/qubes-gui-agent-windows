@@ -14,7 +14,7 @@ extern LONG g_HostScreenWidth;
 extern LONG g_HostScreenHeight;
 extern BOOL g_VchanClientConnected;
 extern HWND g_DesktopHwnd;
-extern char g_HostName[256];
+extern char g_DomainName[256];
 extern CRITICAL_SECTION g_csWatchedWindows;
 
 typedef struct _WATCHED_DC

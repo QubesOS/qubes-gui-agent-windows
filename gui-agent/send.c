@@ -453,7 +453,7 @@ void send_wmname(HWND hWnd)
     }
     else
     {
-        StringCchPrintfA(msg.data, RTL_NUMBER_OF(msg.data), "%s (Windows Desktop)", g_HostName);
+        StringCchPrintfA(msg.data, RTL_NUMBER_OF(msg.data), "%s (Windows Desktop)", g_DomainName);
     }
     LogDebug("0x%x %S", hWnd, msg.data);
 
