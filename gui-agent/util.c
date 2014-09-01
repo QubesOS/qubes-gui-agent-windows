@@ -10,6 +10,17 @@
 
 DWORD g_DisableCursor = TRUE;
 
+PSID BuildSid()
+{
+    SID_IDENTIFIER_AUTHORITY sia = SECURITY_LOCAL_SID_AUTHORITY;
+    PSID sid = NULL;
+    if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
+    {
+        perror("AllocateAndInitializeSid");
+    }
+    return sid;
+}
+
 HANDLE CreateNamedEvent(IN const WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
@@ -17,14 +28,17 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     EXPLICIT_ACCESS ea = { 0 };
     PACL acl = NULL;
     HANDLE event = NULL;
+    PSID localSid = NULL;
+
+    localSid = BuildSid();
 
     // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
     ea.grfAccessMode = GRANT_ACCESS;
     ea.grfAccessPermissions = EVENT_MODIFY_STATE | READ_CONTROL | SYNCHRONIZE;
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
-    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-    ea.Trustee.ptstrName = L"EVERYONE";
+    ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea.Trustee.ptstrName = localSid;
 
     if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
     {
