@@ -1,0 +1,6 @@
+LIBRARY QubesGuiHook
+
+EXPORTS
+    CallWndProc
+    GetMsgProc
+    CBTProc
