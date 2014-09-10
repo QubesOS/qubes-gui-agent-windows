@@ -852,8 +852,7 @@ static ULONG WINAPI WatchForEvents(void)
                     // non-fatal although shouldn't happen
                     break;
                 }
-                //logf("%8x: %s %8x %8x\n",
-                LogInfo("%8x: %4x %8x %8x\n",
+                LogDebug("%8x: %4x %8x %8x\n",
                     qhm.WindowHandle,
                     qhm.Message,
                     //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
