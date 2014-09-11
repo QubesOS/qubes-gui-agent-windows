@@ -14,7 +14,7 @@ PSID BuildSid()
 {
     SID_IDENTIFIER_AUTHORITY sia = SECURITY_LOCAL_SID_AUTHORITY;
     PSID sid = NULL;
-    if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
+    if (!AllocateAndInitializeSid(&sia, 1, SECURITY_WORLD_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
     {
         perror("AllocateAndInitializeSid");
     }
