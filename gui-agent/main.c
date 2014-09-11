@@ -627,6 +627,8 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
     pWatchedDC->bStyleChecked = FALSE;
     pWatchedDC->uTimeAdded = pWatchedDC->uTimeModalChecked = GetTickCount();
 
+    LogDebug("0x%x: visible=%d, iconic=%d", pWatchedDC->hWnd, pWatchedDC->bVisible, pWatchedDC->bIconic);
+
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
     if (pwi->rcWindow.right - pwi->rcWindow.left == g_ScreenWidth

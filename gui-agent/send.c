@@ -202,7 +202,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     VCHAN_SEND_MSG(hdr, mc);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    if (pWatchedDC && pWatchedDC->bVisible)
+    if (pWatchedDC && pWatchedDC->bVisible && !pWatchedDC->bIconic)
         send_window_map(pWatchedDC);
 
     if (pWatchedDC)
