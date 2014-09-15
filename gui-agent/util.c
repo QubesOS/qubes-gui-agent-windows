@@ -30,6 +30,8 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     HANDLE event = NULL;
     PSID localSid = NULL;
 
+    LogDebug("%s", name);
+
     localSid = BuildSid();
 
     // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
