@@ -12,9 +12,9 @@ DWORD g_DisableCursor = TRUE;
 
 PSID BuildSid()
 {
-    SID_IDENTIFIER_AUTHORITY sia = SECURITY_LOCAL_SID_AUTHORITY;
+    SID_IDENTIFIER_AUTHORITY sia = SECURITY_NT_AUTHORITY; // don't use LOCAL - only processes running in interactive session belong to that...
     PSID sid = NULL;
-    if (!AllocateAndInitializeSid(&sia, 1, SECURITY_WORLD_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
+    if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
     {
         perror("AllocateAndInitializeSid");
     }
