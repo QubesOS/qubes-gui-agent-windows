@@ -87,12 +87,16 @@ cleanup:
 DWORD TerminateTargetProcess(WCHAR *exeName)
 {
     HANDLE targetProcess;
-    HANDLE shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
-    DWORD processId, sessionId;
+    HANDLE shutdownEvent;
+    DWORD processId, sessionId, status;
 
+    status = GetLastError();
     LogInfo("Process name: %s", exeName);
+
+    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
     if (!shutdownEvent)
     {
+        perror("OpenEvent");
         LogInfo("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
     }
     else
