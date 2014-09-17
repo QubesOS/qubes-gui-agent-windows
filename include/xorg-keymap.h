@@ -1,6 +1,7 @@
 #include <windows.h>
 
 extern WORD X11ToVk[256];
+extern WORD KeycodeToScancode[256];
 
 /* From X.h */
 #define KeyPress            2

@@ -90,10 +90,45 @@ void handle_keymap_notify(void)
                 perror("SendInput");
                 return;
             }
-            LogDebug("unsetting key %d", win_key);
+            LogDebug("unsetting key VK=0x%x (keycode=0x%x)", win_key, modifier_keys[i]);
         }
         i++;
     }
+}
+
+// Translates x11 keycode to physical scancode and uses that to synthesize keyboard input.
+DWORD synthesize_keycode(UINT keycode, BOOL release)
+{
+    WORD scancode = KeycodeToScancode[keycode];
+    INPUT inputEvent;
+
+    // If the scancode already has 0x80 bit set, do not send key release.
+    if (release && (scancode & 0x80))
+        return ERROR_SUCCESS;
+
+    inputEvent.type = INPUT_KEYBOARD;
+    inputEvent.ki.time = 0;
+    inputEvent.ki.dwExtraInfo = 0;
+    inputEvent.ki.dwFlags = KEYEVENTF_SCANCODE;
+    inputEvent.ki.wVk = 0; // virtual key code is not used
+    inputEvent.ki.wScan = scancode & 0xff;
+
+    LogDebug("keycode: 0x%x, scancode: 0x%x", keycode, scancode);
+
+    if ((scancode & 0xff00) == 0xe000) // extended key
+    {
+        inputEvent.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
+
+    if (release)
+        inputEvent.ki.dwFlags |= KEYEVENTF_KEYUP;
+
+    if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
+    {
+        return perror("SendInput");
+    }
+
+    return ERROR_SUCCESS;
 }
 
 void handle_keypress(HWND hWnd)
@@ -110,7 +145,7 @@ void handle_keypress(HWND hWnd)
 
     inputEvent.type = INPUT_KEYBOARD;
     inputEvent.ki.time = 0;
-    inputEvent.ki.wScan = 0; /* TODO? */
+    inputEvent.ki.wScan = 0;
     inputEvent.ki.dwExtraInfo = 0;
 
     local_capslock_state = GetKeyState(VK_CAPITAL) & 1;
@@ -134,15 +169,8 @@ void handle_keypress(HWND hWnd)
         }
     }
 
-    inputEvent.ki.wVk = X11ToVk[key.keycode];
-    inputEvent.ki.dwFlags = key.type == KeyPress ? 0 : KEYEVENTF_KEYUP;
-    LogDebug("window 0x%x, VK 0x%x, flags 0x%x", hWnd, inputEvent.ki.wVk, inputEvent.ki.dwFlags);
-
-    if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
-    {
-        perror("SendInput");
-        return;
-    }
+    // produce the key press/release
+    synthesize_keycode(key.keycode, key.type != KeyPress);
 
     // TODO: allow customization of SAS sequence?
     if (IsKeyDown(VK_CONTROL) && IsKeyDown(VK_MENU) && IsKeyDown(VK_HOME))
