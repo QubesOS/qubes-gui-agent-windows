@@ -113,7 +113,7 @@ ULONG SetVideoMode(ULONG width, ULONG height, ULONG bpp)
 
     if (ERROR_SUCCESS != uResult)
     {
-        g_bFullScreenMode = TRUE;
+        g_SeamlessMode = FALSE;
 
         LogDebug("SetVideoMode() failed: %lu, keeping original resolution %lux%lu", uResult, g_ScreenWidth, g_ScreenHeight);
     }
@@ -157,16 +157,14 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
 
     // is it possible to have VM resolution bigger than host set by user?
     if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
-        g_bFullScreenMode = TRUE; // can't have reliable/intuitive seamless mode in this case
+        g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
 
     HideCursors();
     DisableEffects();
 
-    if (g_bFullScreenMode)
+    if (!g_SeamlessMode)
     {
         send_window_map(NULL); // show desktop window
-        // FIXME: sometimes after resolution change the desktop in dom0 isn't repainted
-        //send_window_damage_event(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
     }
     else
     {

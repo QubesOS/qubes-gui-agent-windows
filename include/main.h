@@ -7,7 +7,7 @@
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
 extern BOOL g_bUseDirtyBits;
-extern BOOL g_bFullScreenMode;
+extern BOOL g_SeamlessMode;
 extern LONG g_ScreenHeight;
 extern LONG g_ScreenWidth;
 extern LONG g_HostScreenWidth;

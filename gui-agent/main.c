@@ -32,7 +32,7 @@ LONG g_ScreenWidth;
 
 BOOL g_VchanClientConnected = FALSE;
 
-BOOL g_bFullScreenMode = FALSE;
+BOOL g_SeamlessMode = TRUE;
 
 // used to determine whether our window in fullscreen mode should be borderless
 // (when resolution is smaller than host's)
@@ -171,7 +171,7 @@ DWORD WINAPI ResetWatch(PVOID param)
 
     // don't start shell events thread if we're in fullscreen mode
     // WatchForEvents will map the whole screen as one window
-    if (!g_bFullScreenMode)
+    if (g_SeamlessMode)
     {
         StartShellEventsThread();
         ProcessUpdatedWindows(TRUE, GetDC(NULL));
@@ -184,13 +184,13 @@ DWORD WINAPI ResetWatch(PVOID param)
 // set fullscreen/seamless mode
 static void SetFullscreenMode(void)
 {
-    LogInfo("Full screen mode changed to %d", g_bFullScreenMode);
+    LogInfo("Seamless mode changed to %d", g_SeamlessMode);
 
     // ResetWatch kills the shell event thread and removes all watched windows.
     // If fullscreen is off the shell event thread is also restarted.
     ResetWatch(NULL);
 
-    if (g_bFullScreenMode)
+    if (!g_SeamlessMode)
     {
         // show the screen window
         send_window_map(NULL);
@@ -519,10 +519,12 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
         g_TaskbarHwnd = FindWindow(L"Shell_TrayWnd", NULL);
 
         if (g_TaskbarHwnd)
-        if (g_bFullScreenMode)
-            ShowWindow(g_TaskbarHwnd, SW_SHOW);
-        else
-            ShowWindow(g_TaskbarHwnd, SW_HIDE);
+        {
+            if (g_SeamlessMode)
+                ShowWindow(g_TaskbarHwnd, SW_HIDE);
+            else
+                ShowWindow(g_TaskbarHwnd, SW_SHOW);
+        }
     }
 
     if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
@@ -530,16 +532,18 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
         g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, L"Button", NULL);
 
         if (g_StartButtonHwnd)
-        if (g_bFullScreenMode)
-            ShowWindow(g_StartButtonHwnd, SW_SHOW);
-        else
-            ShowWindow(g_StartButtonHwnd, SW_HIDE);
+        {
+            if (g_SeamlessMode)
+                ShowWindow(g_StartButtonHwnd, SW_HIDE);
+            else
+                ShowWindow(g_StartButtonHwnd, SW_SHOW);
+        }
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
         g_DesktopHwnd, g_ExplorerHwnd, g_TaskbarHwnd, g_StartButtonHwnd);
 
-    if (g_bFullScreenMode)
+    if (!g_SeamlessMode)
     {
         // just send damage event with the dirty area
         if (g_bUseDirtyBits)
@@ -822,16 +826,18 @@ static ULONG WINAPI WatchForEvents(void)
                 break;
 
             case 2: // fullscreen on event
-                if (g_bFullScreenMode)
+                if (!g_SeamlessMode)
                     break; // already in fullscreen
-                g_bFullScreenMode = TRUE;
+                g_SeamlessMode = FALSE;
+                CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, g_SeamlessMode, NULL);
                 SetFullscreenMode();
                 break;
 
             case 3: // fullscreen off event
-                if (!g_bFullScreenMode)
+                if (g_SeamlessMode)
                     break; // already in seamless
-                g_bFullScreenMode = FALSE;
+                g_SeamlessMode = TRUE;
+                CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, g_SeamlessMode, NULL);
                 SetFullscreenMode();
                 break;
 
@@ -909,18 +915,20 @@ static ULONG WINAPI WatchForEvents(void)
                     send_window_create(NULL);
                     send_pixmap_mfns(NULL);
 
-                    if (g_bFullScreenMode)
+                    if (!g_SeamlessMode)
                     {
                         LogInfo("init in fullscreen mode");
                         send_window_map(NULL);
                     }
                     else
+                    {
                         if (ERROR_SUCCESS != StartShellEventsThread())
                         {
                             LogError("StartShellEventsThread failed, exiting");
                             bExitLoop = TRUE;
                             break;
                         }
+                    }
 
                     g_VchanClientConnected = TRUE;
                     break;
@@ -1070,7 +1078,7 @@ static ULONG Init(void)
     WCHAR moduleName[CFG_MODULE_MAX];
 
     LogDebug("start");
-    uResult  = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
+    uResult = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
     uResult = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits, NULL);
     if (ERROR_SUCCESS != uResult)
@@ -1084,6 +1092,13 @@ static ULONG Init(void)
     {
         LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_CURSOR_VALUE);
         g_DisableCursor = TRUE;
+    }
+
+    uResult = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &g_SeamlessMode, NULL);
+    if (ERROR_SUCCESS != uResult)
+    {
+        LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_SEAMLESS_VALUE);
+        g_SeamlessMode = TRUE;
     }
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
