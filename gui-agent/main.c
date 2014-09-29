@@ -51,6 +51,8 @@ HWND g_ExplorerHwnd = NULL;
 HWND g_TaskbarHwnd = NULL;
 HWND g_StartButtonHwnd = NULL;
 
+HANDLE g_ShutdownEvent = NULL;
+
 ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC);
 
 // can be called from main thread, shell hook thread or ResetWatch thread
@@ -699,7 +701,6 @@ static ULONG WINAPI WatchForEvents(void)
     HANDLE hWindowDamageEvent;
     HANDLE hFullScreenOnEvent;
     HANDLE hFullScreenOffEvent;
-    HANDLE hShutdownEvent;
     HDC screenDC;
     ULONG uDamage = 0;
     struct shm_cmd *pShmCmd = NULL;
@@ -725,9 +726,6 @@ static ULONG WINAPI WatchForEvents(void)
     ZeroMemory(&olMailslot, sizeof(olMailslot));
     olMailslot.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
-    if (!hShutdownEvent)
-        return GetLastError();
     hookShutdownEvent = CreateNamedEvent(WGA32_SHUTDOWN_EVENT_NAME);
     if (!hookShutdownEvent)
         return GetLastError();
@@ -765,7 +763,7 @@ static ULONG WINAPI WatchForEvents(void)
         eventCount = 0;
 
         // Order matters.
-        WatchedEvents[eventCount++] = hShutdownEvent;
+        WatchedEvents[eventCount++] = g_ShutdownEvent;
         WatchedEvents[eventCount++] = hWindowDamageEvent;
         WatchedEvents[eventCount++] = hFullScreenOnEvent;
         WatchedEvents[eventCount++] = hFullScreenOffEvent;
@@ -809,6 +807,7 @@ static ULONG WINAPI WatchForEvents(void)
             {
                 // shutdown event
                 logf("Shutdown event signaled");
+                bExitLoop = TRUE;
                 break;
             }
 
@@ -1078,6 +1077,14 @@ static ULONG Init(void)
     WCHAR moduleName[CFG_MODULE_MAX];
 
     LogDebug("start");
+
+    // This needs to be done first as a safeguard to not start multiple instances of this process.
+    g_ShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
+    if (!g_ShutdownEvent)
+    {
+        return GetLastError();
+    }
+
     uResult = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
     uResult = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits, NULL);
