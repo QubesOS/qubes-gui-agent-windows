@@ -695,7 +695,7 @@ static ULONG WINAPI WatchForEvents(void)
     ULONG eventCount;
     DWORD i, dwSignaledEvent, size;
     BOOL bVchanIoInProgress;
-    ULONG uResult;
+    ULONG status;
     BOOL bExitLoop;
     HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE hWindowDamageEvent;
@@ -770,7 +770,7 @@ static ULONG WINAPI WatchForEvents(void)
         WatchedEvents[eventCount++] = g_ResolutionChangeEvent;
         WatchedEvents[eventCount++] = olMailslot.hEvent;
 
-        uResult = ERROR_SUCCESS;
+        status = ERROR_SUCCESS;
 
         VchanPrepareToSelect();
         // read 1 byte instead of sizeof(fired_port) to not flush fired port
@@ -778,8 +778,8 @@ static ULONG WINAPI WatchForEvents(void)
         // numbers (sizeof(fired_port)), so this will end in zero-length read
         if (!bVchanIoInProgress && !ReadFile(vchan, &fired_port, 1, NULL, &olVchan))
         {
-            uResult = GetLastError();
-            if (ERROR_IO_PENDING != uResult)
+            status = GetLastError();
+            if (ERROR_IO_PENDING != status)
             {
                 perror("ReadFile");
                 bExitLoop = TRUE;
@@ -793,12 +793,12 @@ static ULONG WINAPI WatchForEvents(void)
 
         // Start hook maislot async read.
         // Even if there is data available right away, processing is done in the event handler.
-        uResult = ReadFile(mailslot, &qhm, sizeof(qhm), NULL, &olMailslot);
+        status = ReadFile(mailslot, &qhm, sizeof(qhm), NULL, &olMailslot);
 
         dwSignaledEvent = WaitForMultipleObjects(eventCount, WatchedEvents, FALSE, INFINITE);
         if (dwSignaledEvent >= MAXIMUM_WAIT_OBJECTS)
         {
-            uResult = perror("WaitForMultipleObjects");
+            status = perror("WaitForMultipleObjects");
             break;
         }
         else
@@ -902,8 +902,8 @@ static ULONG WINAPI WatchForEvents(void)
 
                     // The screen DC should be opened only after the resolution changes.
                     screenDC = GetDC(NULL);
-                    uResult = RegisterWatchedDC(screenDC, hWindowDamageEvent);
-                    if (ERROR_SUCCESS != uResult)
+                    status = RegisterWatchedDC(screenDC, hWindowDamageEvent);
+                    if (ERROR_SUCCESS != status)
                     {
                         perror("RegisterWatchedDC");
                         bExitLoop = TRUE;
@@ -954,12 +954,14 @@ static ULONG WINAPI WatchForEvents(void)
                         // in case of overflow.
                     }
                     else
+                    {
                         if (GetLastError() != ERROR_OPERATION_ABORTED)
                         {
                             perror("GetOverlappedResult(evtchn)");
                             bExitLoop = TRUE;
                             break;
                         }
+                    }
                 }
 
                 EnterCriticalSection(&g_VchanCriticalSection);
@@ -975,11 +977,11 @@ static ULONG WINAPI WatchForEvents(void)
 
                 while (VchanGetReadBufferSize())
                 {
-                    uResult = handle_server_data();
-                    if (ERROR_SUCCESS != uResult)
+                    status = handle_server_data();
+                    if (ERROR_SUCCESS != status)
                     {
                         bExitLoop = TRUE;
-                        LogError("handle_server_data() failed: 0x%x", uResult);
+                        LogError("handle_server_data() failed: 0x%x", status);
                         break;
                     }
                 }

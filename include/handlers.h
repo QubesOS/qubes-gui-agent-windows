@@ -1,5 +1,5 @@
 #pragma once
 #include <windows.h>
 
-ULONG handle_xconf(void);
-ULONG handle_server_data(void);
+DWORD handle_xconf(void);
+DWORD handle_server_data(void);

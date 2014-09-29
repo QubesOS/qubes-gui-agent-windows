@@ -29,7 +29,7 @@ void SignalSASEvent(void)
     }
 }
 
-ULONG handle_xconf(void)
+DWORD handle_xconf(void)
 {
     struct msg_xconf xconf;
 
@@ -51,7 +51,7 @@ BOOL IsKeyDown(int virtualKey)
     return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
-void handle_keymap_notify(void)
+DWORD handle_keymap_notify(void)
 {
     int i;
     WORD win_key;
@@ -87,13 +87,13 @@ void handle_keymap_notify(void)
 
             if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
             {
-                perror("SendInput");
-                return;
+                return perror("SendInput");
             }
             LogDebug("unsetting key VK=0x%x (keycode=0x%x)", win_key, modifier_keys[i]);
         }
         i++;
     }
+    return ERROR_SUCCESS;
 }
 
 // Translates x11 keycode to physical scancode and uses that to synthesize keyboard input.
@@ -131,11 +131,12 @@ DWORD synthesize_keycode(UINT keycode, BOOL release)
     return ERROR_SUCCESS;
 }
 
-void handle_keypress(HWND hWnd)
+DWORD handle_keypress(HWND hWnd)
 {
     struct msg_keypress key;
     INPUT inputEvent;
     int local_capslock_state;
+    DWORD status;
 
     LogVerbose("0x%x", hWnd);
     VchanReceiveBuffer((char *)&key, sizeof(key));
@@ -158,26 +159,28 @@ void handle_keypress(HWND hWnd)
         inputEvent.ki.dwFlags = 0;
         if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
         {
-            perror("SendInput(VK_CAPITAL)");
-            return;
+            return perror("SendInput(VK_CAPITAL)");
         }
         inputEvent.ki.dwFlags = KEYEVENTF_KEYUP;
         if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
         {
-            perror("SendInput(KEYEVENTF_KEYUP)");
-            return;
+            return perror("SendInput(KEYEVENTF_KEYUP)");
         }
     }
 
     // produce the key press/release
-    synthesize_keycode(key.keycode, key.type != KeyPress);
+    status = synthesize_keycode(key.keycode, key.type != KeyPress);
+    if (ERROR_SUCCESS != status)
+        return status;
 
     // TODO: allow customization of SAS sequence?
     if (IsKeyDown(VK_CONTROL) && IsKeyDown(VK_MENU) && IsKeyDown(VK_HOME))
         SignalSASEvent();
+
+    return ERROR_SUCCESS;
 }
 
-void handle_button(HWND hWnd)
+DWORD handle_button(HWND hWnd)
 {
     struct msg_button button;
     INPUT inputEvent;
@@ -225,12 +228,13 @@ void handle_button(HWND hWnd)
     LogDebug("window 0x%x, (%d,%d), flags 0x%x", hWnd, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
-        perror("SendInput");
-        return;
+        return perror("SendInput");
     }
+
+    return ERROR_SUCCESS;
 }
 
-void handle_motion(HWND hWnd)
+DWORD handle_motion(HWND hWnd)
 {
     struct msg_motion motion;
     INPUT inputEvent;
@@ -254,12 +258,13 @@ void handle_motion(HWND hWnd)
 
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
-        perror("SendInput");
-        return;
+        return perror("SendInput");
     }
+
+    return ERROR_SUCCESS;
 }
 
-void handle_configure(HWND hWnd)
+DWORD handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
@@ -275,16 +280,15 @@ void handle_configure(HWND hWnd)
         if (g_ScreenWidth == configure.width && g_ScreenHeight == configure.height)
         {
             // send ACK to guid so it won't stop sending MSG_CONFIGURE
-            send_screen_configure(configure.x, configure.y, configure.width, configure.height);
-            return; // nothing changes, ignore
+            return send_screen_configure(configure.x, configure.y, configure.width, configure.height);
+            // nothing changes, ignore
         }
 
         if (!IS_RESOLUTION_VALID(configure.width, configure.height))
         {
             LogWarning("Ignoring invalid resolution %dx%d", configure.width, configure.height);
             // send back current resolution to keep daemon up to date
-            send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
-            return;
+            return send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
         }
 
         // XY coords are used to reply with the same message to the daemon.
@@ -292,9 +296,11 @@ void handle_configure(HWND hWnd)
         // Signal the trigger event so the throttling thread evaluates the resize request.
         RequestResolutionChange(configure.width, configure.height, 32, configure.x, configure.y);
     }
+
+    return ERROR_SUCCESS;
 }
 
-void handle_focus(HWND hWnd)
+DWORD handle_focus(HWND hWnd)
 {
     struct msg_focus focus;
 
@@ -305,15 +311,19 @@ void handle_focus(HWND hWnd)
     SetForegroundWindow(hWnd);
     SetActiveWindow(hWnd);
     SetFocus(hWnd);
+
+    return ERROR_SUCCESS;
 }
 
-void handle_close(HWND hWnd)
+DWORD handle_close(HWND hWnd)
 {
     LogDebug("0x%x", hWnd);
     PostMessage(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+
+    return ERROR_SUCCESS;
 }
 
-void handle_window_flags(HWND hWnd)
+DWORD handle_window_flags(HWND hWnd)
 {
     struct msg_window_flags flags;
 
@@ -328,13 +338,16 @@ void handle_window_flags(HWND hWnd)
     {
         ShowWindowAsync(hWnd, SW_MINIMIZE);
     }
+
+    return ERROR_SUCCESS;
 }
 
-ULONG handle_server_data(void)
+DWORD handle_server_data(void)
 {
     struct msg_hdr hdr;
     BYTE discard[256];
     int nbRead;
+    DWORD status = ERROR_SUCCESS;
 
     VchanReceiveBuffer(&hdr, sizeof(hdr));
 
@@ -343,28 +356,28 @@ ULONG handle_server_data(void)
     switch (hdr.type)
     {
     case MSG_KEYPRESS:
-        handle_keypress((HWND)hdr.window);
+        status = handle_keypress((HWND)hdr.window);
         break;
     case MSG_BUTTON:
-        handle_button((HWND)hdr.window);
+        status = handle_button((HWND)hdr.window);
         break;
     case MSG_MOTION:
-        handle_motion((HWND)hdr.window);
+        status = handle_motion((HWND)hdr.window);
         break;
     case MSG_CONFIGURE:
-        handle_configure((HWND)hdr.window);
+        status = handle_configure((HWND)hdr.window);
         break;
     case MSG_FOCUS:
-        handle_focus((HWND)hdr.window);
+        status = handle_focus((HWND)hdr.window);
         break;
     case MSG_CLOSE:
-        handle_close((HWND)hdr.window);
+        status = handle_close((HWND)hdr.window);
         break;
     case MSG_KEYMAP_NOTIFY:
-        handle_keymap_notify();
+        status = handle_keymap_notify();
         break;
     case MSG_WINDOW_FLAGS:
-        handle_window_flags((HWND)hdr.window);
+        status = handle_window_flags((HWND)hdr.window);
         break;
     default:
         LogWarning("got unknown msg type %d, ignoring", hdr.type);
@@ -379,5 +392,10 @@ ULONG handle_server_data(void)
         }
     }
 
-    return ERROR_SUCCESS;
+    if (ERROR_SUCCESS != status)
+    {
+        LogError("handler failed: 0x%x, exiting", status);
+    }
+
+    return status;
 }
