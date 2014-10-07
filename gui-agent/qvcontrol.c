@@ -344,7 +344,7 @@ ULONG SynchronizeDirtyBits(HDC hDC)
     int iRet;
 
     qvs.uMagic = QVIDEO_MAGIC;
-    iRet = ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(qvs), (LPCSTR)&qvs, 0, NULL);
+    iRet = ExtEscape(hDC, QVESC_SYNCHRONIZE, sizeof(qvs), (LPCSTR) &qvs, 0, NULL);
     if (iRet <= 0)
     {
         LogError("ExtEscape(QVESC_SYNCHRONIZE) failed, error %d\n", iRet);

@@ -14,10 +14,10 @@ typedef struct _QH_MESSAGE
 {
     UINT32 HookId; // WH_*
     UINT32 Message; // WM_*
-    UINT64 WindowHandle; 
+    UINT64 WindowHandle;
     UINT64 wParam; // message's wparam
     UINT64 lParam; // message's lparam
-    
+
     // These fields are message-dependent.
     UINT64 DstWindowHandle;
     UINT64 Flags;
@@ -27,5 +27,4 @@ typedef struct _QH_MESSAGE
     int Height;
     UINT32 Style;
     UINT32 StyleOld;
-
 } QH_MESSAGE;

@@ -4,17 +4,17 @@
 // The driver function table with all function index/address pairs
 static DRVFN g_DrvFunctions[] =
 {
-    {INDEX_DrvGetModes, (PFN) DrvGetModes},
-    {INDEX_DrvSynchronizeSurface, (PFN) DrvSynchronizeSurface},
-    {INDEX_DrvEnablePDEV, (PFN) DrvEnablePDEV},
-    {INDEX_DrvCompletePDEV, (PFN) DrvCompletePDEV},
-    {INDEX_DrvDisablePDEV, (PFN) DrvDisablePDEV},
-    {INDEX_DrvEnableSurface, (PFN) DrvEnableSurface},
-    {INDEX_DrvDisableSurface, (PFN) DrvDisableSurface},
-    {INDEX_DrvAssertMode, (PFN) DrvAssertMode},
-//{INDEX_DrvCreateDeviceBitmap, (PFN) DrvCreateDeviceBitmap},
-//{INDEX_DrvDeleteDeviceBitmap, (PFN) DrvDeleteDeviceBitmap},
-    {INDEX_DrvEscape, (PFN) DrvEscape}
+    { INDEX_DrvGetModes, (PFN) DrvGetModes },
+    { INDEX_DrvSynchronizeSurface, (PFN) DrvSynchronizeSurface },
+    { INDEX_DrvEnablePDEV, (PFN) DrvEnablePDEV },
+    { INDEX_DrvCompletePDEV, (PFN) DrvCompletePDEV },
+    { INDEX_DrvDisablePDEV, (PFN) DrvDisablePDEV },
+    { INDEX_DrvEnableSurface, (PFN) DrvEnableSurface },
+    { INDEX_DrvDisableSurface, (PFN) DrvDisableSurface },
+    { INDEX_DrvAssertMode, (PFN) DrvAssertMode },
+    //{INDEX_DrvCreateDeviceBitmap, (PFN) DrvCreateDeviceBitmap},
+    //{INDEX_DrvDeleteDeviceBitmap, (PFN) DrvDeleteDeviceBitmap},
+    { INDEX_DrvEscape, (PFN) DrvEscape }
 };
 
 // default mode, before wga.exe connects
@@ -37,7 +37,7 @@ BOOL APIENTRY DrvEnableDriver(
     ULONG iEngineVersion,
     ULONG cj,
     __in_bcount(cj) DRVENABLEDATA *pded
-)
+    )
 {
     DISPDBG((0, "DrvEnableDriver\n"));
 
@@ -77,7 +77,7 @@ DHPDEV APIENTRY DrvEnablePDEV(
     __in_opt HDEV hdev,	// HDEV, used for callbacks
     __in_opt PWSTR pwszDeviceName,	// DeviceName - not used
     __in HANDLE hDriver	// Handle to base driver
-)
+    )
 {
     PPDEV ppdev = (PPDEV) NULL;
 
@@ -134,7 +134,7 @@ DHPDEV APIENTRY DrvEnablePDEV(
 VOID APIENTRY DrvCompletePDEV(
     DHPDEV dhpdev,
     HDEV hdev
-)
+    )
 {
     DISPDBG((1, "DrvCompletePDEV\n"));
     ((PPDEV) dhpdev)->hdevEng = hdev;
@@ -144,9 +144,9 @@ ULONG APIENTRY DrvGetModes(
     HANDLE hDriver,
     ULONG cjSize,
     DEVMODEW *pdm
-)
+    )
 {
-    ULONG ulBytesWritten = 0, ulBytesNeeded = 2*sizeof(DEVMODEW);
+    ULONG ulBytesWritten = 0, ulBytesNeeded = 2 * sizeof(DEVMODEW);
     ULONG ulReturnValue;
     DWORD i;
 
@@ -179,14 +179,14 @@ ULONG APIENTRY DrvGetModes(
             pdm[i].dmBitsPerPel = g_uBpp;
             switch (i)
             {
-                case 0:
-                    pdm[i].dmPelsWidth = g_uDefaultWidth;
-                    pdm[i].dmPelsHeight = g_uDefaultHeight;
-                    break;
-                case 1:
-                    pdm[i].dmPelsWidth = g_uWidth;
-                    pdm[i].dmPelsHeight = g_uHeight;
-                    break;
+            case 0:
+                pdm[i].dmPelsWidth = g_uDefaultWidth;
+                pdm[i].dmPelsHeight = g_uDefaultHeight;
+                break;
+            case 1:
+                pdm[i].dmPelsWidth = g_uWidth;
+                pdm[i].dmPelsHeight = g_uHeight;
+                break;
             }
             pdm[i].dmDisplayFrequency = 75;
 
@@ -215,7 +215,7 @@ ULONG APIENTRY DrvGetModes(
 
 VOID APIENTRY DrvDisablePDEV(
     DHPDEV dhpdev
-)
+    )
 {
     PPDEV ppdev = (PPDEV) dhpdev;
 
@@ -228,7 +228,7 @@ VOID APIENTRY DrvDisablePDEV(
 ULONG AllocateSurfaceMemory(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor,
     ULONG uLength
-)
+    )
 {
     PQVMINI_ALLOCATE_MEMORY_RESPONSE pQvminiAllocateMemoryResponse = NULL;
     QVMINI_ALLOCATE_MEMORY QvminiAllocateMemory;
@@ -237,7 +237,7 @@ ULONG AllocateSurfaceMemory(
 
     pQvminiAllocateMemoryResponse = (PQVMINI_ALLOCATE_MEMORY_RESPONSE)
         EngAllocMem(FL_ZERO_MEMORY, sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE), ALLOC_TAG);
-    
+
     if (!pQvminiAllocateMemoryResponse)
     {
         RIP("AllocateSurfaceMemory(): EngAllocMem(QVMINI_ALLOCATE_MEMORY_RESPONSE) failed\n");
@@ -273,7 +273,7 @@ ULONG AllocateSurfaceMemory(
 ULONG AllocateSection(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor,
     ULONG uLength
-)
+    )
 {
     PQVMINI_ALLOCATE_SECTION_RESPONSE pQvminiAllocateSectionResponse = NULL;
     QVMINI_ALLOCATE_SECTION QvminiAllocateSection;
@@ -329,7 +329,7 @@ ULONG AllocateSurfaceData(
     BOOLEAN bSurface,
     PSURFACE_DESCRIPTOR pSurfaceDescriptor,
     ULONG uLength
-)
+    )
 {
     if (bSurface)
         return AllocateSection(pSurfaceDescriptor, uLength);
@@ -339,7 +339,7 @@ ULONG AllocateSurfaceData(
 
 VOID FreeSurfaceMemory(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor
-)
+    )
 {
     DWORD dwResult;
     QVMINI_FREE_MEMORY QvminiFreeMemory;
@@ -361,7 +361,7 @@ VOID FreeSurfaceMemory(
 
 VOID FreeSection(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor
-)
+    )
 {
     DWORD dwResult;
     QVMINI_FREE_SECTION QvminiFreeSection;
@@ -391,7 +391,7 @@ VOID FreeSection(
 
 VOID FreeSurfaceData(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor
-)
+    )
 {
     if (pSurfaceDescriptor->bIsScreen)
         FreeSection(pSurfaceDescriptor);
@@ -401,7 +401,7 @@ VOID FreeSurfaceData(
 
 VOID FreeSurfaceDescriptor(
     PSURFACE_DESCRIPTOR pSurfaceDescriptor
-)
+    )
 {
     if (!pSurfaceDescriptor)
         return;
@@ -426,7 +426,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
     HSURF *pHsurf,
     PSURFACE_DESCRIPTOR *ppSurfaceDescriptor,
     PPDEV ppdev
-)
+    )
 {
     ULONG ulBitmapType;
     ULONG uSurfaceMemorySize;
@@ -461,7 +461,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
     uSurfaceMemorySize = (ULONG) (uStride * sizl.cy);
 
-//    DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
+    //    DISPDBG((0, "AllocateNonOpaqueDeviceSurfaceOrBitmap(): Allocating %dx%d, %d\n", sizl.cx, sizl.cy, ulBitCount));
 
     pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) EngAllocMem(FL_ZERO_MEMORY, sizeof(SURFACE_DESCRIPTOR), ALLOC_TAG);
     if (!pSurfaceDescriptor)
@@ -512,9 +512,9 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
     if (sizl.cx > 50)
     {
-//        DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
-//            &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
-//            pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
+        //        DISPDBG((0, "Surface bitmap header %dx%d at %p (0x%x bytes), data at %p (0x%x bytes), pfns: %d\n", sizl.cx, sizl.cy,
+        //            &pSurfaceDescriptor->BitmapHeader, sizeof(BitmapHeader), pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
+        //            pSurfaceDescriptor->PfnArray.uNumberOf4kPages));
         DISPDBG((0, "Surface %dx%d, data at %p (0x%x bytes), pfns: %d\n",
             sizl.cx, sizl.cy, pSurfaceDescriptor->pSurfaceData, uSurfaceMemorySize,
             pSurfaceDescriptor->pPfnArray->uNumberOf4kPages));
@@ -540,7 +540,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
 HSURF APIENTRY DrvEnableSurface(
     DHPDEV dhpdev
-)
+    )
 {
     PPDEV ppdev;
     HSURF hsurf;
@@ -559,7 +559,7 @@ HSURF APIENTRY DrvEnableSurface(
 
     Status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
         TRUE, ppdev->hdevEng, ppdev->ulBitCount, sizl, flGlobalHooks, &hsurf, &pSurfaceDescriptor, ppdev);
-    
+
     if (Status < 0)
     {
         DISPDBG((0, "DrvEnableSurface(): AllocateNonOpaqueDeviceSurfaceOrBitmap() failed, status %d\n", Status));
@@ -583,7 +583,7 @@ HSURF APIENTRY DrvEnableSurface(
 
 VOID APIENTRY DrvDisableSurface(
     DHPDEV dhpdev
-)
+    )
 {
     PPDEV ppdev = (PPDEV) dhpdev;
 
@@ -601,7 +601,7 @@ HBITMAP APIENTRY DrvCreateDeviceBitmap(
     IN DHPDEV dhpdev,
     IN SIZEL sizl,
     IN ULONG iFormat
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
     ULONG ulBitCount;
@@ -632,7 +632,7 @@ HBITMAP APIENTRY DrvCreateDeviceBitmap(
 
     Status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
         FALSE, ppdev->hdevEng, ulBitCount, sizl, flGlobalHooks, &hsurf, &pSurfaceDescriptor, ppdev);
-    
+
     if (Status < 0)
     {
         DISPDBG((0, "DrvCreateDeviceBitmap(): AllocateNonOpaqueDeviceSurfaceOrBitmap() failed, status %d\n", Status));
@@ -646,11 +646,11 @@ HBITMAP APIENTRY DrvCreateDeviceBitmap(
 
 VOID APIENTRY DrvDeleteDeviceBitmap(
     IN DHSURF dhsurf
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor;
 
-// DISPDBG((1, "DeleteDeviceBitmap:\n"));
+    // DISPDBG((1, "DeleteDeviceBitmap:\n"));
 
     pSurfaceDescriptor = (PSURFACE_DESCRIPTOR) dhsurf;
 
@@ -660,7 +660,7 @@ VOID APIENTRY DrvDeleteDeviceBitmap(
 BOOL APIENTRY DrvAssertMode(
     DHPDEV dhpdev,
     BOOL bEnable
-)
+    )
 {
     PPDEV ppdev = (PPDEV) dhpdev;
 
@@ -675,7 +675,7 @@ BOOL APIENTRY DrvAssertMode(
 ULONG UserSupportVideoMode(
     ULONG cjIn,
     PQV_SUPPORT_MODE pQvSupportMode
-)
+    )
 {
     if (cjIn < sizeof(QV_SUPPORT_MODE) || !pQvSupportMode)
         return QV_INVALID_PARAMETER;
@@ -700,7 +700,7 @@ ULONG UserGetSurfaceData(
     PQV_GET_SURFACE_DATA pQvGetSurfaceData,
     ULONG cjOut,
     PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
     if (!pso || cjOut < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !pQvGetSurfaceDataResponse
@@ -730,7 +730,7 @@ ULONG UserGetSurfaceData(
 
 BOOL CALLBACK UnmapDamageNotificationEventProc(
     DRIVEROBJ *pDriverObj
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
 
@@ -749,7 +749,7 @@ ULONG UserWatchSurface(
     SURFOBJ *pso,
     ULONG cjIn,
     PQV_WATCH_SURFACE pQvWatchSurface
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
     PEVENT pDamageNotificationEvent = NULL;
@@ -785,7 +785,7 @@ ULONG UserWatchSurface(
     // so pSurfaceDescriptor->pDamageNotificationEvent must be set before calling it.
     pSurfaceDescriptor->pDamageNotificationEvent = pDamageNotificationEvent;
 
-    // Install a notification callback for process deletion. 
+    // Install a notification callback for process deletion.
     // We have to unmap the event if the client process terminates unexpectedly.
     pSurfaceDescriptor->hDriverObj = EngCreateDriverObj(pSurfaceDescriptor, UnmapDamageNotificationEventProc, pso->hdev);
     if (!pSurfaceDescriptor->hDriverObj)
@@ -804,7 +804,7 @@ ULONG UserWatchSurface(
 
 ULONG UserStopWatchingSurface(
     SURFOBJ *pso
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
 
@@ -840,7 +840,7 @@ ULONG APIENTRY DrvEscape(
     PVOID pvIn,
     ULONG cjOut,
     PVOID pvOut
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor;
 
@@ -889,7 +889,7 @@ VOID APIENTRY DrvSynchronizeSurface(
     SURFOBJ *pso,
     RECTL *prcl,
     FLONG fl
-)
+    )
 {
     PSURFACE_DESCRIPTOR pSurfaceDescriptor = NULL;
     ULONG uSize, uDirty;

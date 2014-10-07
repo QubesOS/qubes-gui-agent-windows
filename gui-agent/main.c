@@ -74,7 +74,6 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     return ERROR_SUCCESS;
 }
 
-
 ULONG StartShellEventsThread(void)
 {
     DWORD threadId;
@@ -147,11 +146,11 @@ DWORD WINAPI ResetWatch(PVOID param)
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)& g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
         RemoveEntryList(&pWatchedDC->le);
         RemoveWatchedDC(pWatchedDC);
@@ -213,15 +212,15 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
     PWATCHED_DC pWatchedDC;
 
     LogVerbose("%x", hWnd);
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)& g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
 
         if (hWnd == pWatchedDC->hWnd)
             return pWatchedDC;
 
-        pWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
     }
 
     return NULL;
@@ -234,7 +233,7 @@ static BOOL WINAPI FindModalChildProc(
     IN LPARAM lParam
     )
 {
-    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS)lParam;
+    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS) lParam;
     LONG wantedStyle = WS_POPUP | WS_VISIBLE;
     HWND owner = GetWindow(hwnd, GW_OWNER);
 
@@ -322,7 +321,7 @@ ULONG CheckWatchedWindowUpdates(
         LogDebug("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
         modalParams.ParentWindow = pWatchedDC->hWnd;
         modalParams.ModalWindow = NULL;
-        EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
+        EnumWindows(FindModalChildProc, (LPARAM) &modalParams);
         LogDebug("result: 0x%x", modalParams.ModalWindow);
         if (modalParams.ModalWindow) // found a modal "child"
         {
@@ -433,7 +432,7 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
 BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 {
     WINDOWINFO wi;
-    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)lParam;
+    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS) lParam;
     ULONG i;
 
     wi.cbSize = sizeof(wi);
@@ -463,8 +462,8 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 {
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
-    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS)* 4];
-    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
+    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
+    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS) &BannedPopupsListBuffer;
     BOOL bRecheckWindows = FALSE;
     HWND hwndOldDesktop = g_DesktopHwnd;
     ULONG uTotalPages, uPage, uDirtyPages = 0;
@@ -519,10 +518,10 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
         g_TaskbarHwnd = FindWindow(L"Shell_TrayWnd", NULL);
 
         if (g_TaskbarHwnd)
-        if (g_bFullScreenMode)
-            ShowWindow(g_TaskbarHwnd, SW_SHOW);
-        else
-            ShowWindow(g_TaskbarHwnd, SW_HIDE);
+            if (g_bFullScreenMode)
+                ShowWindow(g_TaskbarHwnd, SW_SHOW);
+            else
+                ShowWindow(g_TaskbarHwnd, SW_HIDE);
     }
 
     if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
@@ -530,10 +529,10 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
         g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, L"Button", NULL);
 
         if (g_StartButtonHwnd)
-        if (g_bFullScreenMode)
-            ShowWindow(g_StartButtonHwnd, SW_SHOW);
-        else
-            ShowWindow(g_StartButtonHwnd, SW_HIDE);
+            if (g_bFullScreenMode)
+                ShowWindow(g_StartButtonHwnd, SW_SHOW);
+            else
+                ShowWindow(g_StartButtonHwnd, SW_HIDE);
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
@@ -562,13 +561,13 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    EnumWindows(EnumWindowsProc, (LPARAM)pBannedPopupsList);
+    EnumWindows(EnumWindowsProc, (LPARAM) pBannedPopupsList);
 
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)&g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
         if (!IsWindow(pWatchedDC->hWnd) || !ShouldAcceptWindow(pWatchedDC->hWnd, NULL))
         {
@@ -615,7 +614,7 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
     if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
 
-    pWatchedDC = (PWATCHED_DC)malloc(sizeof(WATCHED_DC));
+    pWatchedDC = (PWATCHED_DC) malloc(sizeof(WATCHED_DC));
     if (!pWatchedDC)
         return NULL;
 
@@ -654,10 +653,9 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
 
     if (pWatchedDC->bOverrideRedirect)
         LogDebug("popup: %dx%d, screen %dx%d",
-            pwi->rcWindow.right - pwi->rcWindow.left,
-            pwi->rcWindow.bottom - pwi->rcWindow.top,
-            g_ScreenWidth, g_ScreenHeight);
-
+        pwi->rcWindow.right - pwi->rcWindow.left,
+        pwi->rcWindow.bottom - pwi->rcWindow.top,
+        g_ScreenWidth, g_ScreenHeight);
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
@@ -915,9 +913,9 @@ static ULONG WINAPI WatchForEvents(void)
                     else
                         if (ERROR_SUCCESS != StartShellEventsThread())
                         {
-                            LogError("StartShellEventsThread failed, exiting");
-                            bExitLoop = TRUE;
-                            break;
+                        LogError("StartShellEventsThread failed, exiting");
+                        bExitLoop = TRUE;
+                        break;
                         }
 
                     g_VchanClientConnected = TRUE;
@@ -947,9 +945,9 @@ static ULONG WINAPI WatchForEvents(void)
                     else
                         if (GetLastError() != ERROR_OPERATION_ABORTED)
                         {
-                            perror("GetOverlappedResult(evtchn)");
-                            bExitLoop = TRUE;
-                            break;
+                        perror("GetOverlappedResult(evtchn)");
+                        bExitLoop = TRUE;
+                        break;
                         }
                 }
 
@@ -989,9 +987,9 @@ static ULONG WINAPI WatchForEvents(void)
     if (bVchanIoInProgress)
         if (CancelIo(vchan))
         {
-            // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
-            // OVERLAPPED structure.
-            WaitForSingleObject(olVchan.hEvent, INFINITE);
+        // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
+        // OVERLAPPED structure.
+        WaitForSingleObject(olVchan.hEvent, INFINITE);
         }
 
     if (!g_VchanClientConnected)
@@ -1068,7 +1066,7 @@ static ULONG Init(void)
     WCHAR moduleName[CFG_MODULE_MAX];
 
     LogDebug("start");
-    uResult  = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
+    uResult = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
     uResult = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits, NULL);
     if (ERROR_SUCCESS != uResult)

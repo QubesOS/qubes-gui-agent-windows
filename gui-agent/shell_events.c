@@ -121,8 +121,8 @@ LRESULT CALLBACK ShellHookWndProc(
             goto update;
         case HSHELL_GETMINRECT:
             LogDebug("HSHELL_GETMINRECT");
-            targetWindow = ((SHELLHOOKINFO*)lParam)->hwnd;
-update:
+            targetWindow = ((SHELLHOOKINFO*) lParam)->hwnd;
+        update:
             CheckWindowUpdates(targetWindow);
             break;
             /*
@@ -202,10 +202,10 @@ ULONG CreateShellHookWindow(HWND *pWindow)
     /*
     if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_ALL_SESSIONS))
     {
-        uResult = perror("WTSRegisterSessionNotification");
-        DestroyWindow(hwnd);
-        UnregisterClass(g_szClassName, hInstance);
-        return uResult;
+    uResult = perror("WTSRegisterSessionNotification");
+    DestroyWindow(hwnd);
+    UnregisterClass(g_szClassName, hInstance);
+    return uResult;
     }
     */
     if (!g_uShellHookMessage)

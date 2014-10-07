@@ -5,12 +5,12 @@
 PVOID AllocateMemory(
     ULONG uLength,
     PPFN_ARRAY *ppPfnArray
-);
+    );
 
 VOID FreeMemory(
     IN PVOID pMemory,
     IN PVOID pPfnArray
-);
+    );
 
 PVOID AllocateSection(
     ULONG uLength,
@@ -21,7 +21,7 @@ PVOID AllocateSection(
     OPTIONAL HANDLE *phDirtySection,
     OPTIONAL PVOID *ppDirtySectionObject,
     OPTIONAL PVOID *ppDirtySectionMemory
-);
+    );
 
 VOID FreeSection(
     HANDLE hSection,
@@ -32,4 +32,4 @@ VOID FreeSection(
     OPTIONAL HANDLE hDirtySection,
     OPTIONAL PVOID pDirtySectionObject,
     OPTIONAL PVOID pDirtySectionMemory
-);
+    );

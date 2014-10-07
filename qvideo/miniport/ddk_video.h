@@ -13,16 +13,16 @@
 
 typedef enum VIDEO_DEBUG_LEVEL
 {
-	Error = 0,
-	Warn,
-	Trace,
-	Info
+    Error = 0,
+    Warn,
+    Trace,
+    Info
 } VIDEO_DEBUG_LEVEL, *PVIDEO_DEBUG_LEVEL;
 
 #define VIDEOPORT_API __declspec(dllimport)
 
 VIDEOPORT_API VOID VideoPortDebugPrint(
-	VIDEO_DEBUG_LEVEL DebugPrintLevel,
-	__in PSTR DebugMessage,
-	...
-);
+    VIDEO_DEBUG_LEVEL DebugPrintLevel,
+    __in PSTR DebugMessage,
+    ...
+    );

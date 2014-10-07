@@ -8,7 +8,6 @@
 #include "resolution.h"
 #include "log.h"
 
-
 // tell helper service to simulate ctrl-alt-del
 void SignalSASEvent(void)
 {
@@ -71,7 +70,7 @@ void handle_keymap_notify(void)
     };
 
     LogVerbose("start");
-    VchanReceiveBuffer((char *)remote_keys, sizeof(remote_keys));
+    VchanReceiveBuffer((char *) remote_keys, sizeof(remote_keys));
     i = 0;
     while (modifier_keys[i])
     {
@@ -103,7 +102,7 @@ void handle_keypress(HWND hWnd)
     int local_capslock_state;
 
     LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *)&key, sizeof(key));
+    VchanReceiveBuffer((char *) &key, sizeof(key));
 
     /* ignore x, y */
     /* TODO: send to correct window */
@@ -156,7 +155,7 @@ void handle_button(HWND hWnd)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *)&button, sizeof(button));
+    VchanReceiveBuffer((char *) &button, sizeof(button));
 
     if (hWnd)
         GetWindowRect(hWnd, &rect);
@@ -209,7 +208,7 @@ void handle_motion(HWND hWnd)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *)&motion, sizeof(motion));
+    VchanReceiveBuffer((char *) &motion, sizeof(motion));
 
     if (hWnd)
         GetWindowRect(hWnd, &rect);
@@ -235,7 +234,7 @@ void handle_configure(HWND hWnd)
 {
     struct msg_configure configure;
 
-    VchanReceiveBuffer((char *)&configure, sizeof(configure));
+    VchanReceiveBuffer((char *) &configure, sizeof(configure));
     LogDebug("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
 
     if (hWnd != 0) // 0 is full screen
@@ -271,7 +270,7 @@ void handle_focus(HWND hWnd)
     struct msg_focus focus;
 
     LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *)&focus, sizeof(focus));
+    VchanReceiveBuffer((char *) &focus, sizeof(focus));
 
     BringWindowToTop(hWnd);
     SetForegroundWindow(hWnd);
@@ -289,7 +288,7 @@ void handle_window_flags(HWND hWnd)
 {
     struct msg_window_flags flags;
 
-    VchanReceiveBuffer((char *)&flags, sizeof(flags));
+    VchanReceiveBuffer((char *) &flags, sizeof(flags));
     LogDebug("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
 
     if (flags.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
@@ -315,28 +314,28 @@ ULONG handle_server_data(void)
     switch (hdr.type)
     {
     case MSG_KEYPRESS:
-        handle_keypress((HWND)hdr.window);
+        handle_keypress((HWND) hdr.window);
         break;
     case MSG_BUTTON:
-        handle_button((HWND)hdr.window);
+        handle_button((HWND) hdr.window);
         break;
     case MSG_MOTION:
-        handle_motion((HWND)hdr.window);
+        handle_motion((HWND) hdr.window);
         break;
     case MSG_CONFIGURE:
-        handle_configure((HWND)hdr.window);
+        handle_configure((HWND) hdr.window);
         break;
     case MSG_FOCUS:
-        handle_focus((HWND)hdr.window);
+        handle_focus((HWND) hdr.window);
         break;
     case MSG_CLOSE:
-        handle_close((HWND)hdr.window);
+        handle_close((HWND) hdr.window);
         break;
     case MSG_KEYMAP_NOTIFY:
         handle_keymap_notify();
         break;
     case MSG_WINDOW_FLAGS:
-        handle_window_flags((HWND)hdr.window);
+        handle_window_flags((HWND) hdr.window);
         break;
     default:
         LogWarning("got unknown msg type %d, ignoring", hdr.type);

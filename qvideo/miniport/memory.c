@@ -8,7 +8,7 @@ NTSTATUS CreateAndMapSection(
     HANDLE *phSection,
     PVOID *pSectionObject,
     PVOID *pBaseAddress
-)
+    )
 {
     SIZE_T ViewSize = 0;
     NTSTATUS Status;
@@ -57,7 +57,7 @@ NTSTATUS CreateAndMapSection(
 
     VideoDebugPrint((0, __FUNCTION__": section '%wZ': %p, addr %p\n",
         usSectionName, pSectionObject, BaseAddress));
-    
+
     *pBaseAddress = BaseAddress;
     *phSection = hSection;
     *pSectionObject = SectionObject;
@@ -74,7 +74,7 @@ VOID FreeSection(
     OPTIONAL HANDLE hDirtySection,
     OPTIONAL PVOID pDirtySectionObject,
     OPTIONAL PVOID pDirtySectionMemory
-)
+    )
 {
     if (pMdl)
     {
@@ -105,7 +105,7 @@ NTSTATUS GetBufferPfnArray(
     IN KPROCESSOR_MODE ProcessorMode,
     IN BOOLEAN bLockPages,
     OUT OPTIONAL PMDL *ppMdl
-)
+    )
 {
     NTSTATUS Status;
     PHYSICAL_ADDRESS PhysAddr;
@@ -144,7 +144,7 @@ NTSTATUS GetBufferPfnArray(
         {
             uNumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(pMdl), MmGetMdlByteCount(pMdl));
             // size of PFN_ARRAY
-            *ppPfnArray = ExAllocatePoolWithTag(NonPagedPool, uNumberOfPages*sizeof(PFN_NUMBER)+sizeof(ULONG), QVMINI_TAG);
+            *ppPfnArray = ExAllocatePoolWithTag(NonPagedPool, uNumberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG), QVMINI_TAG);
 
             if (!(*ppPfnArray))
                 return STATUS_NO_MEMORY;
@@ -173,7 +173,7 @@ NTSTATUS GetBufferPfnArray(
 PVOID AllocateMemory(
     ULONG uLength,
     PPFN_ARRAY *ppPfnArray
-)
+    )
 {
     PVOID pMemory = NULL;
     NTSTATUS Status;
@@ -202,7 +202,7 @@ PVOID AllocateMemory(
 VOID FreeMemory(
     IN PVOID pMemory,
     IN OPTIONAL PVOID pPfnArray
-)
+    )
 {
     if (!pMemory)
         return;
@@ -226,7 +226,7 @@ PVOID AllocateSection(
     OPTIONAL HANDLE *phDirtySection,
     OPTIONAL PVOID *ppDirtySectionObject,
     OPTIONAL PVOID *ppDirtySectionMemory
-)
+    )
 {
     NTSTATUS Status;
     HANDLE hSection;
@@ -269,7 +269,7 @@ PVOID AllocateSection(
         *ppDirtySectionMemory = NULL;
 
         // struct header + bit array for dirty pages
-        uLength = sizeof(QV_DIRTY_PAGES) + ((uLength/PAGE_SIZE) >> 3) + 1;
+        uLength = sizeof(QV_DIRTY_PAGES) + ((uLength / PAGE_SIZE) >> 3) + 1;
         RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", uLength);
         RtlInitUnicodeString(&usSectionName, SectionName);
 

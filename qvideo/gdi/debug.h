@@ -14,10 +14,10 @@
 #if DBG
 
 VOID DebugPrint(
-	__in ULONG DebugPrintLevel,
-	__in PCHAR DebugMessage,
-	...
-);
+    __in ULONG DebugPrintLevel,
+    __in PCHAR DebugMessage,
+    ...
+    );
 
 # define DISPDBG(arg) DebugPrint arg
 # define RIP(x) { DebugPrint(0, x); EngDebugBreak();}

@@ -11,12 +11,13 @@
 #include "devioctl.h"
 #include "ntddvdeo.h"
 
-#pragma warning(pop)		// C4200: nonstandard extension used :
-                    //        zero-sized array in struct/union
-                    // C4201: nonstandard extension used:
-                    //        nameless struct/union
-                    // C4214: nonstandard extension used:
-                    //        bit field types other than int
+#pragma warning(pop)
+// C4200: nonstandard extension used :
+//        zero-sized array in struct/union
+// C4201: nonstandard extension used:
+//        nameless struct/union
+// C4214: nonstandard extension used:
+//        bit field types other than int
 
 #include "debug.h"
 #include "common.h"
@@ -71,7 +72,7 @@ typedef struct _SURFACE_DESCRIPTOR
     PQV_DIRTY_PAGES pDirtyPages;
     LARGE_INTEGER LastCheck; // timestamp of the last dirty pages check, to limit events per second
 
-//  BITMAP_HEADER BitmapHeader;
+    //  BITMAP_HEADER BitmapHeader;
 } SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
 
 BOOL bInitPDEV(
@@ -79,7 +80,7 @@ BOOL bInitPDEV(
     PDEVMODEW,
     GDIINFO *,
     DEVINFO *
-);
+    );
 
 //
 // Determines the size of the DriverExtra information in the DEVMODE
