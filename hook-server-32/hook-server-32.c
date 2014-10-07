@@ -27,7 +27,7 @@ int __cdecl wmain(int argc, WCHAR* argv[])
         return status;
 
     // TODO: do we need a message pump here?
-    
+
     return WaitForSingleObject(shutdownEvent, INFINITE);
     // Hooks are deleted when the owning thread terminates.
 }

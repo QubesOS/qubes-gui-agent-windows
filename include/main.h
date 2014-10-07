@@ -38,7 +38,6 @@ typedef struct _WATCHED_DC
     LONG	MaxWidth;
     LONG	MaxHeight;
     PPFN_ARRAY	pPfnArray;
-
 } WATCHED_DC, *PWATCHED_DC;
 
 typedef struct _BANNED_POPUP_WINDOWS

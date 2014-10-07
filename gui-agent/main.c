@@ -76,7 +76,6 @@ ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC)
     return ERROR_SUCCESS;
 }
 
-
 ULONG StartShellEventsThread(void)
 {
     DWORD threadId;
@@ -149,11 +148,11 @@ DWORD WINAPI ResetWatch(PVOID param)
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)& g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
         RemoveEntryList(&pWatchedDC->le);
         RemoveWatchedDC(pWatchedDC);
@@ -215,15 +214,15 @@ PWATCHED_DC FindWindowByHwnd(HWND hWnd)
     PWATCHED_DC pWatchedDC;
 
     LogVerbose("%x", hWnd);
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)& g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) & g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
 
         if (hWnd == pWatchedDC->hWnd)
             return pWatchedDC;
 
-        pWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
     }
 
     return NULL;
@@ -236,7 +235,7 @@ static BOOL WINAPI FindModalChildProc(
     IN LPARAM lParam
     )
 {
-    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS)lParam;
+    PMODAL_SEARCH_PARAMS msp = (PMODAL_SEARCH_PARAMS) lParam;
     LONG wantedStyle = WS_POPUP | WS_VISIBLE;
     HWND owner = GetWindow(hwnd, GW_OWNER);
 
@@ -324,7 +323,7 @@ ULONG CheckWatchedWindowUpdates(
         LogDebug("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
         modalParams.ParentWindow = pWatchedDC->hWnd;
         modalParams.ModalWindow = NULL;
-        EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
+        EnumWindows(FindModalChildProc, (LPARAM) &modalParams);
         LogDebug("result: 0x%x", modalParams.ModalWindow);
         if (modalParams.ModalWindow) // found a modal "child"
         {
@@ -435,7 +434,7 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
 BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 {
     WINDOWINFO wi;
-    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)lParam;
+    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS) lParam;
     ULONG i;
 
     wi.cbSize = sizeof(wi);
@@ -465,8 +464,8 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 {
     PWATCHED_DC pWatchedDC;
     PWATCHED_DC pNextWatchedDC;
-    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS)* 4];
-    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS)&BannedPopupsListBuffer;
+    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
+    PBANNED_POPUP_WINDOWS pBannedPopupsList = (PBANNED_POPUP_WINDOWS) &BannedPopupsListBuffer;
     BOOL bRecheckWindows = FALSE;
     HWND hwndOldDesktop = g_DesktopHwnd;
     ULONG uTotalPages, uPage, uDirtyPages = 0;
@@ -568,13 +567,13 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    EnumWindows(EnumWindowsProc, (LPARAM)pBannedPopupsList);
+    EnumWindows(EnumWindowsProc, (LPARAM) pBannedPopupsList);
 
-    pWatchedDC = (PWATCHED_DC)g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (PWATCHED_DC)&g_WatchedWindowsList)
+    pWatchedDC = (PWATCHED_DC) g_WatchedWindowsList.Flink;
+    while (pWatchedDC != (PWATCHED_DC) &g_WatchedWindowsList)
     {
         pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (PWATCHED_DC)pWatchedDC->le.Flink;
+        pNextWatchedDC = (PWATCHED_DC) pWatchedDC->le.Flink;
 
         if (!IsWindow(pWatchedDC->hWnd) || !ShouldAcceptWindow(pWatchedDC->hWnd, NULL))
         {
@@ -621,7 +620,7 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
     if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
         return NULL;
 
-    pWatchedDC = (PWATCHED_DC)malloc(sizeof(WATCHED_DC));
+    pWatchedDC = (PWATCHED_DC) malloc(sizeof(WATCHED_DC));
     if (!pWatchedDC)
         return NULL;
 
@@ -662,10 +661,9 @@ PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
 
     if (pWatchedDC->bOverrideRedirect)
         LogDebug("popup: %dx%d, screen %dx%d",
-            pwi->rcWindow.right - pwi->rcWindow.left,
-            pwi->rcWindow.bottom - pwi->rcWindow.top,
-            g_ScreenWidth, g_ScreenHeight);
-
+        pwi->rcWindow.right - pwi->rcWindow.left,
+        pwi->rcWindow.bottom - pwi->rcWindow.top,
+        g_ScreenWidth, g_ScreenHeight);
 
     pWatchedDC->hWnd = hWnd;
     pWatchedDC->rcWindow = pwi->rcWindow;
@@ -1000,9 +998,9 @@ static ULONG WINAPI WatchForEvents(void)
     if (bVchanIoInProgress)
         if (CancelIo(vchan))
         {
-            // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
-            // OVERLAPPED structure.
-            WaitForSingleObject(olVchan.hEvent, INFINITE);
+        // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
+        // OVERLAPPED structure.
+        WaitForSingleObject(olVchan.hEvent, INFINITE);
         }
 
     if (!g_VchanClientConnected)

@@ -93,7 +93,7 @@ static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
     if (ERROR_SUCCESS != FindQubesDisplayDevice(&DisplayDevice))
         return perror("FindQubesDisplayDevice");
 
-    ptszDeviceName = (PWCHAR)&DisplayDevice.DeviceName[0];
+    ptszDeviceName = (PWCHAR) &DisplayDevice.DeviceName[0];
 
     LogDebug("DeviceName: %s", ptszDeviceName);
 

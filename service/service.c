@@ -43,8 +43,8 @@ CRITICAL_SECTION wgaCs;
 int main(int argc, WCHAR *argv[])
 {
     SERVICE_TABLE_ENTRY	serviceTable[] = {
-        {SERVICE_NAME, ServiceMain},
-        {NULL, NULL}
+            { SERVICE_NAME, ServiceMain },
+            { NULL, NULL }
     };
 
     InitializeCriticalSection(&wgaCs);
@@ -74,7 +74,7 @@ BOOL IsProcessRunning(IN const WCHAR *exeName, OUT PDWORD processId OPTIONAL, OU
         goto cleanup;
     }
 
-    for (i = 0; i<count; i++)
+    for (i = 0; i < count; i++)
     {
         if (0 == _wcsnicmp(exeName, processInfo[i].pProcessName, wcslen(exeName))) // match
         {
@@ -123,7 +123,7 @@ DWORD TerminateTargetProcess(WCHAR *exeName)
         LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
             exeName, processId, sessionId, WGA_TERMINATE_TIMEOUT);
 
-        targetProcess = OpenProcess(SYNCHRONIZE|PROCESS_TERMINATE, FALSE, processId);
+        targetProcess = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, processId);
 
         if (!targetProcess)
         {
@@ -204,7 +204,7 @@ DWORD WINAPI WatchdogThread(void *param)
     WCHAR *cmdline;
     WCHAR *exeName;
 
-    cmdline = (WCHAR*)param;
+    cmdline = (WCHAR*) param;
     PathUnquoteSpaces(cmdline);
     exeName = PathFindFileName(cmdline);
 
@@ -236,7 +236,7 @@ DWORD WINAPI SessionChangeThread(void *param)
 
     LogDebug("start");
 
-    cmdline = (WCHAR*)param;
+    cmdline = (WCHAR*) param;
     PathUnquoteSpaces(cmdline);
     exeName = PathFindFileName(cmdline);
 
@@ -269,7 +269,7 @@ DWORD WINAPI SessionChangeThread(void *param)
             break;
 
         default:
-            LogWarning("Wait failed, result 0x%x", signaledEvent+WAIT_OBJECT_0);
+            LogWarning("Wait failed, result 0x%x", signaledEvent + WAIT_OBJECT_0);
         }
     }
 
@@ -310,14 +310,14 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
         LogWarning("Failed to load sas.dll, simulating CTRL+ALT+DELETE will not be possible");
     }
 
-    g_Status.dwServiceType        = SERVICE_WIN32;
-    g_Status.dwCurrentState       = SERVICE_START_PENDING;
+    g_Status.dwServiceType = SERVICE_WIN32;
+    g_Status.dwCurrentState = SERVICE_START_PENDING;
     // SERVICE_ACCEPT_SESSIONCHANGE allows us to receive session change notifications.
-    g_Status.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE;
-    g_Status.dwWin32ExitCode      = 0;
+    g_Status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE;
+    g_Status.dwWin32ExitCode = 0;
     g_Status.dwServiceSpecificExitCode = 0;
-    g_Status.dwCheckPoint         = 0;
-    g_Status.dwWaitHint           = 0;
+    g_Status.dwCheckPoint = 0;
+    g_Status.dwWaitHint = 0;
     g_StatusHandle = RegisterServiceCtrlHandlerEx(SERVICE_NAME, ControlHandlerEx, NULL);
     if (g_StatusHandle == 0)
     {
@@ -384,7 +384,7 @@ void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
 
 DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
 {
-    switch(dwControl)
+    switch (dwControl)
     {
     case SERVICE_CONTROL_STOP:
     case SERVICE_CONTROL_SHUTDOWN:

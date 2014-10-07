@@ -15,7 +15,7 @@ int VchanSendBuffer(const void *buf, int size)
 
     while (written < size)
     {
-        ret = libvchan_write(g_Vchan, (char *)buf + written, size - written);
+        ret = libvchan_write(g_Vchan, (char *) buf + written, size - written);
         if (ret <= 0)
             return ret;
 
@@ -43,7 +43,7 @@ int VchanReceiveBuffer(void *buf, int size)
     int ret;
     while (written < size)
     {
-        ret = libvchan_read(g_Vchan, (char *)buf + written, size - written);
+        ret = libvchan_read(g_Vchan, (char *) buf + written, size - written);
         if (ret <= 0)
             return ret;
 

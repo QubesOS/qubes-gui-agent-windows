@@ -35,15 +35,15 @@ static void SendMsg(QH_MESSAGE *msg)
 
 void ProcessMessage(QH_MESSAGE *qhm)
 {
-    WINDOWPOS* wp = (WINDOWPOS*)qhm->lParam;
-    STYLESTRUCT* ss = (STYLESTRUCT*)qhm->lParam;
+    WINDOWPOS* wp = (WINDOWPOS*) qhm->lParam;
+    STYLESTRUCT* ss = (STYLESTRUCT*) qhm->lParam;
 
     switch (qhm->Message)
     {
     case WM_ACTIVATE:
         SendMsg(qhm);
         break;
-    
+
     case WM_WINDOWPOSCHANGED:
         qhm->Flags = wp->flags;
         qhm->X = wp->x;
@@ -52,14 +52,13 @@ void ProcessMessage(QH_MESSAGE *qhm)
         qhm->Height = wp->cy;
         SendMsg(qhm);
         break;
-    
+
     case WM_STYLECHANGED:
         qhm->Style = ss->styleNew;
         qhm->StyleOld = ss->styleOld;
         SendMsg(qhm);
         break;
     }
-
 }
 
 LRESULT CALLBACK CallWndProc(
@@ -68,7 +67,7 @@ LRESULT CALLBACK CallWndProc(
     LPARAM lParam
     )
 {
-    CWPSTRUCT *cwp = (CWPSTRUCT*)lParam;
+    CWPSTRUCT *cwp = (CWPSTRUCT*) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)
@@ -79,7 +78,7 @@ LRESULT CALLBACK CallWndProc(
 
     qhm.HookId = WH_CALLWNDPROC;
     qhm.Message = cwp->message;
-    qhm.WindowHandle = (UINT64)cwp->hwnd;
+    qhm.WindowHandle = (UINT64) cwp->hwnd;
     qhm.wParam = cwp->wParam;
     qhm.lParam = cwp->lParam;
 
@@ -94,7 +93,7 @@ LRESULT CALLBACK GetMsgProc(
     LPARAM lParam
     )
 {
-    MSG *msg = (MSG*)lParam;
+    MSG *msg = (MSG*) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)
@@ -105,7 +104,7 @@ LRESULT CALLBACK GetMsgProc(
 
     qhm.HookId = WH_GETMESSAGE;
     qhm.Message = msg->message;
-    qhm.WindowHandle = (UINT64)msg->hwnd;
+    qhm.WindowHandle = (UINT64) msg->hwnd;
     qhm.wParam = msg->wParam;
     qhm.lParam = msg->lParam;
 
@@ -120,7 +119,7 @@ LRESULT CALLBACK CBTProc(
     LPARAM lParam
     )
 {
-    MSG *msg = (MSG*)lParam;
+    MSG *msg = (MSG*) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)
@@ -130,7 +129,7 @@ LRESULT CALLBACK CBTProc(
     }
 
     qhm.HookId = WH_CBT;
-    qhm.WindowHandle = (UINT64)wParam;
+    qhm.WindowHandle = (UINT64) wParam;
     qhm.lParam = lParam;
 
     switch (code)
@@ -154,10 +153,10 @@ LRESULT CALLBACK CBTProc(
 
     case HCBT_MOVESIZE:
         qhm.Message = HCBT_MOVESIZE;
-        qhm.X = ((RECT*)lParam)->left;
-        qhm.Y = ((RECT*)lParam)->top;
-        qhm.Width = ((RECT*)lParam)->right - ((RECT*)lParam)->left;
-        qhm.Height = ((RECT*)lParam)->bottom - ((RECT*)lParam)->top;
+        qhm.X = ((RECT*) lParam)->left;
+        qhm.Y = ((RECT*) lParam)->top;
+        qhm.Width = ((RECT*) lParam)->right - ((RECT*) lParam)->left;
+        qhm.Height = ((RECT*) lParam)->bottom - ((RECT*) lParam)->top;
         break;
 
     case HCBT_SETFOCUS:

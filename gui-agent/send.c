@@ -91,7 +91,7 @@ static ULONG PrepareShmCmd(PWATCHED_DC pWatchedDC, struct shm_cmd **ppShmCmd)
     pShmCmd->domid = 0;
 
     for (i = 0; i < pPfnArray->uNumberOf4kPages; i++)
-        pShmCmd->mfns[i] = (uint32_t)pPfnArray->Pfn[i];
+        pShmCmd->mfns[i] = (uint32_t) pPfnArray->Pfn[i];
 
     *ppShmCmd = pShmCmd;
 
@@ -123,7 +123,7 @@ void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
 
     if (pShmCmd->num_mfn == 0 || pShmCmd->num_mfn > MAX_MFN_COUNT)
     {
-        LogError("too large num_mfn=%lu for window 0x%x", pShmCmd->num_mfn, (int)hWnd);
+        LogError("too large num_mfn=%lu for window 0x%x", pShmCmd->num_mfn, (int) hWnd);
         free(pShmCmd);
         return;
     }
@@ -131,7 +131,7 @@ void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
     size = pShmCmd->num_mfn * sizeof(uint32_t);
 
     hdr.type = MSG_MFNDUMP;
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -185,7 +185,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
             pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom,
             pWatchedDC->bOverrideRedirect);
 
-        hdr.window = (uint32_t)pWatchedDC->hWnd;
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
         wi.rcWindow = pWatchedDC->rcWindow;
     }
 
@@ -195,7 +195,7 @@ ULONG send_window_create(PWATCHED_DC pWatchedDC)
     mc.y = wi.rcWindow.top;
     mc.width = wi.rcWindow.right - wi.rcWindow.left;
     mc.height = wi.rcWindow.bottom - wi.rcWindow.top;
-    mc.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+    mc.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
     mc.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -217,7 +217,7 @@ ULONG send_window_destroy(HWND hWnd)
 
     LogDebug("0x%x", hWnd);
     hdr.type = MSG_DESTROY;
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     VCHAN_SEND(hdr);
@@ -233,7 +233,7 @@ ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
 
     LogDebug("0x%x: set 0x%x, unset 0x%x", hWnd, flags_set, flags_unset);
     hdr.type = MSG_WINDOW_FLAGS;
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = 0;
     flags.flags_set = flags_set;
     flags.flags_unset = flags_unset;
@@ -252,7 +252,7 @@ void send_window_hints(HWND hWnd, uint32_t flags)
     msg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
 
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -285,7 +285,7 @@ ULONG send_window_unmap(HWND hWnd)
     LogInfo("Unmapping window 0x%x\n", hWnd);
 
     hdr.type = MSG_UNMAP;
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     VCHAN_SEND(hdr);
@@ -306,15 +306,15 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
 
     hdr.type = MSG_MAP;
     if (pWatchedDC)
-        hdr.window = (uint32_t)pWatchedDC->hWnd;
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
     else
         hdr.window = 0;
     hdr.untrusted_len = 0;
 
     if (pWatchedDC && pWatchedDC->ModalParent)
-        mmi.transient_for = (uint32_t)pWatchedDC->ModalParent;
+        mmi.transient_for = (uint32_t) pWatchedDC->ModalParent;
     else
-        mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE;
+        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
 
     if (pWatchedDC)
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
@@ -351,7 +351,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
     if (pWatchedDC)
     {
         LogDebug("0x%x", pWatchedDC->hWnd);
-        hdr.window = (uint32_t)pWatchedDC->hWnd;
+        hdr.window = (uint32_t) pWatchedDC->hWnd;
 
         hdr.type = MSG_CONFIGURE;
 
@@ -385,7 +385,7 @@ ULONG send_window_configure(PWATCHED_DC pWatchedDC)
 
     if (pWatchedDC && pWatchedDC->bVisible)
     {
-        mmi.transient_for = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
         mmi.override_redirect = pWatchedDC->bOverrideRedirect;
 
         hdr.type = MSG_MAP;
@@ -427,7 +427,7 @@ void send_window_damage_event(HWND hWnd, int x, int y, int width, int height)
 
     LogVerbose("0x%x (%d,%d)-(%d,%d)", hWnd, x, y, x + width, y + height);
     hdr.type = MSG_SHMIMAGE;
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     mx.x = x;
     mx.y = y;
     mx.width = width;
@@ -457,7 +457,7 @@ void send_wmname(HWND hWnd)
     }
     LogDebug("0x%x %S", hWnd, msg.data);
 
-    hdr.window = (uint32_t)hWnd;
+    hdr.window = (uint32_t) hWnd;
     hdr.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
     VCHAN_SEND_MSG(hdr, msg);

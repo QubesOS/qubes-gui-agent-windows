@@ -82,7 +82,7 @@ ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
     STARTUPINFO si = { 0 };
     PROCESS_INFORMATION pi;
     WCHAR exePath[MAX_PATH]; // cmdline can't be read-only
-    
+
     LogDebug("%s", executable);
 
     StringCchCopy(exePath, RTL_NUMBER_OF(exePath), executable);
@@ -173,7 +173,7 @@ ULONG DisableEffects(void)
     ANIMATIONINFO AnimationInfo;
 
     LogDebug("start");
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID)FALSE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) FALSE, SPIF_UPDATEINIFILE))
         return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
 
     AnimationInfo.cbSize = sizeof(AnimationInfo);
@@ -237,8 +237,8 @@ ULONG AttachToInputDesktop(void)
 
 cleanup:
     if (oldDesktop)
-    if (!CloseDesktop(oldDesktop))
-        perror("CloseDesktop(previous)");
+        if (!CloseDesktop(oldDesktop))
+            perror("CloseDesktop(previous)");
     return uResult;
 }
 

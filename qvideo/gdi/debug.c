@@ -41,24 +41,23 @@ ULONG DebugLevel = 90;
  ***************************************************************************/
 
 VOID DebugPrint(
-	__in ULONG DebugPrintLevel,
-	__in PCHAR DebugMessage,
-	...
-)
+    __in ULONG DebugPrintLevel,
+    __in PCHAR DebugMessage,
+    ...
+    )
 {
+    va_list ap;
 
-	va_list ap;
+    UNREFERENCED_PARAMETER(DebugPrintLevel);
 
-	UNREFERENCED_PARAMETER(DebugPrintLevel);
+    va_start(ap, DebugMessage);
 
-	va_start(ap, DebugMessage);
+    if (DebugPrintLevel <= DebugLevel)
+    {
+        EngDebugPrint("", DebugMessage, ap);
+    }
 
-	if (DebugPrintLevel <= DebugLevel) {
-		EngDebugPrint("", DebugMessage, ap);
-	}
-
-	va_end(ap);
-
+    va_end(ap);
 }
 
 #endif

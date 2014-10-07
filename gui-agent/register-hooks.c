@@ -18,7 +18,7 @@ DWORD SetHooks(WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(CBTProc)");
 
-    if (!SetWindowsHookEx(WH_CBT, (HOOKPROC)hookProc, hookDll, 0))
+    if (!SetWindowsHookEx(WH_CBT, (HOOKPROC) hookProc, hookDll, 0))
         return perror("SetWindowsHookEx(CBTProc)");
 
     // CallWndProc hook
@@ -26,7 +26,7 @@ DWORD SetHooks(WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(CallWndProc)");
 
-    if (!SetWindowsHookEx(WH_CALLWNDPROC, (HOOKPROC)hookProc, hookDll, 0))
+    if (!SetWindowsHookEx(WH_CALLWNDPROC, (HOOKPROC) hookProc, hookDll, 0))
         return perror("SetWindowsHookEx(CallWndProc)");
 
     // GetMsgProc hook
@@ -34,7 +34,7 @@ DWORD SetHooks(WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(GetMsgProc)");
 
-    if (!SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC)hookProc, hookDll, 0))
+    if (!SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC) hookProc, hookDll, 0))
         return perror("SetWindowsHookEx(GetMsgProc)");
 
     return ERROR_SUCCESS;

@@ -2,7 +2,7 @@
 #if DBG
 VOID QubesVideoNotImplemented(
     __in char *s
-)
+    )
 {
     VideoDebugPrint((0, "QubesVideo: Not used '%s'.\n", s));
 }
@@ -14,7 +14,7 @@ BOOLEAN QubesVideoResetHW(
     PVOID HwDeviceExtension,
     ULONG Columns,
     ULONG Rows
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
     UNREFERENCED_PARAMETER(Columns);
@@ -29,7 +29,7 @@ VP_STATUS QubesVideoGetPowerState(
     PVOID HwDeviceExtension,
     ULONG HwId,
     PVIDEO_POWER_MANAGEMENT VideoPowerControl
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
     UNREFERENCED_PARAMETER(HwId);
@@ -44,7 +44,7 @@ VP_STATUS QubesVideoSetPowerState(
     PVOID HwDeviceExtension,
     ULONG HwId,
     PVIDEO_POWER_MANAGEMENT VideoPowerControl
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
     UNREFERENCED_PARAMETER(HwId);
@@ -62,7 +62,7 @@ VP_STATUS QubesVideoGetChildDescriptor(
     OUT PVOID pChildDescriptor,
     OUT PULONG pUId,
     OUT PULONG pUnused
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
     UNREFERENCED_PARAMETER(ChildEnumInfo);
@@ -82,7 +82,7 @@ VP_STATUS __checkReturn QubesVideoFindAdapter(
     __in PWSTR ArgumentString,
     __inout_bcount(sizeof(VIDEO_PORT_CONFIG_INFO)) PVIDEO_PORT_CONFIG_INFO ConfigInfo,
     __out PUCHAR Again
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
     UNREFERENCED_PARAMETER(HwContext);
@@ -97,7 +97,7 @@ VP_STATUS __checkReturn QubesVideoFindAdapter(
 
 BOOLEAN QubesVideoInitialize(
     PVOID HwDeviceExtension
-)
+    )
 {
     UNREFERENCED_PARAMETER(HwDeviceExtension);
 
@@ -109,7 +109,7 @@ BOOLEAN QubesVideoInitialize(
 BOOLEAN QubesVideoStartIO(
     PVOID HwDeviceExtension,
     PVIDEO_REQUEST_PACKET RequestPacket
-)
+    )
 {
     PQVMINI_ALLOCATE_MEMORY pQvminiAllocateMemory = NULL;
     PQVMINI_ALLOCATE_MEMORY_RESPONSE pQvminiAllocateMemoryResponse = NULL;
@@ -125,7 +125,7 @@ BOOLEAN QubesVideoStartIO(
     RequestPacket->StatusBlock->Status = 0;
     RequestPacket->StatusBlock->Information = 0;
 
-//  VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
+    //  VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
 
     switch (RequestPacket->IoControlCode)
     {
@@ -162,7 +162,7 @@ BOOLEAN QubesVideoStartIO(
         }
         else
         {
-//          VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
+            //          VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
 
             RequestPacket->StatusBlock->Status = NO_ERROR;
             RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
@@ -180,7 +180,7 @@ BOOLEAN QubesVideoStartIO(
 
         pQvminiFreeMemory = RequestPacket->InputBuffer;
 
-//      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
+        //      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
 
         FreeMemory(pQvminiFreeMemory->pVirtualAddress, pQvminiFreeMemory->pPfnArray);
 
@@ -241,7 +241,7 @@ BOOLEAN QubesVideoStartIO(
         }
         else
         {
-//          VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
+            //          VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
 
             RequestPacket->StatusBlock->Status = NO_ERROR;
             RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE);
@@ -259,7 +259,7 @@ BOOLEAN QubesVideoStartIO(
 
         pQvminiFreeSection = RequestPacket->InputBuffer;
 
-//      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
+        //      VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
 
         FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject,
             pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress,
@@ -282,7 +282,7 @@ BOOLEAN QubesVideoStartIO(
 ULONG DriverEntry(
     PVOID Context1,
     PVOID Context2
-)
+    )
 {
     VIDEO_HW_INITIALIZATION_DATA hwInitData;
     ULONG initializationStatus;

@@ -49,7 +49,8 @@
 #pragma warning(push)
 #pragma warning(disable: 4214) // bitfields other than int
 
-typedef struct _HARDWARE_PTE {
+typedef struct _HARDWARE_PTE
+{
     ULONG64 Valid : 1;
     ULONG64 Write : 1;                // UP version
     ULONG64 Owner : 1;
@@ -63,12 +64,13 @@ typedef struct _HARDWARE_PTE {
     ULONG64 Prototype : 1;            // software field
     ULONG64 reserved0 : 1;            // software field
     ULONG64 PageFrameNumber : 28;
-    ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS+1);
+    ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS + 1);
     ULONG64 SoftwareWsIndex : _HARDWARE_PTE_WORKING_SET_BITS;
     ULONG64 NoExecute : 1;
 } HARDWARE_PTE, *PHARDWARE_PTE;
 
-typedef struct _MMPTE_SOFTWARE {
+typedef struct _MMPTE_SOFTWARE
+{
     ULONGLONG Valid : 1;
     ULONGLONG PageFileLow : 4;
     ULONGLONG Protection : 5;
@@ -79,7 +81,8 @@ typedef struct _MMPTE_SOFTWARE {
     ULONGLONG PageFileHigh : 32;
 } MMPTE_SOFTWARE;
 
-typedef struct _MMPTE_TRANSITION {
+typedef struct _MMPTE_TRANSITION
+{
     ULONGLONG Valid : 1;
     ULONGLONG Write : 1;
     ULONGLONG Owner : 1;
@@ -92,17 +95,19 @@ typedef struct _MMPTE_TRANSITION {
     ULONGLONG Unused : 24;
 } MMPTE_TRANSITION;
 
-typedef struct _MMPTE_PROTOTYPE {
+typedef struct _MMPTE_PROTOTYPE
+{
     ULONGLONG Valid : 1;
-    ULONGLONG Unused0: 7;
+    ULONGLONG Unused0 : 7;
     ULONGLONG ReadOnly : 1;
-    ULONGLONG Unused1: 1;
+    ULONGLONG Unused1 : 1;
     ULONGLONG Prototype : 1;
     ULONGLONG Protection : 5;
-    LONGLONG ProtoAddress: 48;
+    LONGLONG ProtoAddress : 48;
 } MMPTE_PROTOTYPE;
 
-typedef struct _MMPTE_SUBSECTION {
+typedef struct _MMPTE_SUBSECTION
+{
     ULONGLONG Valid : 1;
     ULONGLONG Unused0 : 4;
     ULONGLONG Protection : 5;
@@ -111,7 +116,8 @@ typedef struct _MMPTE_SUBSECTION {
     LONGLONG SubsectionAddress : 48;
 } MMPTE_SUBSECTION;
 
-typedef struct _MMPTE_LIST {
+typedef struct _MMPTE_LIST
+{
     ULONGLONG Valid : 1;
     ULONGLONG OneEntry : 1;
     ULONGLONG filler0 : 3;
@@ -136,12 +142,14 @@ typedef struct _MMPTE_LIST {
     ULONGLONG NextEntry : 32;
 } MMPTE_LIST;
 
-typedef struct _MMPTE_HIGHLOW {
+typedef struct _MMPTE_HIGHLOW
+{
     ULONG LowPart;
     ULONG HighPart;
 } MMPTE_HIGHLOW;
 
-typedef struct _MMPTE_HARDWARE_LARGEPAGE {
+typedef struct _MMPTE_HARDWARE_LARGEPAGE
+{
     ULONGLONG Valid : 1;
     ULONGLONG Write : 1;
     ULONGLONG Owner : 1;
@@ -169,7 +177,8 @@ typedef struct _MMPTE_HARDWARE_LARGEPAGE {
 // Uniprocessor version.
 //
 
-typedef struct _MMPTE_HARDWARE {
+typedef struct _MMPTE_HARDWARE
+{
     ULONGLONG Valid : 1;
 #if defined(NT_UP)
     ULONGLONG Write : 1;        // UP version
@@ -191,7 +200,7 @@ typedef struct _MMPTE_HARDWARE {
     ULONGLONG Write : 1;       // software field - MP change
 #endif
     ULONGLONG PageFrameNumber : 28;
-    ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS+1);
+    ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS + 1);
     ULONGLONG SoftwareWsIndex : _HARDWARE_PTE_WORKING_SET_BITS;
     ULONG64 NoExecute : 1;
 } MMPTE_HARDWARE, *PMMPTE_HARDWARE;
@@ -222,8 +231,10 @@ typedef struct _MMPTE_HARDWARE {
 #define VIRTUAL_ADDRESS_BITS 48
 #define VIRTUAL_ADDRESS_MASK ((((ULONG_PTR)1) << VIRTUAL_ADDRESS_BITS) - 1)
 
-typedef struct _MMPTE {
-    union  {
+typedef struct _MMPTE
+{
+    union
+    {
         ULONG_PTR Long;
         MMPTE_HARDWARE Hard;
         MMPTE_HARDWARE_LARGEPAGE HardLarge;

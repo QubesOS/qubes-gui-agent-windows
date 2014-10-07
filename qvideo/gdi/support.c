@@ -20,14 +20,14 @@ ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
     ULONG ulKeyInfoSizeNeeded = 0;
 
     RtlInitUnicodeString(&usKeyName, REG_CONFIG_KERNEL_KEY);
-    InitializeObjectAttributes(&attributes, 
+    InitializeObjectAttributes(&attributes,
         &usKeyName,
         OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         NULL,    // handle
         NULL);
 
     status = ZwOpenKey(&handleRegKey, KEY_READ, &attributes);
-    if (!NT_SUCCESS(status)) 
+    if (!NT_SUCCESS(status))
     {
         WARNINGF("ZwOpenKey(%wZ) failed", usKeyName);
         goto cleanup;
@@ -203,8 +203,8 @@ ULONG UpdateDirtyBits(
         DEBUGF("WGA ready");
     }
 
-    for (ptr = (PUCHAR)va, pageNumber = 0;
-        ptr < (PUCHAR)va + size;
+    for (ptr = (PUCHAR) va, pageNumber = 0;
+        ptr < (PUCHAR) va + size;
         ptr += PAGE_SIZE, pageNumber++
         )
     {
@@ -218,7 +218,7 @@ ULONG UpdateDirtyBits(
             if (IsPteDirty(pte))
             {
                 BIT_SET(pDirtyPages->DirtyBits, pageNumber);
-                pte->u.Hard.Dirty = 0;         
+                pte->u.Hard.Dirty = 0;
                 dirty++;
             }
         }
