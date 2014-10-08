@@ -7,7 +7,7 @@ int apply_settings()
 {
     int ret;
 
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) FALSE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) FALSE, SPIF_UPDATEINIFILE))
         return 1;
 
     return 0;
@@ -17,7 +17,7 @@ int rollback_settings()
 {
     int ret;
 
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) TRUE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) TRUE, SPIF_UPDATEINIFILE))
         return 1;
 
     return 0;
@@ -29,7 +29,7 @@ void usage()
     exit(1);
 }
 
-int __cdecl _tmain(int argc, PZPWSTR argv)
+int __cdecl _tmain(int argc, TCHAR *argv[])
 {
     if (argc < 2)
     {

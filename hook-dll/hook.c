@@ -5,9 +5,10 @@
 
 HANDLE g_Slot = INVALID_HANDLE_VALUE;
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, void *lpReserved)
 {
     WCHAR buf[128] = { 0 };
+
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
@@ -35,8 +36,8 @@ static void SendMsg(QH_MESSAGE *msg)
 
 void ProcessMessage(QH_MESSAGE *qhm)
 {
-    WINDOWPOS* wp = (WINDOWPOS*) qhm->lParam;
-    STYLESTRUCT* ss = (STYLESTRUCT*) qhm->lParam;
+    WINDOWPOS *wp = (WINDOWPOS*) qhm->lParam;
+    STYLESTRUCT *ss = (STYLESTRUCT*) qhm->lParam;
 
     switch (qhm->Message)
     {
@@ -67,7 +68,7 @@ LRESULT CALLBACK CallWndProc(
     LPARAM lParam
     )
 {
-    CWPSTRUCT *cwp = (CWPSTRUCT*) lParam;
+    CWPSTRUCT *cwp = (CWPSTRUCT *) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)
@@ -119,7 +120,7 @@ LRESULT CALLBACK CBTProc(
     LPARAM lParam
     )
 {
-    MSG *msg = (MSG*) lParam;
+    MSG *msg = (MSG *) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)

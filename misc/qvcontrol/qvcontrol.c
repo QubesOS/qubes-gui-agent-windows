@@ -3,7 +3,7 @@
 #define QUBES_DRIVER_NAME	_T("Qubes Video Driver")
 
 ULONG FindQubesDisplayDevice(
-    PDISPLAY_DEVICE pQubesDisplayDevice
+    DISPLAY_DEVICE *pQubesDisplayDevice
     )
 {
     DISPLAY_DEVICE DisplayDevice;

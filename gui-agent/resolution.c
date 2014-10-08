@@ -76,7 +76,7 @@ void RequestResolutionChange(LONG width, LONG height, LONG bpp, LONG x, LONG y)
 // Actually set video mode through qvideo calls.
 static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
 {
-    PWCHAR ptszDeviceName = NULL;
+    WCHAR *ptszDeviceName = NULL;
     DISPLAY_DEVICE DisplayDevice;
 
     if (!IS_RESOLUTION_VALID(uWidth, uHeight))

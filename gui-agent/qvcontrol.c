@@ -10,11 +10,11 @@
 
 #define CHANGE_DISPLAY_MODE_TRIES 5
 
-PBYTE g_pScreenData = NULL;
+BYTE *g_pScreenData = NULL;
 HANDLE g_hScreenSection = NULL;
 
 // bit array of dirty pages in the screen buffer (changed since last check)
-PQV_DIRTY_PAGES g_pDirtyPages = NULL;
+QV_DIRTY_PAGES *g_pDirtyPages = NULL;
 HANDLE g_hDirtySection = NULL;
 
 ULONG CloseScreenSection(void)
@@ -60,7 +60,7 @@ ULONG OpenScreenSection()
     if (!g_hScreenSection)
         return perror("OpenFileMapping(screen section)");
 
-    g_pScreenData = (PBYTE) MapViewOfFile(g_hScreenSection, FILE_MAP_READ, 0, 0, 0);
+    g_pScreenData = (BYTE *) MapViewOfFile(g_hScreenSection, FILE_MAP_READ, 0, 0, 0);
     if (!g_pScreenData)
         return perror("MapViewOfFile(screen section)");
 
@@ -75,7 +75,7 @@ ULONG OpenScreenSection()
         if (!g_hDirtySection)
             return perror("OpenFileMapping(dirty section)");
 
-        g_pDirtyPages = (PQV_DIRTY_PAGES) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
+        g_pDirtyPages = (QV_DIRTY_PAGES *) MapViewOfFile(g_hDirtySection, FILE_MAP_READ, 0, 0, 0);
         if (!g_pDirtyPages)
             return perror("MapViewOfFile(dirty section)");
 
@@ -85,9 +85,7 @@ ULONG OpenScreenSection()
     return ERROR_SUCCESS;
 }
 
-ULONG FindQubesDisplayDevice(
-    PDISPLAY_DEVICE pQubesDisplayDevice
-    )
+ULONG FindQubesDisplayDevice(DISPLAY_DEVICE *pQubesDisplayDevice)
 {
     DISPLAY_DEVICE DisplayDevice;
     DWORD iDevNum = 0;
@@ -150,7 +148,7 @@ ULONG SupportVideoMode(
     QvSupportMode.uHeight = uHeight;
     QvSupportMode.uBpp = uBpp;
 
-    iRet = ExtEscape(hControlDC, QVESC_SUPPORT_MODE, sizeof(QvSupportMode), (LPCSTR) & QvSupportMode, 0, NULL);
+    iRet = ExtEscape(hControlDC, QVESC_SUPPORT_MODE, sizeof(QvSupportMode), (LPCSTR) &QvSupportMode, 0, NULL);
     DeleteDC(hControlDC);
 
     if (iRet <= 0)
@@ -165,8 +163,8 @@ ULONG SupportVideoMode(
 
 ULONG GetWindowData(
     HWND hWnd,
-    PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse,
-    PPFN_ARRAY pPfnArray
+    QV_GET_SURFACE_DATA_RESPONSE *pQvGetSurfaceDataResponse,
+    PFN_ARRAY *pPfnArray
     )
 {
     HDC hDC;
@@ -209,7 +207,7 @@ ULONG GetWindowData(
 }
 
 ULONG ChangeVideoMode(
-    PWCHAR deviceName,
+    WCHAR *deviceName,
     ULONG uWidth,
     ULONG uHeight,
     ULONG uBpp

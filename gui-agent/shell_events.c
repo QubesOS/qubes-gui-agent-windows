@@ -39,7 +39,7 @@ void AddWindow(HWND hWnd)
 
 void RemoveWindow(HWND hWnd)
 {
-    PWATCHED_DC pWatchedDC;
+    WATCHED_DC *pWatchedDC;
 
     LogDebug("0x%x", hWnd);
     EnterCriticalSection(&g_csWatchedWindows);
@@ -62,7 +62,7 @@ void RemoveWindow(HWND hWnd)
 ULONG CheckWindowUpdates(HWND hWnd)
 {
     WINDOWINFO wi;
-    PWATCHED_DC pWatchedDC = NULL;
+    WATCHED_DC *pWatchedDC = NULL;
 
     LogDebug("0x%x", hWnd);
     wi.cbSize = sizeof(wi);
@@ -140,15 +140,8 @@ LRESULT CALLBACK ShellHookWndProc(
 
     switch (uMsg)
     {
-    case WM_WTSSESSION_CHANGE:
-        LogInfo("session change: event 0x%x, session %d", wParam, lParam);
-        //if (!CreateThread(0, 0, ResetWatch, NULL, 0, NULL))
-        //    perror("CreateThread(ResetWatch)");
-        break;
     case WM_CLOSE:
         LogDebug("WM_CLOSE");
-        //if (!WTSUnRegisterSessionNotification(hwnd))
-        //    perror("WTSUnRegisterSessionNotification");
         DestroyWindow(hwnd);
         break;
     case WM_DESTROY:
@@ -199,15 +192,7 @@ ULONG CreateShellHookWindow(HWND *pWindow)
         UnregisterClass(g_szClassName, hInstance);
         return uResult;
     }
-    /*
-    if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_ALL_SESSIONS))
-    {
-    uResult = perror("WTSRegisterSessionNotification");
-    DestroyWindow(hwnd);
-    UnregisterClass(g_szClassName, hInstance);
-    return uResult;
-    }
-    */
+
     if (!g_uShellHookMessage)
         g_uShellHookMessage = RegisterWindowMessage(L"SHELLHOOK");
 
@@ -235,7 +220,7 @@ ULONG ShellHookMessageLoop()
     return ERROR_SUCCESS;
 }
 
-ULONG WINAPI ShellEventsThread(PVOID pParam)
+ULONG WINAPI ShellEventsThread(void *pParam)
 {
     ULONG uResult;
 

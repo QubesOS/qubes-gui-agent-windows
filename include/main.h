@@ -19,46 +19,46 @@ extern CRITICAL_SECTION g_csWatchedWindows;
 
 typedef struct _WATCHED_DC
 {
-    HWND    hWnd;
-    HDC     hDC;
+    HWND hWnd;
+    HDC hDC;
 
-    RECT	rcWindow;
-    LIST_ENTRY	le;
+    RECT rcWindow;
+    LIST_ENTRY le;
 
-    BOOL	bVisible;
-    BOOL	bOverrideRedirect;
-    HWND    ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
-    ULONG   uTimeModalChecked; // time of last check for modal window
+    BOOL bVisible;
+    BOOL bOverrideRedirect;
+    HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
+    ULONG uTimeModalChecked; // time of last check for modal window
 
-    BOOL	bStyleChecked;
-    ULONG	uTimeAdded;
+    BOOL bStyleChecked;
+    ULONG uTimeAdded;
 
-    BOOL	bIconic;
+    BOOL bIconic;
 
-    LONG	MaxWidth;
-    LONG	MaxHeight;
-    PPFN_ARRAY	pPfnArray;
-} WATCHED_DC, *PWATCHED_DC;
+    LONG MaxWidth;
+    LONG MaxHeight;
+    PFN_ARRAY *pPfnArray;
+} WATCHED_DC;
 
 typedef struct _BANNED_POPUP_WINDOWS
 {
-    ULONG	uNumberOfBannedPopups;
-    HWND	hBannedPopupArray[1];
-} BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
+    ULONG uNumberOfBannedPopups;
+    HWND hBannedPopupArray[1];
+} BANNED_POPUP_WINDOWS;
 
 // used when searching for modal window that's blocking another window
 typedef struct _MODAL_SEARCH_PARAMS
 {
     HWND ParentWindow; // window that's disabled by a modal window, input
     HWND ModalWindow; // modal window that's active, output
-} MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
+} MODAL_SEARCH_PARAMS;
 
 #define InitializeListHead(ListHead) (\
     (ListHead)->Flink = (ListHead)->Blink = (ListHead))
 
 #define RemoveEntryList(Entry) {\
-    PLIST_ENTRY _EX_Blink; \
-    PLIST_ENTRY _EX_Flink; \
+    LIST_ENTRY *_EX_Blink; \
+    LIST_ENTRY *_EX_Flink; \
     _EX_Flink = (Entry)->Flink; \
     _EX_Blink = (Entry)->Blink; \
     _EX_Blink->Flink = _EX_Flink; \
@@ -73,8 +73,8 @@ typedef struct _MODAL_SEARCH_PARAMS
     ((ListHead)->Flink == (ListHead))
 
 #define InsertHeadList(ListHead,Entry) {\
-    PLIST_ENTRY _EX_Flink; \
-    PLIST_ENTRY _EX_ListHead; \
+    LIST_ENTRY *_EX_Flink; \
+    LIST_ENTRY *_EX_ListHead; \
     _EX_ListHead = (ListHead); \
     _EX_Flink = _EX_ListHead->Flink; \
     (Entry)->Flink = _EX_Flink; \
@@ -84,8 +84,8 @@ typedef struct _MODAL_SEARCH_PARAMS
 }
 
 #define InsertTailList(ListHead,Entry) {\
-    PLIST_ENTRY _EX_Blink; \
-    PLIST_ENTRY _EX_ListHead; \
+    LIST_ENTRY *_EX_Blink; \
+    LIST_ENTRY *_EX_ListHead; \
     _EX_ListHead = (ListHead); \
     _EX_Blink = _EX_ListHead->Blink; \
     (Entry)->Flink = _EX_ListHead; \
@@ -94,10 +94,10 @@ typedef struct _MODAL_SEARCH_PARAMS
     _EX_ListHead->Blink = (Entry); \
 }
 
-ULONG CheckWatchedWindowUpdates(PWATCHED_DC pWatchedDC, WINDOWINFO *pwi, BOOL bDamageDetected, PRECT prcDamageArea);
+ULONG CheckWatchedWindowUpdates(WATCHED_DC *pWatchedDC, WINDOWINFO *pwi, BOOL bDamageDetected, RECT *prcDamageArea);
 BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi);
-PWATCHED_DC FindWindowByHwnd(HWND hWnd);
-PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi);
-ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
+WATCHED_DC *FindWindowByHwnd(HWND hWnd);
+WATCHED_DC *AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi);
+ULONG RemoveWatchedDC(WATCHED_DC *pWatchedDC);
 ULONG StartShellEventsThread(void);
 ULONG StopShellEventsThread(void);

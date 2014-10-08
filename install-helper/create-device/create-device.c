@@ -17,7 +17,7 @@ void usage(LPCTSTR self)
     fprintf(stderr, "  5 - failed to open inf-path\n");
 }
 
-int __cdecl _tmain(int argc, PZPWSTR argv)
+int __cdecl _tmain(int argc, TCHAR* argv[])
 {
     HDEVINFO DeviceInfoSet = INVALID_HANDLE_VALUE;
     SP_DEVINFO_DATA DeviceInfoData;
@@ -94,7 +94,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
             &DeviceInfoData,
             &DEVPKEY_Device_HardwareIds,
             &DevicePropertyType,
-            (LPBYTE) hwIdList2,
+            (BYTE *) hwIdList2,
             sizeof(hwIdList2),
             NULL,
             0))
@@ -144,7 +144,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
             &DeviceInfoData,
             &DEVPKEY_Device_Class,
             &DevicePropertyType,
-            (PBYTE) &ClassGUID,
+            (BYTE *) &ClassGUID,
             sizeof(ClassGUID),
             NULL,
             0) || DevicePropertyType != DEVPROP_TYPE_GUID)
@@ -158,7 +158,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
                     &DeviceInfoData,
                     &DEVPKEY_Device_HardwareIds,
                     &DevicePropertyType,
-                    (LPBYTE) hwIdList2,
+                    (BYTE *) hwIdList2,
                     sizeof(hwIdList2),
                     NULL,
                     0))
@@ -215,7 +215,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
         DeviceInfoSet,
         &DeviceInfoData,
         SPDRP_HARDWAREID,
-        (LPBYTE) hwIdList,
+        (BYTE *) hwIdList,
         (lstrlen(hwIdList) + 1 + 1)*sizeof(TCHAR)))
     {
         fprintf(stderr, "SetupDiSetDeviceRegistryProperty GetLastError: %d\n", GetLastError());

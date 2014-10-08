@@ -29,10 +29,10 @@ const DEVINFO gDevInfoFrameBuffer = {
 \**************************************************************************/
 
 BOOL bInitPDEV(
-    PPDEV ppdev,
-    DEVMODEW * pDevMode,
-    GDIINFO * pGdiInfo,
-    DEVINFO * pDevInfo
+    PDEV *ppdev,
+    DEVMODEW *pDevMode,
+    GDIINFO *pGdiInfo,
+    DEVINFO *pDevInfo
     )
 {
     //

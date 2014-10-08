@@ -21,13 +21,13 @@ void usage(LPCTSTR self)
     fprintf(stderr, "  7 - failed SetupDiCallClassInstaller call\n");
 }
 
-int __cdecl _tmain(int argc, PZPWSTR argv)
+int __cdecl _tmain(int argc, TCHAR* argv[])
 {
     HDEVINFO DeviceInfoSet = INVALID_HANDLE_VALUE;
     SP_DEVINFO_DATA DeviceInfoData;
     GUID ClassGUID;
     TCHAR hwIdList[LINE_LEN + 4];
-    PTCHAR currentHwId;
+    TCHAR *currentHwId;
     LPCTSTR ClassName = NULL;
     LPCTSTR Enumerator = TEXT("PCI");
     LPCTSTR ExpectedHwId = NULL;
@@ -101,7 +101,7 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
                 &DeviceInfoData,
                 &DEVPKEY_Device_HardwareIds,
                 &DevicePropertyType,
-                (LPBYTE) hwIdList,
+                (BYTE *) hwIdList,
                 sizeof(hwIdList),
                 NULL,
                 0))

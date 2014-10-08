@@ -3,4 +3,4 @@
 
 extern HWND g_ShellEventsWindow;
 
-extern ULONG WINAPI ShellEventsThread(PVOID pParam);
+extern ULONG WINAPI ShellEventsThread(void *pParam);

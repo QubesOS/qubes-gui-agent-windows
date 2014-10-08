@@ -10,10 +10,10 @@
 
 DWORD g_DisableCursor = TRUE;
 
-PSID BuildSid()
+SID *BuildSid()
 {
     SID_IDENTIFIER_AUTHORITY sia = SECURITY_NT_AUTHORITY; // don't use LOCAL - only processes running in interactive session belong to that...
-    PSID sid = NULL;
+    SID *sid = NULL;
     if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
     {
         perror("AllocateAndInitializeSid");
@@ -26,9 +26,9 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
     EXPLICIT_ACCESS ea = { 0 };
-    PACL acl = NULL;
+    ACL *acl = NULL;
     HANDLE event = NULL;
-    PSID localSid = NULL;
+    SID *localSid = NULL;
 
     LogDebug("%s", name);
 
@@ -40,7 +40,7 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    ea.Trustee.ptstrName = localSid;
+    ea.Trustee.ptstrName = (WCHAR *) localSid;
 
     if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
     {
@@ -77,7 +77,7 @@ cleanup:
     return event;
 }
 
-ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
+ULONG StartProcess(IN WCHAR *executable, OUT HANDLE *processHandle)
 {
     STARTUPINFO si = { 0 };
     PROCESS_INFORMATION pi;
@@ -173,7 +173,7 @@ ULONG DisableEffects(void)
     ANIMATIONINFO AnimationInfo;
 
     LogDebug("start");
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) FALSE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) FALSE, SPIF_UPDATEINIFILE))
         return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
 
     AnimationInfo.cbSize = sizeof(AnimationInfo);
@@ -243,7 +243,7 @@ cleanup:
 }
 
 // Convert memory page number in the screen buffer to a rectangle that covers it.
-void PageToRect(ULONG uPageNumber, OUT PRECT pRect)
+void PageToRect(ULONG uPageNumber, OUT RECT *pRect)
 {
     ULONG uStride = g_ScreenWidth * 4;
     ULONG uPageStart = uPageNumber * PAGE_SIZE;

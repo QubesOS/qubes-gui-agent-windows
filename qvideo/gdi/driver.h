@@ -22,7 +22,7 @@
 #include "debug.h"
 #include "common.h"
 
-typedef struct _SURFACE_DESCRIPTOR SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
+typedef struct _SURFACE_DESCRIPTOR SURFACE_DESCRIPTOR;
 typedef struct _PDEV
 {
     HANDLE hDriver;		// Handle to \Device\Screen
@@ -36,15 +36,15 @@ typedef struct _PDEV
     LONG lDeltaScreen;	// Distance from one scan to the next.
     ULONG ulBitCount;	// # of bits per pel: only 16, 24, 32 are supported.
 
-    PSURFACE_DESCRIPTOR pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
-} PDEV, *PPDEV;
+    SURFACE_DESCRIPTOR *pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
+} PDEV;
 
 #pragma pack(push, 1)
 typedef struct _BITMAP_HEADER
 {
     BITMAPFILEHEADER FileHeader;
     BITMAPV5HEADER V5Header;
-} BITMAP_HEADER, *PBITMAP_HEADER;
+} BITMAP_HEADER;
 #pragma pack(pop)
 
 typedef struct _SURFACE_DESCRIPTOR
@@ -55,29 +55,29 @@ typedef struct _SURFACE_DESCRIPTOR
     ULONG ulBitCount;
     BOOLEAN bIsScreen;
 
-    PPDEV ppdev;
+    PDEV *ppdev;
     HDRVOBJ hDriverObj;
     PEVENT pDamageNotificationEvent;
 
-    PVOID pSurfaceData;
+    void *pSurfaceData;
     HANDLE hSection;
-    PVOID SectionObject;
-    PVOID pMdl;
-    PPFN_ARRAY pPfnArray; // this is allocated by the miniport part
+    void *SectionObject;
+    void *pMdl;
+    PFN_ARRAY *pPfnArray; // this is allocated by the miniport part
 
     // page numbers that changed in the surface buffer since the last check
     // this is exposed as a section so the user mode client can easily check what changed
-    PVOID DirtySectionObject;
+    void *DirtySectionObject;
     HANDLE hDirtySection;
-    PQV_DIRTY_PAGES pDirtyPages;
+    QV_DIRTY_PAGES *pDirtyPages;
     LARGE_INTEGER LastCheck; // timestamp of the last dirty pages check, to limit events per second
 
     //  BITMAP_HEADER BitmapHeader;
-} SURFACE_DESCRIPTOR, *PSURFACE_DESCRIPTOR;
+} SURFACE_DESCRIPTOR;
 
 BOOL bInitPDEV(
-    PPDEV,
-    PDEVMODEW,
+    PDEV *,
+    DEVMODEW *,
     GDIINFO *,
     DEVINFO *
     );

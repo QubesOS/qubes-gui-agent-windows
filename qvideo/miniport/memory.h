@@ -2,34 +2,34 @@
 
 #define QVMINI_TAG	'MMVQ'
 
-PVOID AllocateMemory(
+void *AllocateMemory(
     ULONG uLength,
-    PPFN_ARRAY *ppPfnArray
+    PFN_ARRAY **ppPfnArray
     );
 
 VOID FreeMemory(
-    IN PVOID pMemory,
-    IN PVOID pPfnArray
+    IN void *pMemory,
+    IN void *pPfnArray
     );
 
 PVOID AllocateSection(
     ULONG uLength,
     HANDLE *phSection,
-    PVOID *ppSectionObject,
-    PVOID *ppMdl,
-    PPFN_ARRAY *ppPfnArray,
+    void **ppSectionObject,
+    void **ppMdl,
+    PFN_ARRAY **ppPfnArray,
     OPTIONAL HANDLE *phDirtySection,
-    OPTIONAL PVOID *ppDirtySectionObject,
-    OPTIONAL PVOID *ppDirtySectionMemory
+    OPTIONAL void **ppDirtySectionObject,
+    OPTIONAL void **ppDirtySectionMemory
     );
 
 VOID FreeSection(
     HANDLE hSection,
-    PVOID pSectionObject,
-    PVOID pMdl,
-    PVOID BaseAddress,
-    PVOID pPfnArray,
+    void *pSectionObject,
+    void *pMdl,
+    void *BaseAddress,
+    void *pPfnArray,
     OPTIONAL HANDLE hDirtySection,
-    OPTIONAL PVOID pDirtySectionObject,
-    OPTIONAL PVOID pDirtySectionMemory
+    OPTIONAL void *pDirtySectionObject,
+    OPTIONAL void *pDirtySectionMemory
     );

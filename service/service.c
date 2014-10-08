@@ -43,8 +43,8 @@ CRITICAL_SECTION wgaCs;
 int main(int argc, WCHAR *argv[])
 {
     SERVICE_TABLE_ENTRY	serviceTable[] = {
-            { SERVICE_NAME, ServiceMain },
-            { NULL, NULL }
+        { SERVICE_NAME, ServiceMain },
+        { NULL, NULL }
     };
 
     InitializeCriticalSection(&wgaCs);
@@ -52,7 +52,7 @@ int main(int argc, WCHAR *argv[])
     return 0;
 }
 
-BOOL IsProcessRunning(IN const WCHAR *exeName, OUT PDWORD processId OPTIONAL, OUT PDWORD sessionId OPTIONAL)
+BOOL IsProcessRunning(IN const WCHAR *exeName, OUT DWORD *processId OPTIONAL, OUT DWORD *sessionId OPTIONAL)
 {
     WTS_PROCESS_INFO *processInfo = NULL;
     DWORD count = 0, i;
@@ -382,7 +382,7 @@ void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
     }
 }
 
-DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, void *lpEventData, void *lpContext)
 {
     switch (dwControl)
     {

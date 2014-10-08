@@ -6,17 +6,17 @@ NTSTATUS CreateAndMapSection(
     UNICODE_STRING usSectionName,
     ULONG uSize,
     HANDLE *phSection,
-    PVOID *pSectionObject,
-    PVOID *pBaseAddress
+    void **pSectionObject,
+    void **pBaseAddress
     )
 {
     SIZE_T ViewSize = 0;
     NTSTATUS Status;
     HANDLE hSection;
-    PVOID BaseAddress = NULL;
+    void *BaseAddress = NULL;
     OBJECT_ATTRIBUTES ObjectAttributes;
     LARGE_INTEGER Size;
-    PVOID SectionObject;
+    void *SectionObject;
 
     if (!uSize || !phSection || !pSectionObject || !pBaseAddress)
         return STATUS_INVALID_PARAMETER;
@@ -67,13 +67,13 @@ NTSTATUS CreateAndMapSection(
 
 VOID FreeSection(
     HANDLE hSection,
-    PVOID pSectionObject,
-    PMDL pMdl,
-    PVOID BaseAddress,
-    PVOID pPfnArray,
+    void *pSectionObject,
+    MDL *pMdl,
+    void *BaseAddress,
+    void *pPfnArray,
     OPTIONAL HANDLE hDirtySection,
-    OPTIONAL PVOID pDirtySectionObject,
-    OPTIONAL PVOID pDirtySectionMemory
+    OPTIONAL void *pDirtySectionObject,
+    OPTIONAL void *pDirtySectionMemory
     )
 {
     if (pMdl)
@@ -99,18 +99,18 @@ VOID FreeSection(
 }
 
 NTSTATUS GetBufferPfnArray(
-    IN PVOID pVirtualAddress,
+    IN void *pVirtualAddress,
     IN ULONG uLength,
-    OUT OPTIONAL PPFN_ARRAY *ppPfnArray, // pfn array is allocated here
+    OUT OPTIONAL PFN_ARRAY **ppPfnArray, // pfn array is allocated here
     IN KPROCESSOR_MODE ProcessorMode,
     IN BOOLEAN bLockPages,
-    OUT OPTIONAL PMDL *ppMdl
+    OUT OPTIONAL MDL **ppMdl
     )
 {
     NTSTATUS Status;
     PHYSICAL_ADDRESS PhysAddr;
-    PMDL pMdl = NULL;
-    PPFN_NUMBER pPfnNumber = NULL;
+    MDL *pMdl = NULL;
+    PFN_NUMBER *pPfnNumber = NULL;
     ULONG i, uNumberOfPages;
 
     if (!pVirtualAddress || !uLength)
@@ -172,10 +172,10 @@ NTSTATUS GetBufferPfnArray(
 
 PVOID AllocateMemory(
     ULONG uLength,
-    PPFN_ARRAY *ppPfnArray
+    PFN_ARRAY **ppPfnArray
     )
 {
-    PVOID pMemory = NULL;
+    void *pMemory = NULL;
     NTSTATUS Status;
 
     if (!uLength || !ppPfnArray)
@@ -200,8 +200,8 @@ PVOID AllocateMemory(
 }
 
 VOID FreeMemory(
-    IN PVOID pMemory,
-    IN OPTIONAL PVOID pPfnArray
+    IN void *pMemory,
+    IN OPTIONAL void *pPfnArray
     )
 {
     if (!pMemory)
@@ -220,19 +220,19 @@ VOID FreeMemory(
 PVOID AllocateSection(
     ULONG uLength,
     HANDLE *phSection,
-    PVOID *ppSectionObject,
-    PVOID *ppMdl,
-    PPFN_ARRAY *ppPfnArray,
+    void **ppSectionObject,
+    void **ppMdl,
+    PFN_ARRAY **ppPfnArray,
     OPTIONAL HANDLE *phDirtySection,
-    OPTIONAL PVOID *ppDirtySectionObject,
-    OPTIONAL PVOID *ppDirtySectionMemory
+    OPTIONAL void **ppDirtySectionObject,
+    OPTIONAL void **ppDirtySectionMemory
     )
 {
     NTSTATUS Status;
     HANDLE hSection;
-    PVOID SectionObject = NULL;
-    PVOID BaseAddress = NULL;
-    PMDL pMdl = NULL;
+    void *SectionObject = NULL;
+    void *BaseAddress = NULL;
+    MDL *pMdl = NULL;
     UNICODE_STRING usSectionName;
     WCHAR SectionName[100];
 

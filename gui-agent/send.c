@@ -13,19 +13,19 @@
 #include <strsafe.h>
 
 // Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
-static ULONG PrepareShmCmd(PWATCHED_DC pWatchedDC, struct shm_cmd **ppShmCmd)
+static ULONG PrepareShmCmd(WATCHED_DC *pWatchedDC, struct shm_cmd **ppShmCmd)
 {
     QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
     ULONG uResult;
     ULONG uShmCmdSize = 0;
     struct shm_cmd *pShmCmd = NULL;
-    PPFN_ARRAY	pPfnArray = NULL;
-    HWND	hWnd = 0;
-    ULONG	uWidth;
-    ULONG	uHeight;
-    ULONG	ulBitCount;
-    BOOL	bIsScreen;
-    ULONG	i;
+    PFN_ARRAY *pPfnArray = NULL;
+    HWND hWnd = 0;
+    ULONG uWidth;
+    ULONG uHeight;
+    ULONG ulBitCount;
+    BOOL bIsScreen;
+    ULONG i;
 
     if (!ppShmCmd)
         return ERROR_INVALID_PARAMETER;
@@ -102,7 +102,7 @@ static ULONG PrepareShmCmd(PWATCHED_DC pWatchedDC, struct shm_cmd **ppShmCmd)
     return ERROR_SUCCESS;
 }
 
-void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
+void send_pixmap_mfns(WATCHED_DC *pWatchedDC)
 {
     ULONG uResult;
     struct shm_cmd *pShmCmd = NULL;
@@ -142,12 +142,12 @@ void send_pixmap_mfns(PWATCHED_DC pWatchedDC)
     free(pShmCmd);
 }
 
-ULONG send_window_create(PWATCHED_DC pWatchedDC)
+ULONG send_window_create(WATCHED_DC *pWatchedDC)
 {
     WINDOWINFO wi;
     struct msg_hdr hdr;
     struct msg_create mc;
-    PPFN_ARRAY pPfnArray = NULL;
+    PFN_ARRAY *pPfnArray = NULL;
 
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
@@ -294,7 +294,7 @@ ULONG send_window_unmap(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_map(PWATCHED_DC pWatchedDC)
+ULONG send_window_map(WATCHED_DC *pWatchedDC)
 {
     struct msg_hdr hdr;
     struct msg_map_info mmi;
@@ -342,7 +342,7 @@ ULONG send_window_map(PWATCHED_DC pWatchedDC)
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_configure(PWATCHED_DC pWatchedDC)
+ULONG send_window_configure(WATCHED_DC *pWatchedDC)
 {
     struct msg_hdr hdr;
     struct msg_configure mc;

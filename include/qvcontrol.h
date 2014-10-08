@@ -4,7 +4,7 @@
 #include <tchar.h>
 #include "common.h"
 
-extern PQV_DIRTY_PAGES g_pDirtyPages;
+extern QV_DIRTY_PAGES *g_pDirtyPages;
 
 ULONG OpenScreenSection();
 
@@ -12,8 +12,8 @@ ULONG CloseScreenSection();
 
 ULONG GetWindowData(
     HWND hWnd,
-    PQV_GET_SURFACE_DATA_RESPONSE pQvGetSurfaceDataResponse,
-    PPFN_ARRAY pPfnArray
+    QV_GET_SURFACE_DATA_RESPONSE *pQvGetSurfaceDataResponse,
+    PFN_ARRAY *pPfnArray
     );
 
 ULONG RegisterWatchedDC(
@@ -30,7 +30,7 @@ ULONG SynchronizeDirtyBits(
     );
 
 ULONG FindQubesDisplayDevice(
-    PDISPLAY_DEVICE pQubesDisplayDevice
+    DISPLAY_DEVICE *pQubesDisplayDevice
     );
 
 ULONG SupportVideoMode(
