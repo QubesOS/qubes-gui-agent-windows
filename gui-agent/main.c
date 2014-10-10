@@ -1,7 +1,6 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <stdlib.h>
-#include <strsafe.h>
 
 #include <xenstore.h>
 
@@ -19,6 +18,8 @@
 // windows-utils
 #include "log.h"
 #include "config.h"
+
+#include <strsafe.h>
 
 #define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
 #define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
@@ -801,7 +802,7 @@ static ULONG WINAPI WatchForEvents(void)
             if (0 == dwSignaledEvent)
             {
                 // shutdown event
-                logf("Shutdown event signaled");
+                LogDebug("Shutdown event signaled");
                 bExitLoop = TRUE;
                 break;
             }

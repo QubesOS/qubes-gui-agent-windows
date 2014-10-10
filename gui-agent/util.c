@@ -1,12 +1,13 @@
 #define OEMRESOURCE
 #include <windows.h>
 #include <aclapi.h>
-#include <strsafe.h>
 
 #include "main.h"
 #include "resource.h"
 
 #include "log.h"
+
+#include <strsafe.h>
 
 DWORD g_DisableCursor = TRUE;
 

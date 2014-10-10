@@ -1,10 +1,11 @@
 #include <windows.h>
-#include <strsafe.h>
 
 #include "common.h"
 #include "main.h"
 
 #include "log.h"
+
+#include <strsafe.h>
 
 #define QUBES_DRIVER_NAME L"Qubes Video Driver"
 

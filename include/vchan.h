@@ -1,3 +1,4 @@
+#pragma once
 #include <windows.h>
 
 extern CRITICAL_SECTION g_VchanCriticalSection;

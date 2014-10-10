@@ -1,3 +1,4 @@
+#pragma once
 #include <windows.h>
 
 extern WORD X11ToVk[256];
