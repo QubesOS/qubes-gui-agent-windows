@@ -79,7 +79,7 @@ DHPDEV APIENTRY DrvEnablePDEV(
     __in HANDLE hDriver	// Handle to base driver
     )
 {
-    PDEV *ppdev = (PDEV *) NULL;
+    PDEV *ppdev = NULL;
 
     DISPDBG((0, "DrvEnablePDEV\n"));
 
@@ -102,8 +102,8 @@ DHPDEV APIENTRY DrvEnablePDEV(
     }
     // Allocate a physical device structure.
 
-    ppdev = (PDEV *) EngAllocMem(FL_ZERO_MEMORY, sizeof(PDEV *), ALLOC_TAG);
-    if (ppdev == (PDEV *) NULL)
+    ppdev = (PDEV *) EngAllocMem(FL_ZERO_MEMORY, sizeof(PDEV), ALLOC_TAG);
+    if (ppdev == NULL)
     {
         DISPDBG((0, "DrvEnablePDEV(): EngAllocMem() failed\n"));
         return NULL;
