@@ -106,7 +106,7 @@ VOID ReadRegistryConfig()
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_FPS_VALUE, &g_MaxFps)))
     {
         g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
-        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
+        WARNINGF("failed to read '%S' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
     }
 
     if (g_MaxFps > MAX_REFRESH_FPS)
@@ -128,12 +128,12 @@ VOID ReadRegistryConfig()
     // dirty bits
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_DIRTY_VALUE, &ulUseDirtyBits)))
     {
-        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_DIRTY_VALUE, g_bUseDirtyBits);
+        WARNINGF("failed to read '%S' config value, using %lu", REG_CONFIG_DIRTY_VALUE, g_bUseDirtyBits);
     }
     else
     {
         g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
-        DEBUGF("%s: %lu", REG_CONFIG_DIRTY_VALUE, ulUseDirtyBits);
+        DEBUGF("%S: %lu", REG_CONFIG_DIRTY_VALUE, ulUseDirtyBits);
     }
 
     bInitialized = TRUE;
