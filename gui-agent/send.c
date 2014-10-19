@@ -13,439 +13,435 @@
 #include <strsafe.h>
 
 // Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
-static ULONG PrepareShmCmd(WATCHED_DC *pWatchedDC, struct shm_cmd **ppShmCmd)
+// if watchedDC == NULL, get PFNs for the whole screen
+static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct shm_cmd **shmCmd)
 {
-    QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
-    ULONG uResult;
-    ULONG uShmCmdSize = 0;
-    struct shm_cmd *pShmCmd = NULL;
-    PFN_ARRAY *pPfnArray = NULL;
-    HWND hWnd = 0;
-    ULONG uWidth;
-    ULONG uHeight;
-    ULONG ulBitCount;
-    BOOL bIsScreen;
+    QV_GET_SURFACE_DATA_RESPONSE surfaceData;
+    ULONG status;
+    ULONG shmCmdSize = 0;
+    PFN_ARRAY *pfnArray = NULL;
+    ULONG width;
+    ULONG height;
+    ULONG bpp;
+    BOOL isScreen;
     ULONG i;
 
-    if (!ppShmCmd)
+    if (!shmCmd)
         return ERROR_INVALID_PARAMETER;
 
-    *ppShmCmd = NULL;
+    *shmCmd = NULL;
     //debugf("start");
 
-    if (!pWatchedDC)
+    if (!watchedDC) // whole screen
     {
         LogDebug("fullcreen capture");
 
-        pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pPfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+        pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+        pfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
 
-        uResult = GetWindowData(0, &QvGetSurfaceDataResponse, pPfnArray);
-        if (ERROR_SUCCESS != uResult)
+        status = GetWindowData(NULL, &surfaceData, pfnArray);
+        if (ERROR_SUCCESS != status)
         {
-            LogError("GetWindowData() failed with error %d\n", uResult);
-            return uResult;
+            LogError("GetWindowData() failed with error %d\n", status);
+            return status;
         }
 
-        uWidth = QvGetSurfaceDataResponse.uWidth;
-        uHeight = QvGetSurfaceDataResponse.uHeight;
-        ulBitCount = QvGetSurfaceDataResponse.ulBitCount;
+        width = surfaceData.uWidth;
+        height = surfaceData.uHeight;
+        bpp = surfaceData.ulBitCount;
 
-        bIsScreen = TRUE;
+        isScreen = TRUE;
     }
     else
     {
-        hWnd = pWatchedDC->hWnd;
+        width = watchedDC->WindowRect.right - watchedDC->WindowRect.left;
+        height = watchedDC->WindowRect.bottom - watchedDC->WindowRect.top;
+        bpp = 32;
 
-        uWidth = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
-        uHeight = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
-        ulBitCount = 32;
+        isScreen = FALSE;
 
-        bIsScreen = FALSE;
-
-        pPfnArray = pWatchedDC->pPfnArray;
+        pfnArray = watchedDC->PfnArray;
     }
 
-    LogDebug("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", uWidth, uHeight, ulBitCount,
-        pWatchedDC ? pWatchedDC->rcWindow.left : 0,
-        pWatchedDC ? pWatchedDC->rcWindow.top : 0, bIsScreen);
+    LogDebug("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", width, height, bpp,
+        watchedDC ? watchedDC->WindowRect.left : 0,
+        watchedDC ? watchedDC->WindowRect.top : 0, isScreen);
 
-    LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pPfnArray->uNumberOf4kPages,
-        pPfnArray->Pfn[0], pPfnArray->Pfn[1], pPfnArray->Pfn[2]);
+    LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->uNumberOf4kPages,
+        pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
 
-    uShmCmdSize = sizeof(struct shm_cmd) + pPfnArray->uNumberOf4kPages * sizeof(uint32_t);
+    shmCmdSize = sizeof(struct shm_cmd) + pfnArray->uNumberOf4kPages * sizeof(uint32_t);
 
-    pShmCmd = (struct shm_cmd*) malloc(uShmCmdSize);
-    if (!pShmCmd)
+    *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
+    if (*shmCmd == NULL)
     {
-        LogError("Failed to allocate %d bytes for shm_cmd for window 0x%x\n", uShmCmdSize, hWnd);
+        LogError("Failed to allocate %d bytes for shm_cmd for window 0x%x\n", shmCmdSize, watchedDC ? watchedDC->WindowHandle : NULL);
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
-    pShmCmd->shmid = 0;
-    pShmCmd->width = uWidth;
-    pShmCmd->height = uHeight;
-    pShmCmd->bpp = ulBitCount;
-    pShmCmd->off = 0;
-    pShmCmd->num_mfn = pPfnArray->uNumberOf4kPages;
-    pShmCmd->domid = 0;
+    (*shmCmd)->shmid = 0;
+    (*shmCmd)->width = width;
+    (*shmCmd)->height = height;
+    (*shmCmd)->bpp = bpp;
+    (*shmCmd)->off = 0;
+    (*shmCmd)->num_mfn = pfnArray->uNumberOf4kPages;
+    (*shmCmd)->domid = 0;
 
-    for (i = 0; i < pPfnArray->uNumberOf4kPages; i++)
-        pShmCmd->mfns[i] = (uint32_t) pPfnArray->Pfn[i];
+    for (i = 0; i < pfnArray->uNumberOf4kPages; i++)
+        (*shmCmd)->mfns[i] = (uint32_t) pfnArray->Pfn[i];
 
-    *ppShmCmd = pShmCmd;
-
-    if (!pWatchedDC)
-        free(pPfnArray);
+    if (!watchedDC)
+        free(pfnArray);
 
     //debugf("success");
     return ERROR_SUCCESS;
 }
 
-void send_pixmap_mfns(WATCHED_DC *pWatchedDC)
+void SendWindowMfns(IN const WATCHED_DC *watchedDC)
 {
-    ULONG uResult;
-    struct shm_cmd *pShmCmd = NULL;
-    struct msg_hdr hdr;
-    int size;
-    HWND hWnd = 0;
+    ULONG status;
+    struct shm_cmd *shmCmd = NULL;
+    struct msg_hdr header;
+    UINT32 size;
+    HWND window = NULL;
 
     LogVerbose("start");
-    if (pWatchedDC)
-        hWnd = pWatchedDC->hWnd;
+    if (watchedDC)
+        window = watchedDC->WindowHandle;
 
-    uResult = PrepareShmCmd(pWatchedDC, &pShmCmd);
-    if (ERROR_SUCCESS != uResult)
+    status = PrepareShmCmd(watchedDC, &shmCmd);
+    if (ERROR_SUCCESS != status)
     {
-        LogError("PrepareShmCmd() failed with error %d", uResult);
+        perror2(status, "PrepareShmCmd");
         return;
     }
 
-    if (pShmCmd->num_mfn == 0 || pShmCmd->num_mfn > MAX_MFN_COUNT)
+    if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
     {
-        LogError("too large num_mfn=%lu for window 0x%x", pShmCmd->num_mfn, (int) hWnd);
-        free(pShmCmd);
+        LogError("too large num_mfn=%lu for window 0x%x", shmCmd->num_mfn, window);
+        free(shmCmd);
         return;
     }
 
-    size = pShmCmd->num_mfn * sizeof(uint32_t);
+    size = shmCmd->num_mfn * sizeof(uint32_t);
 
-    hdr.type = MSG_MFNDUMP;
-    hdr.window = (uint32_t) hWnd;
-    hdr.untrusted_len = sizeof(struct shm_cmd) + size;
+    header.type = MSG_MFNDUMP;
+    header.window = (uint32_t) window;
+    header.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(hdr);
-    VchanSendBuffer(pShmCmd, sizeof(struct shm_cmd) + size);
+    VCHAN_SEND(header);
+    VchanSendBuffer(shmCmd, sizeof(struct shm_cmd) + size);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    free(pShmCmd);
+    free(shmCmd);
 }
 
-ULONG send_window_create(WATCHED_DC *pWatchedDC)
+ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
 {
     WINDOWINFO wi;
-    struct msg_hdr hdr;
-    struct msg_create mc;
-    PFN_ARRAY *pPfnArray = NULL;
+    struct msg_hdr header;
+    struct msg_create createMsg;
+    PFN_ARRAY *pfnArray = NULL;
 
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
-    if (pWatchedDC == NULL)
+    if (watchedDC == NULL)
     {
-        QV_GET_SURFACE_DATA_RESPONSE QvGetSurfaceDataResponse;
-        ULONG uResult;
+        QV_GET_SURFACE_DATA_RESPONSE surfaceData;
+        ULONG status;
 
         LogDebug("fullscreen");
         /* TODO: multiple screens? */
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
 
-        pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pPfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+        pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+        pfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
 
-        uResult = GetWindowData(NULL, &QvGetSurfaceDataResponse, pPfnArray);
-        if (ERROR_SUCCESS != uResult)
+        status = GetWindowData(NULL, &surfaceData, pfnArray);
+        if (ERROR_SUCCESS != status)
         {
-            LogError("GetWindowData() failed with error %d", uResult);
-            return uResult;
+            return perror2(status, "GetWindowData");
         }
 
-        wi.rcWindow.right = QvGetSurfaceDataResponse.uWidth;
-        wi.rcWindow.bottom = QvGetSurfaceDataResponse.uHeight;
+        wi.rcWindow.right = surfaceData.uWidth;
+        wi.rcWindow.bottom = surfaceData.uHeight;
 
-        free(pPfnArray);
+        free(pfnArray);
 
-        hdr.window = 0;
+        header.window = 0;
     }
     else
     {
-        LogDebug("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", pWatchedDC->hWnd,
-            pWatchedDC->rcWindow.left, pWatchedDC->rcWindow.top,
-            pWatchedDC->rcWindow.right, pWatchedDC->rcWindow.bottom,
-            pWatchedDC->bOverrideRedirect);
+        LogDebug("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", watchedDC->WindowHandle,
+            watchedDC->WindowRect.left, watchedDC->WindowRect.top,
+            watchedDC->WindowRect.right, watchedDC->WindowRect.bottom,
+            watchedDC->IsOverrideRedirect);
 
-        hdr.window = (uint32_t) pWatchedDC->hWnd;
-        wi.rcWindow = pWatchedDC->rcWindow;
+        header.window = (uint32_t) watchedDC->WindowHandle;
+        wi.rcWindow = watchedDC->WindowRect;
     }
 
-    hdr.type = MSG_CREATE;
+    header.type = MSG_CREATE;
 
-    mc.x = wi.rcWindow.left;
-    mc.y = wi.rcWindow.top;
-    mc.width = wi.rcWindow.right - wi.rcWindow.left;
-    mc.height = wi.rcWindow.bottom - wi.rcWindow.top;
-    mc.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-    mc.override_redirect = pWatchedDC ? pWatchedDC->bOverrideRedirect : FALSE;
+    createMsg.x = wi.rcWindow.left;
+    createMsg.y = wi.rcWindow.top;
+    createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
+    createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
+    createMsg.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
+    createMsg.override_redirect = watchedDC ? watchedDC->IsOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, mc);
+    VCHAN_SEND_MSG(header, createMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    if (pWatchedDC && pWatchedDC->bVisible && !pWatchedDC->bIconic)
-        send_window_map(pWatchedDC);
+    if (watchedDC && watchedDC->IsVisible && !watchedDC->IsIconic)
+        SendWindowMap(watchedDC);
 
-    if (pWatchedDC)
-        send_window_hints(pWatchedDC->hWnd, PPosition); // program-specified position
+    if (watchedDC)
+        SendWindowHints(watchedDC->WindowHandle, PPosition); // program-specified position
 
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_destroy(HWND hWnd)
+ULONG SendWindowDestroy(IN HWND window)
 {
-    struct msg_hdr hdr;
+    struct msg_hdr header;
 
-    LogDebug("0x%x", hWnd);
-    hdr.type = MSG_DESTROY;
-    hdr.window = (uint32_t) hWnd;
-    hdr.untrusted_len = 0;
+    LogDebug("0x%x", window);
+    header.type = MSG_DESTROY;
+    header.window = (uint32_t) window;
+    header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(hdr);
+    VCHAN_SEND(header);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset)
+ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset)
 {
-    struct msg_hdr hdr;
+    struct msg_hdr header;
     struct msg_window_flags flags;
 
-    LogDebug("0x%x: set 0x%x, unset 0x%x", hWnd, flags_set, flags_unset);
-    hdr.type = MSG_WINDOW_FLAGS;
-    hdr.window = (uint32_t) hWnd;
-    hdr.untrusted_len = 0;
-    flags.flags_set = flags_set;
-    flags.flags_unset = flags_unset;
+    LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsToSet, flagsToUnset);
+    header.type = MSG_WINDOW_FLAGS;
+    header.window = (uint32_t) window;
+    header.untrusted_len = 0;
+    flags.flags_set = flagsToSet;
+    flags.flags_unset = flagsToUnset;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, flags);
+    VCHAN_SEND_MSG(header, flags);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
 }
 
-void send_window_hints(HWND hWnd, uint32_t flags)
+void SendWindowHints(IN HWND window, IN uint32_t flags)
 {
-    struct msg_hdr hdr;
-    struct msg_window_hints msg = { 0 };
+    struct msg_hdr header;
+    struct msg_window_hints hintsMsg = { 0 };
 
-    msg.flags = flags;
+    hintsMsg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
 
-    hdr.window = (uint32_t) hWnd;
-    hdr.type = MSG_WINDOW_HINTS;
+    header.window = (uint32_t) window;
+    header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, msg);
+    VCHAN_SEND_MSG(header, hintsMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-void send_screen_hints(void)
+void SendScreenHints(void)
 {
-    struct msg_hdr hdr;
-    struct msg_window_hints msg = { 0 };
+    struct msg_hdr header;
+    struct msg_window_hints hintsMsg = { 0 };
 
-    msg.flags = PMinSize; // minimum size
-    msg.min_width = MIN_RESOLUTION_WIDTH;
-    msg.min_height = MIN_RESOLUTION_HEIGHT;
-    LogDebug("min %dx%d", msg.min_width, msg.min_height);
+    hintsMsg.flags = PMinSize; // minimum size
+    hintsMsg.min_width = MIN_RESOLUTION_WIDTH;
+    hintsMsg.min_height = MIN_RESOLUTION_HEIGHT;
+    LogDebug("min %dx%d", hintsMsg.min_width, hintsMsg.min_height);
 
-    hdr.window = 0; // screen
-    hdr.type = MSG_WINDOW_HINTS;
+    header.window = 0; // screen
+    header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, msg);
+    VCHAN_SEND_MSG(header, hintsMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-ULONG send_window_unmap(HWND hWnd)
+ULONG SendWindowUnmap(IN HWND window)
 {
-    struct msg_hdr hdr;
+    struct msg_hdr header;
 
-    LogInfo("Unmapping window 0x%x\n", hWnd);
+    LogInfo("Unmapping window 0x%x\n", window);
 
-    hdr.type = MSG_UNMAP;
-    hdr.window = (uint32_t) hWnd;
-    hdr.untrusted_len = 0;
+    header.type = MSG_UNMAP;
+    header.window = (uint32_t) window;
+    header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(hdr);
+    VCHAN_SEND(header);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_map(WATCHED_DC *pWatchedDC)
+// if watchedDC == 0, use the whole screen
+ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
 {
-    struct msg_hdr hdr;
-    struct msg_map_info mmi;
+    struct msg_hdr header;
+    struct msg_map_info mapMsg;
 
-    if (pWatchedDC)
-        LogInfo("Mapping window 0x%x\n", pWatchedDC->hWnd);
+    if (watchedDC)
+        LogInfo("Mapping window 0x%x\n", watchedDC->WindowHandle);
     else
         LogInfo("Mapping desktop window\n");
 
-    hdr.type = MSG_MAP;
-    if (pWatchedDC)
-        hdr.window = (uint32_t) pWatchedDC->hWnd;
+    header.type = MSG_MAP;
+    if (watchedDC)
+        header.window = (uint32_t) watchedDC->WindowHandle;
     else
-        hdr.window = 0;
-    hdr.untrusted_len = 0;
+        header.window = 0;
+    header.untrusted_len = 0;
 
-    if (pWatchedDC && pWatchedDC->ModalParent)
-        mmi.transient_for = (uint32_t) pWatchedDC->ModalParent;
+    if (watchedDC && watchedDC->ModalParent)
+        mapMsg.transient_for = (uint32_t) watchedDC->ModalParent;
     else
-        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
+        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
 
-    if (pWatchedDC)
-        mmi.override_redirect = pWatchedDC->bOverrideRedirect;
+    if (watchedDC)
+        mapMsg.override_redirect = watchedDC->IsOverrideRedirect;
     else
-        mmi.override_redirect = 0;
+        mapMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, mmi);
+    VCHAN_SEND_MSG(header, mapMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
-    if (!pWatchedDC ||
-        (pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left == g_ScreenWidth &&
-        pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top == g_ScreenHeight))
+    if (!watchedDC ||
+        (watchedDC->WindowRect.right - watchedDC->WindowRect.left == g_ScreenWidth &&
+        watchedDC->WindowRect.bottom - watchedDC->WindowRect.top == g_ScreenHeight))
     {
-        send_screen_hints(); // min/max screen size
-        send_wmname(NULL);
+        SendScreenHints(); // min/max screen size
+        SendWindowName(NULL);
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             LogDebug("fullscreen window");
-            send_window_flags(pWatchedDC ? pWatchedDC->hWnd : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+            SendWindowFlags(watchedDC ? watchedDC->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
         }
     }
 
     return ERROR_SUCCESS;
 }
 
-ULONG send_window_configure(WATCHED_DC *pWatchedDC)
+// if watchedDC == 0, use the whole screen
+ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL)
 {
-    struct msg_hdr hdr;
-    struct msg_configure mc;
-    struct msg_map_info mmi;
+    struct msg_hdr header;
+    struct msg_configure configureMsg;
+    struct msg_map_info mapMsg;
 
-    if (pWatchedDC)
+    if (watchedDC)
     {
-        LogDebug("0x%x", pWatchedDC->hWnd);
-        hdr.window = (uint32_t) pWatchedDC->hWnd;
+        LogDebug("0x%x", watchedDC->WindowHandle);
+        header.window = (uint32_t) watchedDC->WindowHandle;
 
-        hdr.type = MSG_CONFIGURE;
+        header.type = MSG_CONFIGURE;
 
-        mc.x = pWatchedDC->rcWindow.left;
-        mc.y = pWatchedDC->rcWindow.top;
-        mc.width = pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left;
-        mc.height = pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top;
-        mc.override_redirect = 0;
+        configureMsg.x = watchedDC->WindowRect.left;
+        configureMsg.y = watchedDC->WindowRect.top;
+        configureMsg.width = watchedDC->WindowRect.right - watchedDC->WindowRect.left;
+        configureMsg.height = watchedDC->WindowRect.bottom - watchedDC->WindowRect.top;
+        configureMsg.override_redirect = 0;
     }
     else // whole screen
     {
         LogDebug("fullscreen: (0,0) %dx%d", g_ScreenWidth, g_ScreenHeight);
-        hdr.window = 0;
+        header.window = 0;
 
-        hdr.type = MSG_CONFIGURE;
+        header.type = MSG_CONFIGURE;
 
-        mc.x = 0;
-        mc.y = 0;
-        mc.width = g_ScreenWidth;
-        mc.height = g_ScreenHeight;
-        mc.override_redirect = 0;
+        configureMsg.x = 0;
+        configureMsg.y = 0;
+        configureMsg.width = g_ScreenWidth;
+        configureMsg.height = g_ScreenHeight;
+        configureMsg.override_redirect = 0;
     }
 
     EnterCriticalSection(&g_VchanCriticalSection);
     /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
     * will follow */
-    if (mc.width > 0 && mc.height > 0)
+    if (configureMsg.width > 0 && configureMsg.height > 0)
     {
-        VCHAN_SEND_MSG(hdr, mc);
+        VCHAN_SEND_MSG(header, configureMsg);
     }
 
-    if (pWatchedDC && pWatchedDC->bVisible)
+    if (watchedDC && watchedDC->IsVisible)
     {
-        mmi.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-        mmi.override_redirect = pWatchedDC->bOverrideRedirect;
+        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
+        mapMsg.override_redirect = watchedDC->IsOverrideRedirect;
 
-        hdr.type = MSG_MAP;
-        VCHAN_SEND_MSG(hdr, mmi);
+        header.type = MSG_MAP;
+        VCHAN_SEND_MSG(header, mapMsg);
     }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
 }
 
-// Send screen resolution back do gui daemon.
-ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+// Send screen resolution back to gui daemon.
+ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height)
 {
-    struct msg_hdr hdr;
-    struct msg_configure mc;
+    struct msg_hdr header;
+    struct msg_configure configMsg;
 
     LogDebug("(%d,%d) %dx%d", x, y, width, height);
-    hdr.window = 0; // 0 = screen
+    header.window = 0; // 0 = screen
 
-    hdr.type = MSG_CONFIGURE;
+    header.type = MSG_CONFIGURE;
 
-    mc.x = x;
-    mc.y = y;
-    mc.width = width;
-    mc.height = height;
-    mc.override_redirect = 0;
+    configMsg.x = x;
+    configMsg.y = y;
+    configMsg.width = width;
+    configMsg.height = height;
+    configMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, mc);
+    VCHAN_SEND_MSG(header, configMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return ERROR_SUCCESS;
 }
 
-void send_window_damage_event(HWND hWnd, int x, int y, int width, int height)
+void SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height)
 {
-    struct msg_shmimage mx;
-    struct msg_hdr hdr;
+    struct msg_shmimage shmMsg;
+    struct msg_hdr header;
 
-    LogVerbose("0x%x (%d,%d)-(%d,%d)", hWnd, x, y, x + width, y + height);
-    hdr.type = MSG_SHMIMAGE;
-    hdr.window = (uint32_t) hWnd;
-    mx.x = x;
-    mx.y = y;
-    mx.width = width;
-    mx.height = height;
+    LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
+    header.type = MSG_SHMIMAGE;
+    header.window = (uint32_t) window;
+    shmMsg.x = x;
+    shmMsg.y = y;
+    shmMsg.width = width;
+    shmMsg.height = height;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, mx);
+    VCHAN_SEND_MSG(header, shmMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-void send_wmname(HWND hWnd)
+void SendWindowName(IN HWND window)
 {
-    struct msg_hdr hdr;
-    struct msg_wmname msg;
+    struct msg_hdr header;
+    struct msg_wmname nameMsg;
 
-    if (hWnd)
+    if (window)
     {
         // FIXME: this fails for non-ascii strings
-        if (!GetWindowTextA(hWnd, msg.data, sizeof(msg.data)))
+        if (!GetWindowTextA(window, nameMsg.data, sizeof(nameMsg.data)))
         {
             // ignore empty/non-readable captions
             return;
@@ -453,18 +449,18 @@ void send_wmname(HWND hWnd)
     }
     else
     {
-        StringCchPrintfA(msg.data, RTL_NUMBER_OF(msg.data), "%s (Windows Desktop)", g_DomainName);
+        StringCchPrintfA(nameMsg.data, RTL_NUMBER_OF(nameMsg.data), "%s (Windows Desktop)", g_DomainName);
     }
-    LogDebug("0x%x %S", hWnd, msg.data);
+    LogDebug("0x%x %S", window, nameMsg.data);
 
-    hdr.window = (uint32_t) hWnd;
-    hdr.type = MSG_WMNAME;
+    header.window = (uint32_t) window;
+    header.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(hdr, msg);
+    VCHAN_SEND_MSG(header, nameMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 }
 
-void send_protocol_version(void)
+void SendProtocolVersion(void)
 {
     uint32_t version = QUBES_GUI_PROTOCOL_VERSION_WINDOWS;
     EnterCriticalSection(&g_VchanCriticalSection);

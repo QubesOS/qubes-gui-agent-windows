@@ -4,7 +4,7 @@
 #include "log.h"
 #endif
 
-DWORD SetHooks(WCHAR *dllName)
+DWORD SetHooks(IN const WCHAR *dllName)
 {
     HMODULE hookDll = NULL;
     void *hookProc = NULL;

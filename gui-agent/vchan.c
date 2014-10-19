@@ -5,64 +5,66 @@ CRITICAL_SECTION g_VchanCriticalSection;
 
 static struct libvchan *g_Vchan;
 
-int VchanSendBuffer(const void *buf, int size)
+int VchanSendBuffer(IN const void *buffer, IN int size)
 {
     int written = 0;
-    int ret;
+    int status;
 
     if (!g_Vchan)
         return -1;
 
     while (written < size)
     {
-        ret = libvchan_write(g_Vchan, (char *) buf + written, size - written);
-        if (ret <= 0)
-            return ret;
+        status = libvchan_write(g_Vchan, (char *) buffer + written, size - written);
+        if (status <= 0)
+            return status;
 
-        written += ret;
+        written += status;
     }
 
     return size;
 }
 
-int VchanSendMessage(const void *hdr, int size, const void *data, int dataSize)
+int VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int dataSize)
 {
-    int ret;
-    ret = VchanSendBuffer(hdr, size);
-    if (ret <= 0)
-        return ret;
-    ret = VchanSendBuffer(data, dataSize);
-    if (ret <= 0)
-        return ret;
+    int status;
+
+    status = VchanSendBuffer(header, headerSize);
+    if (status <= 0)
+        return status;
+    status = VchanSendBuffer(data, dataSize);
+    if (status <= 0)
+        return status;
     return 0;
 }
 
-int VchanReceiveBuffer(void *buf, int size)
+int VchanReceiveBuffer(OUT void *buffer, IN int size)
 {
     int written = 0;
-    int ret;
+    int status;
+
     while (written < size)
     {
-        ret = libvchan_read(g_Vchan, (char *) buf + written, size - written);
-        if (ret <= 0)
-            return ret;
+        status = libvchan_read(g_Vchan, (char *) buffer + written, size - written);
+        if (status <= 0)
+            return status;
 
-        written += ret;
+        written += status;
     }
     return size;
 }
 
-int VchanGetReadBufferSize()
+int VchanGetReadBufferSize(void)
 {
     return libvchan_data_ready(g_Vchan);
 }
 
-int VchanGetWriteBufferSize()
+int VchanGetWriteBufferSize(void)
 {
     return libvchan_buffer_space(g_Vchan);
 }
 
-BOOL VchanInitServer(int port)
+BOOL VchanInitServer(IN int port)
 {
     g_Vchan = libvchan_server_init(port);
     if (!g_Vchan)

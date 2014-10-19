@@ -1,48 +1,48 @@
 #pragma once
 
 #include <windows.h>
-#include <tchar.h>
 #include "common.h"
 
-extern QV_DIRTY_PAGES *g_pDirtyPages;
+extern QV_DIRTY_PAGES *g_DirtyPages;
 
-ULONG OpenScreenSection();
+ULONG OpenScreenSection(void);
 
-ULONG CloseScreenSection();
-
-ULONG GetWindowData(
-    HWND hWnd,
-    QV_GET_SURFACE_DATA_RESPONSE *pQvGetSurfaceDataResponse,
-    PFN_ARRAY *pPfnArray
-    );
-
-ULONG RegisterWatchedDC(
-    HDC hDC,
-    HANDLE hModificationEvent
-    );
-
-ULONG UnregisterWatchedDC(
-    HDC hDC
-    );
-
-ULONG SynchronizeDirtyBits(
-    HDC hDC
-    );
+ULONG CloseScreenSection(void);
 
 ULONG FindQubesDisplayDevice(
-    DISPLAY_DEVICE *pQubesDisplayDevice
+    OUT DISPLAY_DEVICE *qubesDisplayDevice
     );
 
+// tells qvideo that given resolution will be set by the system
 ULONG SupportVideoMode(
-    LPTSTR ptszQubesDeviceName,
-    ULONG uWidth,
-    ULONG uHeight,
-    ULONG uBpp
+    IN const WCHAR *qubesDisplayDeviceName,
+    IN ULONG width,
+    IN ULONG height,
+    IN ULONG bpp
+    );
+
+ULONG GetWindowData(
+    IN HWND window,
+    OUT QV_GET_SURFACE_DATA_RESPONSE *surfaceData,
+    OUT PFN_ARRAY *pfnArray
     );
 
 ULONG ChangeVideoMode(
-    LPTSTR ptszDeviceName,
-    ULONG uWidth,
-    ULONG uHeight,
-    ULONG uBpp
+    IN const WCHAR *deviceName,
+    IN ULONG width,
+    IN ULONG height,
+    IN ULONG bpp
+    );
+
+ULONG RegisterWatchedDC(
+    IN HDC dc,
+    IN HANDLE damageEvent
+    );
+
+ULONG UnregisterWatchedDC(
+    IN HDC dc
+    );
+
+ULONG SynchronizeDirtyBits(
+    IN HDC dc
     );

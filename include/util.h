@@ -7,6 +7,6 @@ ULONG HideCursors(void);
 ULONG DisableEffects(void);
 HANDLE CreateNamedEvent(IN const WCHAR *name);
 ULONG StartProcess(IN WCHAR *executable, OUT HANDLE *processHandle);
-ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize);
+ULONG IncreaseProcessWorkingSetSize(IN SIZE_T minimumSize, IN SIZE_T maximumSize);
 ULONG AttachToInputDesktop(void);
-void PageToRect(ULONG uPageNumber, OUT RECT *pRect);
+void PageToRect(ULONG pageNumber, OUT RECT *rect);

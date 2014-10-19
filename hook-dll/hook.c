@@ -3,17 +3,15 @@
 #include "hook.h"
 #include "hook-messages.h"
 
-HANDLE g_Slot = INVALID_HANDLE_VALUE;
+HANDLE g_Slot = INVALID_HANDLE_VALUE; // IPC mailslot
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, void *lpReserved)
+BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, void *reserved)
 {
-    WCHAR buf[128] = { 0 };
-
-    switch (ul_reason_for_call)
+    switch (reasonForCall)
     {
     case DLL_PROCESS_ATTACH:
-        DisableThreadLibraryCalls(hModule);
-        OutputDebugString(L"QHook: +ATTACH");
+        DisableThreadLibraryCalls(module);
+        OutputDebugString(L"QHook: +ATTACH\n");
         g_Slot = CreateFile(HOOK_IPC_NAME, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
         break;
@@ -21,20 +19,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, void *lpReserve
     case DLL_PROCESS_DETACH:
         if (g_Slot != INVALID_HANDLE_VALUE)
             CloseHandle(g_Slot);
-        OutputDebugString(L"QHook: -DETACH");
+        OutputDebugString(L"QHook: -DETACH\n");
         break;
     }
     return TRUE;
 }
 
-static void SendMsg(QH_MESSAGE *msg)
+static void SendMsg(IN const QH_MESSAGE *qhm)
 {
     DWORD written;
     if (g_Slot != INVALID_HANDLE_VALUE)
-        WriteFile(g_Slot, msg, sizeof(QH_MESSAGE), &written, NULL);
+        WriteFile(g_Slot, qhm, sizeof(QH_MESSAGE), &written, NULL);
 }
 
-void ProcessMessage(QH_MESSAGE *qhm)
+void ProcessMessage(IN OUT QH_MESSAGE *qhm)
 {
     WINDOWPOS *wp = (WINDOWPOS*) qhm->lParam;
     STYLESTRUCT *ss = (STYLESTRUCT*) qhm->lParam;
@@ -73,7 +71,7 @@ LRESULT CALLBACK CallWndProc(
 
     if (code < 0)
     {
-        OutputDebugString(L"[!] CWP: <0");
+        OutputDebugString(L"[!] CWP: <0\n");
         return CallNextHookEx(NULL, code, wParam, lParam);
     }
 
@@ -99,7 +97,7 @@ LRESULT CALLBACK GetMsgProc(
 
     if (code < 0)
     {
-        OutputDebugString(L"[!] GMP: <0");
+        OutputDebugString(L"[!] GMP: <0\n");
         return CallNextHookEx(NULL, code, wParam, lParam);
     }
 
@@ -125,7 +123,7 @@ LRESULT CALLBACK CBTProc(
 
     if (code < 0)
     {
-        OutputDebugString(L"[!] CBTP: <0");
+        OutputDebugString(L"[!] CBTP: <0\n");
         return CallNextHookEx(NULL, code, wParam, lParam);
     }
 

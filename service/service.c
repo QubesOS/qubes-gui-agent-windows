@@ -14,14 +14,14 @@ SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
 HANDLE g_ConsoleEvent;
 
-void WINAPI ServiceMain(DWORD argc, WCHAR *argv[]);
-DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
+void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[]);
+DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context);
 
-typedef void (WINAPI *SendSASFunction)(BOOL);
+typedef void (WINAPI *fSendSAS)(BOOL);
 // this is not defined in WDK headers
-SendSASFunction SendSAS = NULL;
+fSendSAS SendSAS = NULL;
 
-WCHAR *g_SessionEventName[] = {
+const WCHAR *g_SessionEventName[] = {
     L"<invalid>",
     L"WTS_CONSOLE_CONNECT",
     L"WTS_CONSOLE_DISCONNECT",
@@ -37,19 +37,19 @@ WCHAR *g_SessionEventName[] = {
 };
 
 // Held when restarting gui agent.
-CRITICAL_SECTION wgaCs;
+CRITICAL_SECTION g_wgaCs;
 
 // Entry point.
-int main(int argc, WCHAR *argv[])
+int wmain(int argc, WCHAR *argv[])
 {
     SERVICE_TABLE_ENTRY	serviceTable[] = {
         { SERVICE_NAME, ServiceMain },
         { NULL, NULL }
     };
 
-    InitializeCriticalSection(&wgaCs);
+    InitializeCriticalSection(&g_wgaCs);
     StartServiceCtrlDispatcher(serviceTable);
-    return 0;
+    return ERROR_SUCCESS;
 }
 
 BOOL IsProcessRunning(IN const WCHAR *exeName, OUT DWORD *processId OPTIONAL, OUT DWORD *sessionId OPTIONAL)
@@ -94,7 +94,7 @@ cleanup:
     return found;
 }
 
-DWORD TerminateTargetProcess(WCHAR *exeName)
+DWORD TerminateTargetProcess(IN const WCHAR *exeName)
 {
     HANDLE targetProcess;
     HANDLE shutdownEvent;
@@ -214,14 +214,14 @@ DWORD WINAPI WatchdogThread(void *param)
     {
         Sleep(2000);
 
-        EnterCriticalSection(&wgaCs);
+        EnterCriticalSection(&g_wgaCs);
         // Check if the gui agent is running.
         if (!IsProcessRunning(exeName, NULL, NULL))
         {
             LogWarning("Process '%s' not running, restarting it", exeName);
             StartTargetProcess(cmdline);
         }
-        LeaveCriticalSection(&wgaCs);
+        LeaveCriticalSection(&g_wgaCs);
     }
 
     return ERROR_SUCCESS;
@@ -254,12 +254,12 @@ DWORD WINAPI SessionChangeThread(void *param)
         switch (signaledEvent)
         {
         case 0: // console event: restart wga
-            EnterCriticalSection(&wgaCs);
+            EnterCriticalSection(&g_wgaCs);
             // Make sure process is not running.
             TerminateTargetProcess(exeName);
             // restart
             StartTargetProcess(cmdline);
-            LeaveCriticalSection(&wgaCs);
+            LeaveCriticalSection(&g_wgaCs);
             break;
 
         case 1: // SAS event
@@ -276,7 +276,7 @@ DWORD WINAPI SessionChangeThread(void *param)
     return ERROR_SUCCESS;
 }
 
-void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
+void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
 {
     WCHAR cmdline1[MAX_PATH], cmdline2[MAX_PATH];
     WCHAR moduleName[CFG_MODULE_MAX];
@@ -301,7 +301,7 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     sasDll = LoadLibrary(L"sas.dll");
     if (sasDll)
     {
-        SendSAS = (SendSASFunction) GetProcAddress(sasDll, "SendSAS");
+        SendSAS = (fSendSAS) GetProcAddress(sasDll, "SendSAS");
         if (!SendSAS)
             LogWarning("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
     }
@@ -363,7 +363,7 @@ cleanup:
     return;
 }
 
-void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
+void SessionChange(IN DWORD eventType, IN const WTSSESSION_NOTIFICATION *sn)
 {
     static DWORD previousConsoleId = 0;
     DWORD consoleId = WTSGetActiveConsoleSessionId();
@@ -382,9 +382,9 @@ void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
     }
 }
 
-DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, void *lpEventData, void *lpContext)
+DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context)
 {
-    switch (dwControl)
+    switch (controlCode)
     {
     case SERVICE_CONTROL_STOP:
     case SERVICE_CONTROL_SHUTDOWN:
@@ -395,11 +395,11 @@ DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, void *lpEventD
         break;
 
     case SERVICE_CONTROL_SESSIONCHANGE:
-        SessionChange(dwEventType, (WTSSESSION_NOTIFICATION*) lpEventData);
+        SessionChange(eventType, (WTSSESSION_NOTIFICATION*) eventData);
         break;
 
     default:
-        LogDebug("code 0x%x, event 0x%x", dwControl, dwEventType);
+        LogDebug("code 0x%x, event 0x%x", controlCode, eventType);
         break;
     }
 

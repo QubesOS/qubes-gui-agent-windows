@@ -26,7 +26,7 @@
 
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
-BOOL g_bUseDirtyBits;
+BOOL g_UseDirtyBits;
 
 LONG g_ScreenHeight;
 LONG g_ScreenWidth;
@@ -45,34 +45,31 @@ char g_DomainName[256] = "<unknown>";
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
 
-HANDLE g_hShellEventsThread = NULL;
+HANDLE g_ShellEventsThread = NULL;
 
-HWND g_DesktopHwnd = NULL;
-HWND g_ExplorerHwnd = NULL;
-HWND g_TaskbarHwnd = NULL;
-HWND g_StartButtonHwnd = NULL;
+HWND g_DesktopWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
 ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC);
 
 // can be called from main thread, shell hook thread or ResetWatch thread
-ULONG RemoveWatchedDC(WATCHED_DC *pWatchedDC)
+ULONG RemoveWatchedDC(IN OUT WATCHED_DC *watchedDC)
 {
-    if (!pWatchedDC)
+    if (!watchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
-    free(pWatchedDC->pPfnArray);
+    LogDebug("hwnd=0x%x, hdc=0x%x", watchedDC->WindowHandle, watchedDC->DC);
+    free(watchedDC->PfnArray);
 
     if (g_VchanClientConnected)
     {
-        send_window_unmap(pWatchedDC->hWnd);
-        if (pWatchedDC->hWnd) // never destroy screen "window"
-            send_window_destroy(pWatchedDC->hWnd);
+        SendWindowUnmap(watchedDC->WindowHandle);
+        if (watchedDC->WindowHandle) // never destroy screen "window"
+            SendWindowDestroy(watchedDC->WindowHandle);
     }
 
-    free(pWatchedDC);
+    free(watchedDC);
 
     return ERROR_SUCCESS;
 }
@@ -83,15 +80,15 @@ ULONG StartShellEventsThread(void)
 
     LogVerbose("start");
 
-    if (g_hShellEventsThread)
+    if (g_ShellEventsThread)
     {
-        LogError("shell events thread already running: handle 0x%x, window 0x%x", g_hShellEventsThread, g_ShellEventsWindow);
+        LogError("shell events thread already running: handle 0x%x, window 0x%x", g_ShellEventsThread, g_ShellEventsWindow);
         // this is abnormal, returning error here will cause termination
         return ERROR_ALREADY_EXISTS;
     }
 
-    g_hShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
-    if (!g_hShellEventsThread)
+    g_ShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
+    if (!g_ShellEventsThread)
         return perror("CreateThread(ShellEventsThread)");
 
     LogInfo("shell events thread ID: 0x%x (created)", threadId);
@@ -100,32 +97,32 @@ ULONG StartShellEventsThread(void)
 
 ULONG StopShellEventsThread(void)
 {
-    ULONG retval;
+    ULONG status;
     DWORD waitResult;
 
     LogVerbose("shell hook window: 0x%x", g_ShellEventsWindow);
-    if (!g_hShellEventsThread)
+    if (!g_ShellEventsThread)
         return ERROR_SUCCESS;
 
     // SendMessage waits until the message is processed
     if (!SendMessage(g_ShellEventsWindow, WM_CLOSE, 0, 0))
     {
-        retval = perror("PostMessage(WM_CLOSE)");
+        status = perror("PostMessage(WM_CLOSE)");
         LogWarning("Terminating shell events thread forcibly");
-        TerminateThread(g_hShellEventsThread, 0);
+        TerminateThread(g_ShellEventsThread, 0);
     }
 
     LogVerbose("waiting for thread to exit");
-    waitResult = WaitForSingleObject(g_hShellEventsThread, 5000);
+    waitResult = WaitForSingleObject(g_ShellEventsThread, 5000);
     if (waitResult != WAIT_OBJECT_0)
     {
         LogWarning("wait failed or timed out, killing thread forcibly");
-        TerminateThread(g_hShellEventsThread, 0);
+        TerminateThread(g_ShellEventsThread, 0);
     }
 
-    CloseHandle(g_hShellEventsThread);
+    CloseHandle(g_ShellEventsThread);
 
-    g_hShellEventsThread = NULL;
+    g_ShellEventsThread = NULL;
     g_ShellEventsWindow = NULL;
 
     LogDebug("shell events thread terminated");
@@ -136,10 +133,10 @@ ULONG StopShellEventsThread(void)
 // This is executed as another thread to avoid shell events killing itself without finishing the job.
 // TODO: use this with session change notification instead of AttachToInputDesktop every time?
 // NOTE: this function doesn't close/reopen qvideo's screen section
-DWORD WINAPI ResetWatch(PVOID param)
+static DWORD WINAPI ResetWatch(IN void *threadParam)
 {
-    WATCHED_DC *pWatchedDC;
-    WATCHED_DC *pNextWatchedDC;
+    WATCHED_DC *watchedDC;
+    WATCHED_DC *nextWatchedDC;
 
     LogVerbose("start");
 
@@ -149,24 +146,21 @@ DWORD WINAPI ResetWatch(PVOID param)
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
-    pWatchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
     {
-        pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (WATCHED_DC *) pWatchedDC->le.Flink;
+        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
+        nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
 
-        RemoveEntryList(&pWatchedDC->le);
-        RemoveWatchedDC(pWatchedDC);
+        RemoveEntryList(&watchedDC->ListEntry);
+        RemoveWatchedDC(watchedDC);
 
-        pWatchedDC = pNextWatchedDC;
+        watchedDC = nextWatchedDC;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    g_DesktopHwnd = NULL;
-    g_ExplorerHwnd = NULL;
-    g_TaskbarHwnd = NULL;
-    g_StartButtonHwnd = NULL;
+    g_DesktopWindow = NULL;
 
     // todo: wait for desktop switch - it can take some time after the session event
     // (if using session switch event)
@@ -195,7 +189,7 @@ static void SetFullscreenMode(void)
     if (!g_SeamlessMode)
     {
         // show the screen window
-        send_window_map(NULL);
+        SendWindowMap(NULL);
     }
     else // seamless mode
     {
@@ -206,24 +200,24 @@ static void SetFullscreenMode(void)
             RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 32, 0, 0);
         }
         // hide the screen window
-        send_window_unmap(NULL);
+        SendWindowUnmap(NULL);
     }
 }
 
-WATCHED_DC *FindWindowByHwnd(HWND hWnd)
+WATCHED_DC *FindWindowByHandle(IN HWND window)
 {
-    WATCHED_DC *pWatchedDC;
+    WATCHED_DC *watchedDC;
 
-    LogVerbose("%x", hWnd);
-    pWatchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    LogVerbose("%x", window);
+    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
     {
-        pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
+        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
 
-        if (hWnd == pWatchedDC->hWnd)
-            return pWatchedDC;
+        if (window == watchedDC->WindowHandle)
+            return watchedDC;
 
-        pWatchedDC = (WATCHED_DC *) pWatchedDC->le.Flink;
+        watchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
     }
 
     return NULL;
@@ -251,146 +245,146 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
 
 // can be called from main thread or shell hook thread
 ULONG CheckWatchedWindowUpdates(
-    WATCHED_DC *pWatchedDC,
-    WINDOWINFO *pwi,
-    BOOL bDamageDetected,
-    PRECT prcDamageArea
+    IN OUT WATCHED_DC *watchedDC,
+    IN const WINDOWINFO *windowInfo,
+    IN BOOL damageDetected,
+    IN const RECT *damageArea
     )
 {
     WINDOWINFO wi;
-    BOOL bResizingDetected;
-    BOOL bMoveDetected;
-    BOOL bCurrentlyVisible;
-    BOOL bUpdateStyle;
+    BOOL resizeDetected;
+    BOOL moveDetected;
+    BOOL currentlyVisible;
+    BOOL updateStyle;
     MODAL_SEARCH_PARAMS modalParams;
 
-    if (!pWatchedDC)
+    if (!watchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("hwnd=0x%x, hdc=0x%x", pWatchedDC->hWnd, pWatchedDC->hDC);
+    LogDebug("hwnd=0x%x, hdc=0x%x", watchedDC->WindowHandle, watchedDC->DC);
 
-    if (!pwi)
+    if (!windowInfo)
     {
         wi.cbSize = sizeof(wi);
-        if (!GetWindowInfo(pWatchedDC->hWnd, &wi))
+        if (!GetWindowInfo(watchedDC->WindowHandle, &wi))
             return perror("GetWindowInfo");
     }
     else
-        memcpy(&wi, pwi, sizeof(wi));
+        memcpy(&wi, windowInfo, sizeof(wi));
 
-    bCurrentlyVisible = IsWindowVisible(pWatchedDC->hWnd);
+    currentlyVisible = IsWindowVisible(watchedDC->WindowHandle);
     if (g_VchanClientConnected)
     {
         // visibility change
-        if (bCurrentlyVisible && !pWatchedDC->bVisible)
-            send_window_map(pWatchedDC);
+        if (currentlyVisible && !watchedDC->IsVisible)
+            SendWindowMap(watchedDC);
 
-        if (!bCurrentlyVisible && pWatchedDC->bVisible)
-            send_window_unmap(pWatchedDC->hWnd);
+        if (!currentlyVisible && watchedDC->IsVisible)
+            SendWindowUnmap(watchedDC->WindowHandle);
     }
 
-    if (!pWatchedDC->bStyleChecked && (GetTickCount() >= pWatchedDC->uTimeAdded + 500))
+    if (!watchedDC->IsStyleChecked && (GetTickCount() >= watchedDC->TimeAdded + 500))
     {
-        pWatchedDC->bStyleChecked = TRUE;
+        watchedDC->IsStyleChecked = TRUE;
 
-        bUpdateStyle = FALSE;
+        updateStyle = FALSE;
         if (wi.dwStyle & WS_MINIMIZEBOX)
         {
             wi.dwStyle &= ~WS_MINIMIZEBOX;
-            bUpdateStyle = TRUE;
-            DeleteMenu(GetSystemMenu(pWatchedDC->hWnd, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
+            updateStyle = TRUE;
+            DeleteMenu(GetSystemMenu(watchedDC->WindowHandle, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
         }
 
         if (wi.dwStyle & WS_SIZEBOX)
         {
             wi.dwStyle &= ~WS_SIZEBOX;
-            bUpdateStyle = TRUE;
+            updateStyle = TRUE;
         }
 
-        if (bUpdateStyle)
+        if (updateStyle)
         {
-            SetWindowLong(pWatchedDC->hWnd, GWL_STYLE, wi.dwStyle);
-            DrawMenuBar(pWatchedDC->hWnd);
+            SetWindowLong(watchedDC->WindowHandle, GWL_STYLE, wi.dwStyle);
+            DrawMenuBar(watchedDC->WindowHandle);
         }
     }
 
-    if ((wi.dwStyle & WS_DISABLED) && pWatchedDC->bVisible && (GetTickCount() > pWatchedDC->uTimeModalChecked + 500))
+    if ((wi.dwStyle & WS_DISABLED) && watchedDC->IsVisible && (GetTickCount() > watchedDC->TimeModalChecked + 500))
     {
         // possibly showing a modal window
-        pWatchedDC->uTimeModalChecked = GetTickCount();
-        LogDebug("0x%x is WS_DISABLED, searching for modal window", pWatchedDC->hWnd);
-        modalParams.ParentWindow = pWatchedDC->hWnd;
+        watchedDC->TimeModalChecked = GetTickCount();
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", watchedDC->WindowHandle);
+        modalParams.ParentWindow = watchedDC->WindowHandle;
         modalParams.ModalWindow = NULL;
         EnumWindows(FindModalChildProc, (LPARAM) &modalParams);
         LogDebug("result: 0x%x", modalParams.ModalWindow);
         if (modalParams.ModalWindow) // found a modal "child"
         {
-            WATCHED_DC *modalDc = FindWindowByHwnd(modalParams.ModalWindow);
+            WATCHED_DC *modalDc = FindWindowByHandle(modalParams.ModalWindow);
             if (modalDc && !modalDc->ModalParent)
             {
-                modalDc->ModalParent = pWatchedDC->hWnd;
-                send_window_unmap(modalDc->hWnd);
-                send_window_map(modalDc);
+                modalDc->ModalParent = watchedDC->WindowHandle;
+                SendWindowUnmap(modalDc->WindowHandle);
+                SendWindowMap(modalDc);
             }
         }
     }
 
-    pWatchedDC->bVisible = bCurrentlyVisible;
+    watchedDC->IsVisible = currentlyVisible;
 
-    if (IsIconic(pWatchedDC->hWnd))
+    if (IsIconic(watchedDC->WindowHandle))
     {
-        if (!pWatchedDC->bIconic)
+        if (!watchedDC->IsIconic)
         {
-            LogDebug("0x%x IsIconic: minimizing", pWatchedDC->hWnd);
-            send_window_flags(pWatchedDC->hWnd, WINDOW_FLAG_MINIMIZE, 0);
-            pWatchedDC->bIconic = TRUE;
+            LogDebug("0x%x IsIconic: minimizing", watchedDC->WindowHandle);
+            SendWindowFlags(watchedDC->WindowHandle, WINDOW_FLAG_MINIMIZE, 0);
+            watchedDC->IsIconic = TRUE;
         }
         return ERROR_SUCCESS; // window is minimized, ignore everything else
     }
     else
     {
-        LogVerbose("0x%x not iconic", pWatchedDC->hWnd);
-        pWatchedDC->bIconic = FALSE;
+        LogVerbose("0x%x not iconic", watchedDC->WindowHandle);
+        watchedDC->IsIconic = FALSE;
     }
 
-    bMoveDetected = wi.rcWindow.left != pWatchedDC->rcWindow.left ||
-        wi.rcWindow.top != pWatchedDC->rcWindow.top ||
-        wi.rcWindow.right != pWatchedDC->rcWindow.right ||
-        wi.rcWindow.bottom != pWatchedDC->rcWindow.bottom;
+    moveDetected = wi.rcWindow.left != watchedDC->WindowRect.left ||
+        wi.rcWindow.top != watchedDC->WindowRect.top ||
+        wi.rcWindow.right != watchedDC->WindowRect.right ||
+        wi.rcWindow.bottom != watchedDC->WindowRect.bottom;
 
-    bDamageDetected |= bMoveDetected;
+    damageDetected |= moveDetected;
 
-    bResizingDetected = (wi.rcWindow.right - wi.rcWindow.left != pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left) ||
-        (wi.rcWindow.bottom - wi.rcWindow.top != pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
+    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != watchedDC->WindowRect.right - watchedDC->WindowRect.left) ||
+        (wi.rcWindow.bottom - wi.rcWindow.top != watchedDC->WindowRect.bottom - watchedDC->WindowRect.top);
 
-    if (bDamageDetected || bResizingDetected)
+    if (damageDetected || resizeDetected)
     {
-        pWatchedDC->rcWindow = wi.rcWindow;
+        watchedDC->WindowRect = wi.rcWindow;
 
         if (g_VchanClientConnected)
         {
             RECT intersection;
 
-            if (bMoveDetected || bResizingDetected)
-                send_window_configure(pWatchedDC);
+            if (moveDetected || resizeDetected)
+                SendWindowConfigure(watchedDC);
 
-            if (prcDamageArea == NULL)
+            if (damageArea == NULL)
             { // assume the whole area changed
-                send_window_damage_event(pWatchedDC->hWnd,
+                SendWindowDamageEvent(watchedDC->WindowHandle,
                     0,
                     0,
-                    pWatchedDC->rcWindow.right - pWatchedDC->rcWindow.left,
-                    pWatchedDC->rcWindow.bottom - pWatchedDC->rcWindow.top);
+                    watchedDC->WindowRect.right - watchedDC->WindowRect.left,
+                    watchedDC->WindowRect.bottom - watchedDC->WindowRect.top);
             }
             else
             {
                 // send only intersection of damage area and window area
-                IntersectRect(&intersection, prcDamageArea, &pWatchedDC->rcWindow);
-                send_window_damage_event(pWatchedDC->hWnd,
-                    intersection.left - pWatchedDC->rcWindow.left,
-                    intersection.top - pWatchedDC->rcWindow.top,
-                    intersection.right - pWatchedDC->rcWindow.left,
-                    intersection.bottom - pWatchedDC->rcWindow.top);
+                IntersectRect(&intersection, damageArea, &watchedDC->WindowRect);
+                SendWindowDamageEvent(watchedDC->WindowHandle,
+                    intersection.left - watchedDC->WindowRect.left,
+                    intersection.top - watchedDC->WindowRect.top,
+                    intersection.right - watchedDC->WindowRect.left,
+                    intersection.bottom - watchedDC->WindowRect.top);
             }
         }
     }
@@ -399,19 +393,19 @@ ULONG CheckWatchedWindowUpdates(
     return ERROR_SUCCESS;
 }
 
-BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
+BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *pwi OPTIONAL)
 {
     WINDOWINFO wi;
 
     if (!pwi)
     {
-        if (!GetWindowInfo(hWnd, &wi))
+        if (!GetWindowInfo(window, &wi))
             return FALSE;
         pwi = &wi;
     }
 
     //LogVerbose("0x%x: %x %x", hWnd, pwi->dwStyle, pwi->dwExStyle);
-    if (!IsWindowVisible(hWnd))
+    if (!IsWindowVisible(window))
         return FALSE;
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
@@ -427,10 +421,10 @@ BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi)
 }
 
 // Enumerate top-level windows and add them to the watch list.
-BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+static BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 {
     WINDOWINFO wi;
-    BANNED_POPUP_WINDOWS *pBannedPopupsList = (BANNED_POPUP_WINDOWS *) lParam;
+    BANNED_WINDOWS *bannedWindowList = (BANNED_WINDOWS *) lParam;
     ULONG i;
 
     wi.cbSize = sizeof(wi);
@@ -440,11 +434,11 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
     if (!ShouldAcceptWindow(hWnd, &wi))
         return TRUE;
 
-    if (pBannedPopupsList)
+    if (bannedWindowList)
     {
-        for (i = 0; i < pBannedPopupsList->uNumberOfBannedPopups; i++)
+        for (i = 0; i < bannedWindowList->Count; i++)
         {
-            if (pBannedPopupsList->hBannedPopupArray[i] == hWnd)
+            if (bannedWindowList->BannedHandles[i] == hWnd)
                 return TRUE;
         }
     }
@@ -456,140 +450,143 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 
 // Main function that scans for window updates.
 // Called after receiving damage event from qvideo.
-static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
+static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 {
-    WATCHED_DC *pWatchedDC;
-    WATCHED_DC *pNextWatchedDC;
-    BYTE BannedPopupsListBuffer[sizeof(BANNED_POPUP_WINDOWS) * 4];
-    BANNED_POPUP_WINDOWS *pBannedPopupsList = (BANNED_POPUP_WINDOWS *) &BannedPopupsListBuffer;
-    BOOL bRecheckWindows = FALSE;
-    HWND hwndOldDesktop = g_DesktopHwnd;
-    ULONG uTotalPages, uPage, uDirtyPages = 0;
-    RECT rcDirtyArea, rcCurrent;
-    BOOL bFirst = TRUE;
+    WATCHED_DC *watchedDC;
+    WATCHED_DC *nextWatchedDC;
+    BYTE bannedWindowListBuffer[sizeof(BANNED_WINDOWS) * 4];
+    BANNED_WINDOWS *bannedWindowList = (BANNED_WINDOWS *) &bannedWindowListBuffer;
+    BOOL recheckWindows = FALSE;
+    HWND oldDesktopWindow = g_DesktopWindow;
+    ULONG totalPages, page, dirtyPages = 0;
+    RECT dirtyArea, currentArea;
+    BOOL first = TRUE;
+    static HWND explorerWindow = NULL;
+    static HWND taskbarWindow = NULL;
+    static HWND startButtonWindow = NULL;
 
-    if (g_bUseDirtyBits)
+    if (g_UseDirtyBits)
     {
-        uTotalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
+        totalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
         //debugf("update all? %d", bUpdateEverything);
         // create a damage rectangle from changed pages
-        for (uPage = 0; uPage < uTotalPages; uPage++)
+        for (page = 0; page < totalPages; page++)
         {
-            if (BIT_GET(g_pDirtyPages->DirtyBits, uPage))
+            if (BIT_GET(g_DirtyPages->DirtyBits, page))
             {
-                uDirtyPages++;
-                PageToRect(uPage, &rcCurrent);
-                if (bFirst)
+                dirtyPages++;
+                PageToRect(page, &currentArea);
+                if (first)
                 {
-                    rcDirtyArea = rcCurrent;
-                    bFirst = FALSE;
+                    dirtyArea = currentArea;
+                    first = FALSE;
                 }
                 else
-                    UnionRect(&rcDirtyArea, &rcDirtyArea, &rcCurrent);
+                    UnionRect(&dirtyArea, &dirtyArea, &currentArea);
             }
         }
 
         // tell qvideo that we're done reading dirty bits
         SynchronizeDirtyBits(screenDC);
 
-        LogDebug("DIRTY %d/%d (%d,%d)-(%d,%d)", uDirtyPages, uTotalPages,
-            rcDirtyArea.left, rcDirtyArea.top, rcDirtyArea.right, rcDirtyArea.bottom);
+        LogDebug("DIRTY %d/%d (%d,%d)-(%d,%d)", dirtyPages, totalPages,
+            dirtyArea.left, dirtyArea.top, dirtyArea.right, dirtyArea.bottom);
 
-        if (uDirtyPages == 0) // nothing changed according to qvideo
+        if (dirtyPages == 0) // nothing changed according to qvideo
             return ERROR_SUCCESS;
     }
 
     AttachToInputDesktop();
-    if (hwndOldDesktop != g_DesktopHwnd)
+    if (oldDesktopWindow != g_DesktopWindow)
     {
-        bRecheckWindows = TRUE;
-        LogDebug("desktop changed (old 0x%x), refreshing all windows", hwndOldDesktop);
+        recheckWindows = TRUE;
+        LogDebug("desktop changed (old 0x%x), refreshing all windows", oldDesktopWindow);
         HideCursors();
         DisableEffects();
     }
 
-    if (!g_ExplorerHwnd || bRecheckWindows || !IsWindow(g_ExplorerHwnd))
-        g_ExplorerHwnd = FindWindow(NULL, L"Program Manager");
+    if (!explorerWindow || recheckWindows || !IsWindow(explorerWindow))
+        explorerWindow = FindWindow(NULL, L"Program Manager");
 
-    if (!g_TaskbarHwnd || bRecheckWindows || !IsWindow(g_TaskbarHwnd))
+    if (!taskbarWindow || recheckWindows || !IsWindow(taskbarWindow))
     {
-        g_TaskbarHwnd = FindWindow(L"Shell_TrayWnd", NULL);
+        taskbarWindow = FindWindow(L"Shell_TrayWnd", NULL);
 
-        if (g_TaskbarHwnd)
+        if (taskbarWindow)
         {
             if (g_SeamlessMode)
-                ShowWindow(g_TaskbarHwnd, SW_HIDE);
+                ShowWindow(taskbarWindow, SW_HIDE);
             else
-                ShowWindow(g_TaskbarHwnd, SW_SHOW);
+                ShowWindow(taskbarWindow, SW_SHOW);
         }
     }
 
-    if (!g_StartButtonHwnd || bRecheckWindows || !IsWindow(g_StartButtonHwnd))
+    if (!startButtonWindow || recheckWindows || !IsWindow(startButtonWindow))
     {
-        g_StartButtonHwnd = FindWindowEx(g_DesktopHwnd, NULL, L"Button", NULL);
+        startButtonWindow = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
 
-        if (g_StartButtonHwnd)
+        if (startButtonWindow)
         {
             if (g_SeamlessMode)
-                ShowWindow(g_StartButtonHwnd, SW_HIDE);
+                ShowWindow(startButtonWindow, SW_HIDE);
             else
-                ShowWindow(g_StartButtonHwnd, SW_SHOW);
+                ShowWindow(startButtonWindow, SW_SHOW);
         }
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-        g_DesktopHwnd, g_ExplorerHwnd, g_TaskbarHwnd, g_StartButtonHwnd);
+        g_DesktopWindow, explorerWindow, taskbarWindow, startButtonWindow);
 
     if (!g_SeamlessMode)
     {
         // just send damage event with the dirty area
-        if (g_bUseDirtyBits)
-            send_window_damage_event(0, rcDirtyArea.left, rcDirtyArea.top,
-            rcDirtyArea.right - rcDirtyArea.left,
-            rcDirtyArea.bottom - rcDirtyArea.top);
+        if (g_UseDirtyBits)
+            SendWindowDamageEvent(0, dirtyArea.left, dirtyArea.top,
+            dirtyArea.right - dirtyArea.left,
+            dirtyArea.bottom - dirtyArea.top);
         else
-            send_window_damage_event(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
+            SendWindowDamageEvent(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
         // TODO? if we're not using dirty bits we could narrow the damage area
         // by checking all windows... but it's probably not worth it.
 
         return ERROR_SUCCESS;
     }
 
-    pBannedPopupsList->uNumberOfBannedPopups = 4;
-    pBannedPopupsList->hBannedPopupArray[0] = g_DesktopHwnd;
-    pBannedPopupsList->hBannedPopupArray[1] = g_ExplorerHwnd;
-    pBannedPopupsList->hBannedPopupArray[2] = g_TaskbarHwnd;
-    pBannedPopupsList->hBannedPopupArray[3] = g_StartButtonHwnd;
+    bannedWindowList->Count = 4;
+    bannedWindowList->BannedHandles[0] = g_DesktopWindow;
+    bannedWindowList->BannedHandles[1] = explorerWindow;
+    bannedWindowList->BannedHandles[2] = taskbarWindow;
+    bannedWindowList->BannedHandles[3] = startButtonWindow;
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    EnumWindows(EnumWindowsProc, (LPARAM) pBannedPopupsList);
+    EnumWindows(EnumWindowsProc, (LPARAM) bannedWindowList);
 
-    pWatchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (pWatchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
     {
-        pWatchedDC = CONTAINING_RECORD(pWatchedDC, WATCHED_DC, le);
-        pNextWatchedDC = (WATCHED_DC *) pWatchedDC->le.Flink;
+        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
+        nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
 
-        if (!IsWindow(pWatchedDC->hWnd) || !ShouldAcceptWindow(pWatchedDC->hWnd, NULL))
+        if (!IsWindow(watchedDC->WindowHandle) || !ShouldAcceptWindow(watchedDC->WindowHandle, NULL))
         {
-            RemoveEntryList(&pWatchedDC->le);
-            RemoveWatchedDC(pWatchedDC);
-            pWatchedDC = NULL;
+            RemoveEntryList(&watchedDC->ListEntry);
+            RemoveWatchedDC(watchedDC);
+            watchedDC = NULL;
         }
         else
         {
-            if (g_bUseDirtyBits)
+            if (g_UseDirtyBits)
             {
-                if (IntersectRect(&rcCurrent, &rcDirtyArea, &pWatchedDC->rcWindow))
+                if (IntersectRect(&currentArea, &dirtyArea, &watchedDC->WindowRect))
                     // skip windows that aren't in the changed area
-                    CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, &rcDirtyArea);
+                    CheckWatchedWindowUpdates(watchedDC, NULL, updateEverything, &dirtyArea);
             }
             else
-                CheckWatchedWindowUpdates(pWatchedDC, NULL, bUpdateEverything, NULL);
+                CheckWatchedWindowUpdates(watchedDC, NULL, updateEverything, NULL);
         }
 
-        pWatchedDC = pNextWatchedDC;
+        watchedDC = nextWatchedDC;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
@@ -598,114 +595,113 @@ static ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC)
 }
 
 // g_csWatchedWindows critical section must be entered
-WATCHED_DC *AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi)
+WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
 {
-    WATCHED_DC *pWatchedDC = NULL;
+    WATCHED_DC *watchedDC = NULL;
 
-    if (!pwi)
+    if (!windowInfo)
         return NULL;
 
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
-        hWnd, pwi->rcWindow.left, pwi->rcWindow.top, pwi->rcWindow.right, pwi->rcWindow.bottom, pwi->dwStyle, pwi->dwExStyle);
+        hWnd, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom, windowInfo->dwStyle, windowInfo->dwExStyle);
 
-    pWatchedDC = FindWindowByHwnd(hWnd);
-    if (pWatchedDC)
+    watchedDC = FindWindowByHandle(hWnd);
+    if (watchedDC)
         // already being watched
-        return pWatchedDC;
+        return watchedDC;
 
-    if ((pwi->rcWindow.top - pwi->rcWindow.bottom == 0) || (pwi->rcWindow.right - pwi->rcWindow.left == 0))
+    if ((windowInfo->rcWindow.top - windowInfo->rcWindow.bottom == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
         return NULL;
 
-    pWatchedDC = (WATCHED_DC *) malloc(sizeof(WATCHED_DC));
-    if (!pWatchedDC)
+    watchedDC = (WATCHED_DC *) malloc(sizeof(WATCHED_DC));
+    if (!watchedDC)
         return NULL;
 
-    ZeroMemory(pWatchedDC, sizeof(WATCHED_DC));
+    ZeroMemory(watchedDC, sizeof(WATCHED_DC));
 
-    pWatchedDC->bVisible = IsWindowVisible(hWnd);
-    pWatchedDC->bIconic = IsIconic(hWnd);
+    watchedDC->IsVisible = IsWindowVisible(hWnd);
+    watchedDC->IsIconic = IsIconic(hWnd);
 
-    pWatchedDC->bStyleChecked = FALSE;
-    pWatchedDC->uTimeAdded = pWatchedDC->uTimeModalChecked = GetTickCount();
+    watchedDC->IsStyleChecked = FALSE;
+    watchedDC->TimeAdded = watchedDC->TimeModalChecked = GetTickCount();
 
-    LogDebug("0x%x: visible=%d, iconic=%d", pWatchedDC->hWnd, pWatchedDC->bVisible, pWatchedDC->bIconic);
+    LogDebug("0x%x: visible=%d, iconic=%d", watchedDC->WindowHandle, watchedDC->IsVisible, watchedDC->IsIconic);
 
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
-    if (pwi->rcWindow.right - pwi->rcWindow.left == g_ScreenWidth
-        && pwi->rcWindow.bottom - pwi->rcWindow.top == g_ScreenHeight)
+    if (windowInfo->rcWindow.right - windowInfo->rcWindow.left == g_ScreenWidth
+        && windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == g_ScreenHeight)
     {
         LogDebug("popup too large: %dx%d, screen %dx%d",
-            pwi->rcWindow.right - pwi->rcWindow.left,
-            pwi->rcWindow.bottom - pwi->rcWindow.top,
+            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
+            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
             g_ScreenWidth, g_ScreenHeight);
-        pWatchedDC->bOverrideRedirect = FALSE;
+        watchedDC->IsOverrideRedirect = FALSE;
     }
     else
     {
         // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
-        if ((pwi->dwStyle & WS_CAPTION) == WS_CAPTION) // normal window
-            pWatchedDC->bOverrideRedirect = FALSE;
-        else if (((pwi->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((pwi->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
+        if ((windowInfo->dwStyle & WS_CAPTION) == WS_CAPTION) // normal window
+            watchedDC->IsOverrideRedirect = FALSE;
+        else if (((windowInfo->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((windowInfo->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
             // Metro apps without WS_CAPTION.
             // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
             // but I guess MS doesn't adhere to its own standards...
-            pWatchedDC->bOverrideRedirect = FALSE;
+            watchedDC->IsOverrideRedirect = FALSE;
         else
-            pWatchedDC->bOverrideRedirect = TRUE;
+            watchedDC->IsOverrideRedirect = TRUE;
     }
 
-    if (pWatchedDC->bOverrideRedirect)
+    if (watchedDC->IsOverrideRedirect)
     {
         LogDebug("popup: %dx%d, screen %dx%d",
-            pwi->rcWindow.right - pwi->rcWindow.left,
-            pwi->rcWindow.bottom - pwi->rcWindow.top,
+            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
+            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
             g_ScreenWidth, g_ScreenHeight);
     }
 
-    pWatchedDC->hWnd = hWnd;
-    pWatchedDC->rcWindow = pwi->rcWindow;
+    watchedDC->WindowHandle = hWnd;
+    watchedDC->WindowRect = windowInfo->rcWindow;
 
-    pWatchedDC->pPfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+    watchedDC->PfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
 
-    pWatchedDC->MaxWidth = g_ScreenWidth;
-    pWatchedDC->MaxHeight = g_ScreenHeight;
+    watchedDC->MaxWidth = g_ScreenWidth;
+    watchedDC->MaxHeight = g_ScreenHeight;
 
     if (g_VchanClientConnected)
     {
-        send_window_create(pWatchedDC);
-        send_wmname(hWnd);
+        SendWindowCreate(watchedDC);
+        SendWindowName(hWnd);
     }
 
-    InsertTailList(&g_WatchedWindowsList, &pWatchedDC->le);
+    InsertTailList(&g_WatchedWindowsList, &watchedDC->ListEntry);
 
-    return pWatchedDC;
+    return watchedDC;
 }
 
 // main event loop
+// TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents(void)
 {
     HANDLE vchan, mailslot;
     OVERLAPPED olVchan, olMailslot;
-    unsigned int fired_port;
+    unsigned int firedPort;
     ULONG eventCount;
-    DWORD i, dwSignaledEvent, size;
-    BOOL bVchanIoInProgress;
+    DWORD i, signaledEvent, size;
+    BOOL vchanIoInProgress;
     ULONG status;
-    BOOL bExitLoop;
-    HANDLE WatchedEvents[MAXIMUM_WAIT_OBJECTS];
-    HANDLE hWindowDamageEvent;
-    HANDLE hFullScreenOnEvent;
-    HANDLE hFullScreenOffEvent;
+    BOOL exitLoop;
+    HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
+    HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
     HDC screenDC;
-    ULONG uDamage = 0;
-    struct shm_cmd *pShmCmd = NULL;
+    ULONG damageNumber = 0;
+    struct shm_cmd *shmCmd = NULL;
     QH_MESSAGE qhm;
     HANDLE hookServerProcess;
     HANDLE hookShutdownEvent;
 
     LogDebug("start");
-    hWindowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    windowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
     if (!VchanInitServer(6000))
@@ -725,11 +721,11 @@ static ULONG WINAPI WatchForEvents(void)
     hookShutdownEvent = CreateNamedEvent(WGA32_SHUTDOWN_EVENT_NAME);
     if (!hookShutdownEvent)
         return GetLastError();
-    hFullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
-    if (!hFullScreenOnEvent)
+    fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
+    if (!fullScreenOnEvent)
         return GetLastError();
-    hFullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
-    if (!hFullScreenOffEvent)
+    fullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
+    if (!fullScreenOffEvent)
         return GetLastError();
     g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!g_ResolutionChangeEvent)
@@ -749,8 +745,8 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
 
     g_VchanClientConnected = FALSE;
-    bVchanIoInProgress = FALSE;
-    bExitLoop = FALSE;
+    vchanIoInProgress = FALSE;
+    exitLoop = FALSE;
 
     LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
 
@@ -759,12 +755,12 @@ static ULONG WINAPI WatchForEvents(void)
         eventCount = 0;
 
         // Order matters.
-        WatchedEvents[eventCount++] = g_ShutdownEvent;
-        WatchedEvents[eventCount++] = hWindowDamageEvent;
-        WatchedEvents[eventCount++] = hFullScreenOnEvent;
-        WatchedEvents[eventCount++] = hFullScreenOffEvent;
-        WatchedEvents[eventCount++] = g_ResolutionChangeEvent;
-        WatchedEvents[eventCount++] = olMailslot.hEvent;
+        watchedEvents[eventCount++] = g_ShutdownEvent;
+        watchedEvents[eventCount++] = windowDamageEvent;
+        watchedEvents[eventCount++] = fullScreenOnEvent;
+        watchedEvents[eventCount++] = fullScreenOffEvent;
+        watchedEvents[eventCount++] = g_ResolutionChangeEvent;
+        watchedEvents[eventCount++] = olMailslot.hEvent;
 
         status = ERROR_SUCCESS;
 
@@ -772,47 +768,47 @@ static ULONG WINAPI WatchForEvents(void)
         // read 1 byte instead of sizeof(fired_port) to not flush fired port
         // from evtchn buffer; evtchn driver will read only whole fired port
         // numbers (sizeof(fired_port)), so this will end in zero-length read
-        if (!bVchanIoInProgress && !ReadFile(vchan, &fired_port, 1, NULL, &olVchan))
+        if (!vchanIoInProgress && !ReadFile(vchan, &firedPort, 1, NULL, &olVchan))
         {
             status = GetLastError();
             if (ERROR_IO_PENDING != status)
             {
                 perror("ReadFile");
-                bExitLoop = TRUE;
+                exitLoop = TRUE;
                 break;
             }
         }
 
-        bVchanIoInProgress = TRUE;
+        vchanIoInProgress = TRUE;
 
-        WatchedEvents[eventCount++] = olVchan.hEvent;
+        watchedEvents[eventCount++] = olVchan.hEvent;
 
         // Start hook maislot async read.
         // Even if there is data available right away, processing is done in the event handler.
         status = ReadFile(mailslot, &qhm, sizeof(qhm), NULL, &olMailslot);
 
-        dwSignaledEvent = WaitForMultipleObjects(eventCount, WatchedEvents, FALSE, INFINITE);
-        if (dwSignaledEvent >= MAXIMUM_WAIT_OBJECTS)
+        signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
+        if (signaledEvent >= MAXIMUM_WAIT_OBJECTS)
         {
             status = perror("WaitForMultipleObjects");
             break;
         }
         else
         {
-            if (0 == dwSignaledEvent)
+            if (0 == signaledEvent)
             {
                 // shutdown event
                 LogDebug("Shutdown event signaled");
-                bExitLoop = TRUE;
+                exitLoop = TRUE;
                 break;
             }
 
             //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
-            switch (dwSignaledEvent)
+            switch (signaledEvent)
             {
             case 1: // damage event
 
-                LogVerbose("Damage %d\n", uDamage++);
+                LogVerbose("Damage %d\n", damageNumber++);
 
                 if (g_VchanClientConnected)
                 {
@@ -838,14 +834,14 @@ static ULONG WINAPI WatchForEvents(void)
 
             case 4: // resolution change event, signaled by ResolutionChangeThread
                 // Params are in g_ResolutionChangeParams
-                ChangeResolution(&screenDC, hWindowDamageEvent);
+                ChangeResolution(&screenDC, windowDamageEvent);
                 break;
 
             case 5: // mailslot read: message from our gui hook
                 if (!GetOverlappedResult(mailslot, &olMailslot, &size, FALSE))
                 {
                     perror("GetOverlappedResult(mailslot)");
-                    bExitLoop = TRUE;
+                    exitLoop = TRUE;
                     break;
                 }
 
@@ -875,7 +871,7 @@ static ULONG WINAPI WatchForEvents(void)
                 {
                     VchanWait();
 
-                    bVchanIoInProgress = FALSE;
+                    vchanIoInProgress = FALSE;
 
                     LogInfo("A vchan client has connected\n");
 
@@ -883,44 +879,44 @@ static ULONG WINAPI WatchForEvents(void)
                     if (!VchanIsServerConnected())
                     {
                         LogError("VchanIsServerConnected() failed");
-                        bExitLoop = TRUE;
+                        exitLoop = TRUE;
                         break;
                     }
 
-                    send_protocol_version();
+                    SendProtocolVersion();
 
                     // This will probably change the current video mode.
-                    if (ERROR_SUCCESS != handle_xconf())
+                    if (ERROR_SUCCESS != HandleXconf())
                     {
-                        bExitLoop = TRUE;
+                        exitLoop = TRUE;
                         break;
                     }
 
                     // The screen DC should be opened only after the resolution changes.
                     screenDC = GetDC(NULL);
-                    status = RegisterWatchedDC(screenDC, hWindowDamageEvent);
+                    status = RegisterWatchedDC(screenDC, windowDamageEvent);
                     if (ERROR_SUCCESS != status)
                     {
                         perror("RegisterWatchedDC");
-                        bExitLoop = TRUE;
+                        exitLoop = TRUE;
                         break;
                     }
 
                     // send the whole screen framebuffer map
-                    send_window_create(NULL);
-                    send_pixmap_mfns(NULL);
+                    SendWindowCreate(NULL);
+                    SendWindowMfns(NULL);
 
                     if (!g_SeamlessMode)
                     {
                         LogInfo("init in fullscreen mode");
-                        send_window_map(NULL);
+                        SendWindowMap(NULL);
                     }
                     else
                     {
                         if (ERROR_SUCCESS != StartShellEventsThread())
                         {
                             LogError("StartShellEventsThread failed, exiting");
-                            bExitLoop = TRUE;
+                            exitLoop = TRUE;
                             break;
                         }
                     }
@@ -954,7 +950,7 @@ static ULONG WINAPI WatchForEvents(void)
                         if (GetLastError() != ERROR_OPERATION_ABORTED)
                         {
                             perror("GetOverlappedResult(evtchn)");
-                            bExitLoop = TRUE;
+                            exitLoop = TRUE;
                             break;
                         }
                     }
@@ -963,20 +959,20 @@ static ULONG WINAPI WatchForEvents(void)
                 EnterCriticalSection(&g_VchanCriticalSection);
                 VchanWait();
 
-                bVchanIoInProgress = FALSE;
+                vchanIoInProgress = FALSE;
 
                 if (VchanIsEof())
                 {
-                    bExitLoop = TRUE;
+                    exitLoop = TRUE;
                     break;
                 }
 
                 while (VchanGetReadBufferSize())
                 {
-                    status = handle_server_data();
+                    status = HandleServerData();
                     if (ERROR_SUCCESS != status)
                     {
-                        bExitLoop = TRUE;
+                        exitLoop = TRUE;
                         LogError("handle_server_data() failed: 0x%x", status);
                         break;
                     }
@@ -987,13 +983,13 @@ static ULONG WINAPI WatchForEvents(void)
             }
         }
 
-        if (bExitLoop)
+        if (exitLoop)
             break;
     }
 
     LogDebug("main loop finished");
 
-    if (bVchanIoInProgress)
+    if (vchanIoInProgress)
     {
         if (CancelIo(vchan))
         {
@@ -1022,7 +1018,7 @@ static ULONG WINAPI WatchForEvents(void)
     }
 
     CloseHandle(olVchan.hEvent);
-    CloseHandle(hWindowDamageEvent);
+    CloseHandle(windowDamageEvent);
 
     StopShellEventsThread();
     UnregisterWatchedDC(screenDC);
@@ -1030,10 +1026,10 @@ static ULONG WINAPI WatchForEvents(void)
     ReleaseDC(NULL, screenDC);
     LogInfo("exiting");
 
-    return bExitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
+    return exitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
 
-static DWORD GetDomainName(char *nameBuffer, DWORD nameLength)
+static DWORD GetDomainName(OUT char *nameBuffer, IN DWORD nameLength)
 {
     DWORD status = ERROR_SUCCESS;
     struct xs_handle *xs;
@@ -1072,7 +1068,7 @@ cleanup:
 
 static ULONG Init(void)
 {
-    ULONG uResult;
+    ULONG status;
     WSADATA wsaData;
     WCHAR moduleName[CFG_MODULE_MAX];
 
@@ -1085,24 +1081,24 @@ static ULONG Init(void)
         return GetLastError();
     }
 
-    uResult = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
+    status = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
-    uResult = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_bUseDirtyBits, NULL);
-    if (ERROR_SUCCESS != uResult)
+    status = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_UseDirtyBits, NULL);
+    if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read '%s' config value, disabling that feature", REG_CONFIG_DIRTY_VALUE);
-        g_bUseDirtyBits = FALSE;
+        g_UseDirtyBits = FALSE;
     }
 
-    uResult = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
-    if (ERROR_SUCCESS != uResult)
+    status = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
+    if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_CURSOR_VALUE);
         g_DisableCursor = TRUE;
     }
 
-    uResult = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &g_SeamlessMode, NULL);
-    if (ERROR_SUCCESS != uResult)
+    status = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &g_SeamlessMode, NULL);
+    if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_SEAMLESS_VALUE);
         g_SeamlessMode = TRUE;
@@ -1113,37 +1109,37 @@ static ULONG Init(void)
     HideCursors();
     DisableEffects();
 
-    uResult = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
-    if (ERROR_SUCCESS != uResult)
+    status = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
+    if (ERROR_SUCCESS != status)
     {
         perror("IncreaseProcessWorkingSetSize");
         // try to continue
     }
 
-    SetLastError(uResult = CheckForXenInterface());
-    if (ERROR_SUCCESS != uResult)
+    SetLastError(status = CheckForXenInterface());
+    if (ERROR_SUCCESS != status)
     {
         return perror("CheckForXenInterface");
     }
 
     // Read domain name from xenstore.
-    uResult = GetDomainName(g_DomainName, RTL_NUMBER_OF(g_DomainName));
-    if (ERROR_SUCCESS != uResult)
+    status = GetDomainName(g_DomainName, RTL_NUMBER_OF(g_DomainName));
+    if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read domain name from xenstore, using host name");
 
-        uResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-        if (uResult == 0)
+        status = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (status == 0)
         {
             if (0 != gethostname(g_DomainName, sizeof(g_DomainName)))
             {
-                LogWarning("gethostname failed: 0x%x", uResult);
+                LogWarning("gethostname failed: 0x%x", status);
             }
             WSACleanup();
         }
         else
         {
-            LogWarning("WSAStartup failed: 0x%x", uResult);
+            LogWarning("WSAStartup failed: 0x%x", status);
             // this is not fatal, only used to get host name for full desktop window title
         }
     }
@@ -1155,7 +1151,7 @@ static ULONG Init(void)
     return ERROR_SUCCESS;
 }
 
-int wmain(ULONG argc, WCHAR *argv[])
+int wmain(int argc, WCHAR *argv[])
 {
     if (ERROR_SUCCESS != Init())
         return perror("Init");

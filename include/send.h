@@ -19,16 +19,16 @@
 #define PBaseSize   256 	// Program-specified base size
 #define PWinGravity 512 	// Program-specified window gravity
 
-void send_pixmap_mfns(WATCHED_DC *pWatchedDC);
-ULONG send_window_create(WATCHED_DC *pWatchedDC);
-ULONG send_window_destroy(HWND hWnd);
-ULONG send_window_flags(HWND hWnd, uint32_t flags_set, uint32_t flags_unset);
-void send_window_hints(HWND hWnd, uint32_t flags);
-void send_screen_hints(void);
-ULONG send_window_unmap(HWND hWnd);
-ULONG send_window_map(WATCHED_DC *pWatchedDC);
-ULONG send_window_configure(WATCHED_DC *pWatchedDC);
-ULONG send_screen_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
-void send_window_damage_event(HWND hWnd, int x, int y, int width, int height);
-void send_wmname(HWND hWnd);
-void send_protocol_version(void);
+void SendWindowMfns(IN const WATCHED_DC *watchedDC);
+ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC);
+ULONG SendWindowDestroy(IN HWND window);
+ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset);
+void SendWindowHints(IN HWND window, IN uint32_t flags);
+void SendScreenHints(void);
+ULONG SendWindowUnmap(IN HWND window);
+ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
+ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
+ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height);
+void SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
+void SendWindowName(IN HWND window);
+void SendProtocolVersion(void);

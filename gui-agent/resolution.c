@@ -29,7 +29,7 @@ static RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = { 0 };
 // after last screen resize message received from gui daemon.
 // This is to not change resolution on every such message (multiple times per second).
 // This thread is created in handle_configure().
-DWORD WINAPI ResolutionChangeThread(void *param)
+static DWORD WINAPI ResolutionChangeThread(void *param)
 {
     DWORD waitResult;
 
@@ -37,7 +37,7 @@ DWORD WINAPI ResolutionChangeThread(void *param)
     {
         // Wait indefinitely for an initial "change resolution" event.
         WaitForSingleObject(g_ResolutionChangeRequestedEvent, INFINITE);
-        LogDebug("resolution change requested: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        LogDebug("resolution change requested: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
 
         do
         {
@@ -48,14 +48,14 @@ DWORD WINAPI ResolutionChangeThread(void *param)
 
         // If we're here, that means the wait finally timed out.
         // We can change the resolution now.
-        LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+        LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
         SetEvent(g_ResolutionChangeEvent); // handled in WatchForEvents, actual resolution change
     }
     return 0;
 }
 
 // Signals g_ResolutionChangeRequestedEvent
-void RequestResolutionChange(LONG width, LONG height, LONG bpp, LONG x, LONG y)
+void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG bpp, IN LONG x, IN LONG y)
 {
     // Create trigger event for the throttling thread if not yet created.
     if (!g_ResolutionChangeRequestedEvent)
@@ -65,57 +65,57 @@ void RequestResolutionChange(LONG width, LONG height, LONG bpp, LONG x, LONG y)
     if (!g_ResolutionChangeThread)
         g_ResolutionChangeThread = CreateThread(NULL, 0, ResolutionChangeThread, NULL, 0, 0);
 
-    g_ResolutionChangeParams.width = width;
-    g_ResolutionChangeParams.height = height;
-    g_ResolutionChangeParams.bpp = bpp;
-    g_ResolutionChangeParams.x = x;
-    g_ResolutionChangeParams.y = y;
+    g_ResolutionChangeParams.Width = width;
+    g_ResolutionChangeParams.Height = height;
+    g_ResolutionChangeParams.Bpp = bpp;
+    g_ResolutionChangeParams.X = x;
+    g_ResolutionChangeParams.Y = y;
     SetEvent(g_ResolutionChangeRequestedEvent);
 }
 
 // Actually set video mode through qvideo calls.
-static ULONG SetVideoModeInternal(ULONG uWidth, ULONG uHeight, ULONG uBpp)
+static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height, IN ULONG bpp)
 {
-    WCHAR *ptszDeviceName = NULL;
-    DISPLAY_DEVICE DisplayDevice;
+    WCHAR *deviceName = NULL;
+    DISPLAY_DEVICE device;
 
-    if (!IS_RESOLUTION_VALID(uWidth, uHeight))
+    if (!IS_RESOLUTION_VALID(width, height))
     {
-        LogError("Resolution is invalid: %lux%lu", uWidth, uHeight);
+        LogError("Resolution is invalid: %lux%lu", width, height);
         return ERROR_INVALID_PARAMETER;
     }
 
-    LogInfo("New resolution: %lux%lu@%lu", uWidth, uHeight, uBpp);
+    LogInfo("New resolution: %lux%lu@%lu", width, height, bpp);
     // ChangeDisplaySettings fails if thread's desktop != input desktop...
     // This can happen on "quick user switch".
     AttachToInputDesktop();
 
-    if (ERROR_SUCCESS != FindQubesDisplayDevice(&DisplayDevice))
+    if (ERROR_SUCCESS != FindQubesDisplayDevice(&device))
         return perror("FindQubesDisplayDevice");
 
-    ptszDeviceName = (PWCHAR) &DisplayDevice.DeviceName[0];
+    deviceName = (WCHAR *) &device.DeviceName[0];
 
-    LogDebug("DeviceName: %s", ptszDeviceName);
+    LogDebug("DeviceName: %s", deviceName);
 
-    if (ERROR_SUCCESS != SupportVideoMode(ptszDeviceName, uWidth, uHeight, uBpp))
+    if (ERROR_SUCCESS != SupportVideoMode(deviceName, width, height, bpp))
         return perror("SupportVideoMode");
 
-    if (ERROR_SUCCESS != ChangeVideoMode(ptszDeviceName, uWidth, uHeight, uBpp))
+    if (ERROR_SUCCESS != ChangeVideoMode(deviceName, width, height, bpp))
         return perror("ChangeVideoMode");
 
     return ERROR_SUCCESS;
 }
 
 // set video mode, open screen section
-ULONG SetVideoMode(ULONG width, ULONG height, ULONG bpp)
+ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
 {
-    ULONG uResult = SetVideoModeInternal(width, height, bpp);
+    ULONG status = SetVideoModeInternal(width, height, bpp);
 
-    if (ERROR_SUCCESS != uResult)
+    if (ERROR_SUCCESS != status)
     {
         g_SeamlessMode = FALSE;
 
-        LogDebug("SetVideoMode() failed: %lu, keeping original resolution %lux%lu", uResult, g_ScreenWidth, g_ScreenHeight);
+        LogDebug("SetVideoMode() failed: %lu, keeping original resolution %lux%lu", status, g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
@@ -127,33 +127,33 @@ ULONG SetVideoMode(ULONG width, ULONG height, ULONG bpp)
 }
 
 // Reinitialize everything, change resolution (params in g_ResolutionChangeParams).
-ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
+ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
 {
-    ULONG uResult;
+    ULONG status;
 
     LogDebug("deinitializing");
-    if (ERROR_SUCCESS != (uResult = StopShellEventsThread()))
-        return uResult;
-    if (ERROR_SUCCESS != (uResult = UnregisterWatchedDC(*screenDC)))
-        return uResult;
-    if (ERROR_SUCCESS != (uResult = CloseScreenSection()))
-        return uResult;
+    if (ERROR_SUCCESS != (status = StopShellEventsThread()))
+        return status;
+    if (ERROR_SUCCESS != (status = UnregisterWatchedDC(*screenDC)))
+        return status;
+    if (ERROR_SUCCESS != (status = CloseScreenSection()))
+        return status;
     if (!ReleaseDC(NULL, *screenDC))
         return GetLastError();
 
     LogDebug("reinitializing");
-    uResult = SetVideoMode(g_ResolutionChangeParams.width, g_ResolutionChangeParams.height, g_ResolutionChangeParams.bpp);
+    status = SetVideoMode(g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height, g_ResolutionChangeParams.Bpp);
 
-    if (ERROR_SUCCESS != uResult)
-        return uResult;
+    if (ERROR_SUCCESS != status)
+        return status;
 
     *screenDC = GetDC(NULL);
     if (!(*screenDC))
         return GetLastError();
-    if (ERROR_SUCCESS != (uResult = RegisterWatchedDC(*screenDC, damageEvent)))
-        return uResult;
+    if (ERROR_SUCCESS != (status = RegisterWatchedDC(*screenDC, damageEvent)))
+        return status;
 
-    send_pixmap_mfns(NULL); // update framebuffer
+    SendWindowMfns(NULL); // update framebuffer
 
     // is it possible to have VM resolution bigger than host set by user?
     if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
@@ -164,18 +164,18 @@ ULONG ChangeResolution(HDC *screenDC, HANDLE damageEvent)
 
     if (!g_SeamlessMode)
     {
-        send_window_map(NULL); // show desktop window
+        SendWindowMap(NULL); // show desktop window
     }
     else
     {
         if (ERROR_SUCCESS != StartShellEventsThread())
-            return uResult;
+            return status;
     }
     LogDebug("done");
 
     // Reply to the daemon's request (with just the same data).
     // Otherwise daemon won't send screen resize requests again.
-    send_screen_configure(g_ResolutionChangeParams.x, g_ResolutionChangeParams.y, g_ResolutionChangeParams.width, g_ResolutionChangeParams.height);
+    SendScreenConfigure(g_ResolutionChangeParams.X, g_ResolutionChangeParams.Y, g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
 
     return ERROR_SUCCESS;
 }

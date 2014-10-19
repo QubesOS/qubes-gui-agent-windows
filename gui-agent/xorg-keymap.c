@@ -1,6 +1,6 @@
 #include <windows.h>
 
-WORD X11ToVk[256] = {
+WORD g_X11ToVk[256] = {
     /*   0 */ 'X',
     /*   1 */ 'X',
     /*   2 */ 'X',
@@ -264,7 +264,7 @@ WORD X11ToVk[256] = {
  * key release is constructed as |= 0x0080 - if scancode hasn't 0x0080 bit set
  */
 
-WORD KeycodeToScancode[256] = {
+WORD g_KeycodeToScancode[256] = {
     0x0000,	/* 0        */
     0x0000,	/* 1        */
     0x0000,	/* 2        */

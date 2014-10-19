@@ -9,7 +9,7 @@
 #include "log.h"
 
 // tell helper service to simulate ctrl-alt-del
-void SignalSASEvent(void)
+static void SignalSASEvent(void)
 {
     static HANDLE sasEvent = NULL;
 
@@ -28,7 +28,7 @@ void SignalSASEvent(void)
     }
 }
 
-DWORD handle_xconf(void)
+DWORD HandleXconf(void)
 {
     struct msg_xconf xconf;
 
@@ -40,23 +40,23 @@ DWORD handle_xconf(void)
     return SetVideoMode(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
 }
 
-int bitset(BYTE *keys, int num)
+static int BitSet(IN OUT BYTE *keys, IN int num)
 {
     return (keys[num / 8] >> (num % 8)) & 1;
 }
 
-BOOL IsKeyDown(int virtualKey)
+static BOOL IsKeyDown(IN int virtualKey)
 {
     return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
-DWORD handle_keymap_notify(void)
+static DWORD HandleKeymapNotify(void)
 {
     int i;
-    WORD win_key;
-    unsigned char remote_keys[32];
+    WORD virtualKey;
+    BYTE remoteKeys[32];
     INPUT inputEvent;
-    int modifier_keys[] = {
+    int modifierKeys[] = {
         50 /* VK_LSHIFT   */,
         37 /* VK_LCONTROL */,
         64 /* VK_LMENU    */,
@@ -70,17 +70,17 @@ DWORD handle_keymap_notify(void)
     };
 
     LogVerbose("start");
-    VchanReceiveBuffer((char *) remote_keys, sizeof(remote_keys));
+    VchanReceiveBuffer(remoteKeys, sizeof(remoteKeys));
     i = 0;
-    while (modifier_keys[i])
+    while (modifierKeys[i])
     {
-        win_key = X11ToVk[modifier_keys[i]];
-        if (!bitset(remote_keys, i) && IsKeyDown(X11ToVk[modifier_keys[i]]))
+        virtualKey = g_X11ToVk[modifierKeys[i]];
+        if (!BitSet(remoteKeys, i) && IsKeyDown(g_X11ToVk[modifierKeys[i]]))
         {
             inputEvent.type = INPUT_KEYBOARD;
             inputEvent.ki.time = 0;
             inputEvent.ki.wScan = 0; /* TODO? */
-            inputEvent.ki.wVk = win_key;
+            inputEvent.ki.wVk = virtualKey;
             inputEvent.ki.dwFlags = KEYEVENTF_KEYUP;
             inputEvent.ki.dwExtraInfo = 0;
 
@@ -88,7 +88,7 @@ DWORD handle_keymap_notify(void)
             {
                 return perror("SendInput");
             }
-            LogDebug("unsetting key VK=0x%x (keycode=0x%x)", win_key, modifier_keys[i]);
+            LogDebug("unsetting key VK=0x%x (keycode=0x%x)", virtualKey, modifierKeys[i]);
         }
         i++;
     }
@@ -96,13 +96,13 @@ DWORD handle_keymap_notify(void)
 }
 
 // Translates x11 keycode to physical scancode and uses that to synthesize keyboard input.
-DWORD synthesize_keycode(UINT keycode, BOOL release)
+static DWORD SynthesizeKeycode(IN UINT keycode, IN BOOL release)
 {
-    WORD scancode = KeycodeToScancode[keycode];
+    WORD scanCode = g_KeycodeToScancode[keycode];
     INPUT inputEvent;
 
     // If the scancode already has 0x80 bit set, do not send key release.
-    if (release && (scancode & 0x80))
+    if (release && (scanCode & 0x80))
         return ERROR_SUCCESS;
 
     inputEvent.type = INPUT_KEYBOARD;
@@ -110,11 +110,11 @@ DWORD synthesize_keycode(UINT keycode, BOOL release)
     inputEvent.ki.dwExtraInfo = 0;
     inputEvent.ki.dwFlags = KEYEVENTF_SCANCODE;
     inputEvent.ki.wVk = 0; // virtual key code is not used
-    inputEvent.ki.wScan = scancode & 0xff;
+    inputEvent.ki.wScan = scanCode & 0xff;
 
-    LogDebug("keycode: 0x%x, scancode: 0x%x", keycode, scancode);
+    LogDebug("keycode: 0x%x, scancode: 0x%x", keycode, scanCode);
 
-    if ((scancode & 0xff00) == 0xe000) // extended key
+    if ((scanCode & 0xff00) == 0xe000) // extended key
     {
         inputEvent.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
     }
@@ -130,15 +130,15 @@ DWORD synthesize_keycode(UINT keycode, BOOL release)
     return ERROR_SUCCESS;
 }
 
-DWORD handle_keypress(HWND hWnd)
+static DWORD HandleKeypress(IN HWND window)
 {
-    struct msg_keypress key;
+    struct msg_keypress keyMsg;
     INPUT inputEvent;
-    int local_capslock_state;
+    SHORT localCapslockState;
     DWORD status;
 
-    LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *) &key, sizeof(key));
+    LogVerbose("0x%x", window);
+    VchanReceiveBuffer(&keyMsg, sizeof(keyMsg));
 
     /* ignore x, y */
     /* TODO: send to correct window */
@@ -148,10 +148,10 @@ DWORD handle_keypress(HWND hWnd)
     inputEvent.ki.wScan = 0;
     inputEvent.ki.dwExtraInfo = 0;
 
-    local_capslock_state = GetKeyState(VK_CAPITAL) & 1;
+    localCapslockState = GetKeyState(VK_CAPITAL) & 1;
     // check if remote CapsLock state differs from local
     // other modifiers should be synchronized in MSG_KEYMAP_NOTIFY handler
-    if ((!local_capslock_state) ^ (!(key.state & (1 << LockMapIndex))))
+    if ((!localCapslockState) ^ (!(keyMsg.state & (1 << LockMapIndex))))
     {
         // toggle CapsLock state
         inputEvent.ki.wVk = VK_CAPITAL;
@@ -168,7 +168,7 @@ DWORD handle_keypress(HWND hWnd)
     }
 
     // produce the key press/release
-    status = synthesize_keycode(key.keycode, key.type != KeyPress);
+    status = SynthesizeKeycode(keyMsg.keycode, keyMsg.type != KeyPress);
     if (ERROR_SUCCESS != status)
         return status;
 
@@ -179,17 +179,17 @@ DWORD handle_keypress(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
-DWORD handle_button(HWND hWnd)
+static DWORD HandleButton(IN HWND window)
 {
-    struct msg_button button;
+    struct msg_button buttonMsg;
     INPUT inputEvent;
     RECT rect = { 0 };
 
-    LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *) &button, sizeof(button));
+    LogVerbose("0x%x", window);
+    VchanReceiveBuffer(&buttonMsg, sizeof(buttonMsg));
 
-    if (hWnd)
-        GetWindowRect(hWnd, &rect);
+    if (window)
+        GetWindowRect(window, &rect);
 
     /* TODO: send to correct window */
 
@@ -199,32 +199,32 @@ DWORD handle_button(HWND hWnd)
     inputEvent.mi.dwExtraInfo = 0;
     /* pointer coordinates must be 0..65535, which covers the whole screen -
     * regardless of resolution */
-    inputEvent.mi.dx = (button.x + rect.left) * 65535 / g_ScreenWidth;
-    inputEvent.mi.dy = (button.y + rect.top) * 65535 / g_ScreenHeight;
-    switch (button.button)
+    inputEvent.mi.dx = (buttonMsg.x + rect.left) * 65535 / g_ScreenWidth;
+    inputEvent.mi.dy = (buttonMsg.y + rect.top) * 65535 / g_ScreenHeight;
+    switch (buttonMsg.button)
     {
     case Button1:
         inputEvent.mi.dwFlags =
-            (button.type == ButtonPress) ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+            (buttonMsg.type == ButtonPress) ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
         break;
     case Button2:
         inputEvent.mi.dwFlags =
-            (button.type == ButtonPress) ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+            (buttonMsg.type == ButtonPress) ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
         break;
     case Button3:
         inputEvent.mi.dwFlags =
-            (button.type == ButtonPress) ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+            (buttonMsg.type == ButtonPress) ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
         break;
     case Button4:
     case Button5:
         inputEvent.mi.dwFlags = MOUSEEVENTF_WHEEL;
-        inputEvent.mi.mouseData = (button.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
+        inputEvent.mi.mouseData = (buttonMsg.button == Button4) ? WHEEL_DELTA : -WHEEL_DELTA;
         break;
     default:
-        LogWarning("unknown button pressed/released 0x%x", button.button);
+        LogWarning("unknown button pressed/released 0x%x", buttonMsg.button);
     }
 
-    LogDebug("window 0x%x, (%d,%d), flags 0x%x", hWnd, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
+    LogDebug("window 0x%x, (%d,%d), flags 0x%x", window, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
         return perror("SendInput");
@@ -233,24 +233,24 @@ DWORD handle_button(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
-DWORD handle_motion(HWND hWnd)
+static DWORD HandleMotion(IN HWND window)
 {
-    struct msg_motion motion;
+    struct msg_motion motionMsg;
     INPUT inputEvent;
     RECT rect = { 0 };
 
-    LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *) &motion, sizeof(motion));
+    LogVerbose("0x%x", window);
+    VchanReceiveBuffer(&motionMsg, sizeof(motionMsg));
 
-    if (hWnd)
-        GetWindowRect(hWnd, &rect);
+    if (window)
+        GetWindowRect(window, &rect);
 
     inputEvent.type = INPUT_MOUSE;
     inputEvent.mi.time = 0;
     /* pointer coordinates must be 0..65535, which covers the whole screen -
     * regardless of resolution */
-    inputEvent.mi.dx = (motion.x + rect.left) * 65535 / g_ScreenWidth;
-    inputEvent.mi.dy = (motion.y + rect.top) * 65535 / g_ScreenHeight;
+    inputEvent.mi.dx = (motionMsg.x + rect.left) * 65535 / g_ScreenWidth;
+    inputEvent.mi.dy = (motionMsg.y + rect.top) * 65535 / g_ScreenHeight;
     inputEvent.mi.mouseData = 0;
     inputEvent.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_ABSOLUTE;
     inputEvent.mi.dwExtraInfo = 0;
@@ -263,131 +263,131 @@ DWORD handle_motion(HWND hWnd)
     return ERROR_SUCCESS;
 }
 
-DWORD handle_configure(HWND hWnd)
+static DWORD HandleConfigure(IN HWND window)
 {
-    struct msg_configure configure;
+    struct msg_configure configureMsg;
 
-    VchanReceiveBuffer((char *) &configure, sizeof(configure));
-    LogDebug("0x%x (%d,%d) %dx%d", hWnd, configure.x, configure.y, configure.width, configure.height);
+    VchanReceiveBuffer(&configureMsg, sizeof(configureMsg));
+    LogDebug("0x%x (%d,%d) %dx%d", window, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
 
-    if (hWnd != 0) // 0 is full screen
-        SetWindowPos(hWnd, HWND_TOP, configure.x, configure.y, configure.width, configure.height, 0);
+    if (window != 0) // 0 is full screen
+        SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, 0);
     else
     {
         // gui daemon requests screen resize: possible resolution change
 
-        if (g_ScreenWidth == configure.width && g_ScreenHeight == configure.height)
+        if (g_ScreenWidth == configureMsg.width && g_ScreenHeight == configureMsg.height)
         {
             // send ACK to guid so it won't stop sending MSG_CONFIGURE
-            return send_screen_configure(configure.x, configure.y, configure.width, configure.height);
+            return SendScreenConfigure(configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
             // nothing changes, ignore
         }
 
-        if (!IS_RESOLUTION_VALID(configure.width, configure.height))
+        if (!IS_RESOLUTION_VALID(configureMsg.width, configureMsg.height))
         {
-            LogWarning("Ignoring invalid resolution %dx%d", configure.width, configure.height);
+            LogWarning("Ignoring invalid resolution %dx%d", configureMsg.width, configureMsg.height);
             // send back current resolution to keep daemon up to date
-            return send_screen_configure(0, 0, g_ScreenWidth, g_ScreenHeight);
+            return SendScreenConfigure(0, 0, g_ScreenWidth, g_ScreenHeight);
         }
 
         // XY coords are used to reply with the same message to the daemon.
         // It's useless for fullscreen but the daemon needs such ACK...
         // Signal the trigger event so the throttling thread evaluates the resize request.
-        RequestResolutionChange(configure.width, configure.height, 32, configure.x, configure.y);
+        RequestResolutionChange(configureMsg.width, configureMsg.height, 32, configureMsg.x, configureMsg.y);
     }
 
     return ERROR_SUCCESS;
 }
 
-DWORD handle_focus(HWND hWnd)
+static DWORD HandleFocus(IN HWND window)
 {
-    struct msg_focus focus;
+    struct msg_focus focusMsg;
 
-    LogVerbose("0x%x", hWnd);
-    VchanReceiveBuffer((char *) &focus, sizeof(focus));
+    LogVerbose("0x%x", window);
+    VchanReceiveBuffer(&focusMsg, sizeof(focusMsg));
 
-    BringWindowToTop(hWnd);
-    SetForegroundWindow(hWnd);
-    SetActiveWindow(hWnd);
-    SetFocus(hWnd);
+    BringWindowToTop(window);
+    SetForegroundWindow(window);
+    SetActiveWindow(window);
+    SetFocus(window);
 
     return ERROR_SUCCESS;
 }
 
-DWORD handle_close(HWND hWnd)
+static DWORD HandleClose(IN HWND window)
 {
-    LogDebug("0x%x", hWnd);
-    PostMessage(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+    LogDebug("0x%x", window);
+    PostMessage(window, WM_SYSCOMMAND, SC_CLOSE, 0);
 
     return ERROR_SUCCESS;
 }
 
-DWORD handle_window_flags(HWND hWnd)
+static DWORD HandleWindowFlags(IN HWND window)
 {
-    struct msg_window_flags flags;
+    struct msg_window_flags flagsMsg;
 
-    VchanReceiveBuffer((char *) &flags, sizeof(flags));
-    LogDebug("0x%x: set 0x%x, unset 0x%x", hWnd, flags.flags_set, flags.flags_unset);
+    VchanReceiveBuffer(&flagsMsg, sizeof(flagsMsg));
+    LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsMsg.flags_set, flagsMsg.flags_unset);
 
-    if (flags.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
+    if (flagsMsg.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
     {
-        ShowWindowAsync(hWnd, SW_RESTORE);
+        ShowWindowAsync(window, SW_RESTORE);
     }
-    else if (flags.flags_set & WINDOW_FLAG_MINIMIZE) // minimize
+    else if (flagsMsg.flags_set & WINDOW_FLAG_MINIMIZE) // minimize
     {
-        ShowWindowAsync(hWnd, SW_MINIMIZE);
+        ShowWindowAsync(window, SW_MINIMIZE);
     }
 
     return ERROR_SUCCESS;
 }
 
-DWORD handle_server_data(void)
+DWORD HandleServerData(void)
 {
-    struct msg_hdr hdr;
-    BYTE discard[256];
-    int nbRead;
+    struct msg_hdr header;
+    BYTE discardBuffer[256];
+    int readSize;
     DWORD status = ERROR_SUCCESS;
 
-    VchanReceiveBuffer(&hdr, sizeof(hdr));
+    VchanReceiveBuffer(&header, sizeof(header));
 
-    LogVerbose("received message type %d for 0x%x", hdr.type, hdr.window);
+    LogVerbose("received message type %d for 0x%x", header.type, header.window);
 
-    switch (hdr.type)
+    switch (header.type)
     {
     case MSG_KEYPRESS:
-        status = handle_keypress((HWND) hdr.window);
+        status = HandleKeypress((HWND) header.window);
         break;
     case MSG_BUTTON:
-        status = handle_button((HWND) hdr.window);
+        status = HandleButton((HWND) header.window);
         break;
     case MSG_MOTION:
-        status = handle_motion((HWND) hdr.window);
+        status = HandleMotion((HWND) header.window);
         break;
     case MSG_CONFIGURE:
-        status = handle_configure((HWND) hdr.window);
+        status = HandleConfigure((HWND) header.window);
         break;
     case MSG_FOCUS:
-        status = handle_focus((HWND) hdr.window);
+        status = HandleFocus((HWND) header.window);
         break;
     case MSG_CLOSE:
-        status = handle_close((HWND) hdr.window);
+        status = HandleClose((HWND) header.window);
         break;
     case MSG_KEYMAP_NOTIFY:
-        status = handle_keymap_notify();
+        status = HandleKeymapNotify();
         break;
     case MSG_WINDOW_FLAGS:
-        status = handle_window_flags((HWND) hdr.window);
+        status = HandleWindowFlags((HWND) header.window);
         break;
     default:
-        LogWarning("got unknown msg type %d, ignoring", hdr.type);
+        LogWarning("got unknown msg type %d, ignoring", header.type);
 
         /* discard unsupported message body */
-        while (hdr.untrusted_len > 0)
+        while (header.untrusted_len > 0)
         {
-            nbRead = VchanReceiveBuffer(discard, min(hdr.untrusted_len, sizeof(discard)));
-            if (nbRead <= 0)
+            readSize = VchanReceiveBuffer(discardBuffer, min(header.untrusted_len, sizeof(discardBuffer)));
+            if (readSize <= 0)
                 break;
-            hdr.untrusted_len -= nbRead;
+            header.untrusted_len -= readSize;
         }
     }
 

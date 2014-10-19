@@ -10,27 +10,27 @@ UMENTRY = wmain
 C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
 
 INCLUDES = $(INCLUDES); \
-                    ..\include; \
-                    ..\qvideo\inc; \
-                    $(QUBES_INCLUDES); \
-                    $(DDK_INC_PATH); \
-                    ..\..\core\vchan; \
-                    ..\..\core\win\include; \
-                    ..\gui-common\include; \
+    ..\include; \
+    ..\qvideo\inc; \
+    $(QUBES_INCLUDES); \
+    $(DDK_INC_PATH); \
+    ..\..\core\vchan; \
+    ..\..\core\win\include; \
+    ..\gui-common\include;
 
 SOURCES = main.c handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c shell_events.c util.c register-hooks.c wga.rc
 
 TARGETLIBS = \
-        $(SDK_LIB_PATH)\kernel32.lib \
-        $(SDK_LIB_PATH)\user32.lib \
-        $(SDK_LIB_PATH)\gdi32.lib \
-        $(SDK_LIB_PATH)\setupapi.lib \
-        $(SDK_LIB_PATH)\shlwapi.lib \
-        $(SDK_LIB_PATH)\shell32.lib \
-        $(SDK_LIB_PATH)\wtsapi32.lib \
-        $(SDK_LIB_PATH)\ws2_32.lib \
-        $(QUBES_LIBS)\windows-utils.lib \
-        $(QUBES_LIBS)\libvchan.lib \
-        $(QUBES_LIBS)\gntmem.lib \
-        $(QUBES_LIBS)\evtchn.lib \
-        $(QUBES_LIBS)\libxs.lib \
+    $(SDK_LIB_PATH)\kernel32.lib \
+    $(SDK_LIB_PATH)\user32.lib \
+    $(SDK_LIB_PATH)\gdi32.lib \
+    $(SDK_LIB_PATH)\setupapi.lib \
+    $(SDK_LIB_PATH)\shlwapi.lib \
+    $(SDK_LIB_PATH)\shell32.lib \
+    $(SDK_LIB_PATH)\wtsapi32.lib \
+    $(SDK_LIB_PATH)\ws2_32.lib \
+    $(QUBES_LIBS)\windows-utils.lib \
+    $(QUBES_LIBS)\libvchan.lib \
+    $(QUBES_LIBS)\gntmem.lib \
+    $(QUBES_LIBS)\evtchn.lib \
+    $(QUBES_LIBS)\libxs.lib

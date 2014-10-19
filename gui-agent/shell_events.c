@@ -6,99 +6,95 @@
 
 #include "log.h"
 
-const WCHAR g_szClassName[] = L"QubesShellHookClass";
-ULONG g_uShellHookMessage = 0;
+const WCHAR g_ShellHookClassName[] = L"QubesShellHookClass";
+ULONG g_ShellHookMessage = 0;
 HWND g_ShellEventsWindow = NULL;
 
 // All code in this file runs in a separate "shell hook" thread.
 
-void AddWindow(HWND hWnd)
+static void AddWindow(IN HWND window)
 {
     WINDOWINFO wi;
 
-    LogDebug("0x%x", hWnd);
-    if (hWnd == 0)
+    LogDebug("0x%x", window);
+    if (window == 0)
         return;
 
     wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(hWnd, &wi))
+    if (!GetWindowInfo(window, &wi))
     {
         perror("GetWindowInfo");
         return;
     }
 
-    if (!ShouldAcceptWindow(hWnd, &wi))
+    if (!ShouldAcceptWindow(window, &wi))
         return;
 
     EnterCriticalSection(&g_csWatchedWindows);
-
-    AddWindowWithInfo(hWnd, &wi);
-
+    AddWindowWithInfo(window, &wi);
     LeaveCriticalSection(&g_csWatchedWindows);
 }
 
-void RemoveWindow(HWND hWnd)
+static void RemoveWindow(IN HWND window)
 {
-    WATCHED_DC *pWatchedDC;
+    WATCHED_DC *watchedDC;
 
-    LogDebug("0x%x", hWnd);
+    LogDebug("0x%x", window);
     EnterCriticalSection(&g_csWatchedWindows);
 
-    pWatchedDC = FindWindowByHwnd(hWnd);
-    if (!pWatchedDC)
+    watchedDC = FindWindowByHandle(window);
+    if (!watchedDC)
     {
         LeaveCriticalSection(&g_csWatchedWindows);
         return;
     }
 
-    RemoveEntryList(&pWatchedDC->le);
-    RemoveWatchedDC(pWatchedDC);
-    pWatchedDC = NULL;
+    RemoveEntryList(&watchedDC->ListEntry);
+    RemoveWatchedDC(watchedDC);
+    watchedDC = NULL;
 
     LeaveCriticalSection(&g_csWatchedWindows);
 }
 
 // called from shell hook proc
-ULONG CheckWindowUpdates(HWND hWnd)
+static ULONG CheckWindowUpdates(IN HWND window)
 {
     WINDOWINFO wi;
-    WATCHED_DC *pWatchedDC = NULL;
+    WATCHED_DC *watchedDC = NULL;
 
-    LogDebug("0x%x", hWnd);
+    LogDebug("0x%x", window);
     wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(hWnd, &wi))
+    if (!GetWindowInfo(window, &wi))
         return perror("GetWindowInfo");
 
     EnterCriticalSection(&g_csWatchedWindows);
 
     // AddWindowWithInfo() returns an existing pWatchedDC if the window is already on the list.
-    pWatchedDC = AddWindowWithInfo(hWnd, &wi);
-    if (!pWatchedDC)
+    watchedDC = AddWindowWithInfo(window, &wi);
+    if (!watchedDC)
     {
         LogDebug("AddWindowWithInfo returned NULL");
         LeaveCriticalSection(&g_csWatchedWindows);
         return ERROR_SUCCESS;
     }
 
-    CheckWatchedWindowUpdates(pWatchedDC, &wi, FALSE, NULL);
-
+    CheckWatchedWindowUpdates(watchedDC, &wi, FALSE, NULL);
     LeaveCriticalSection(&g_csWatchedWindows);
-
-    send_wmname(hWnd);
+    SendWindowName(window);
 
     return ERROR_SUCCESS;
 }
 
-LRESULT CALLBACK ShellHookWndProc(
-    HWND hwnd,
-    UINT uMsg,
+static LRESULT CALLBACK ShellHookWindowProc(
+    HWND window,
+    UINT message,
     WPARAM wParam,
     LPARAM lParam
     )
 {
     HWND targetWindow = (HWND) lParam;
 
-    if (uMsg == g_uShellHookMessage)
+    if (message == g_ShellHookMessage)
     {
         switch (wParam)
         {
@@ -138,91 +134,89 @@ LRESULT CALLBACK ShellHookWndProc(
         return 0;
     }
 
-    switch (uMsg)
+    switch (message)
     {
     case WM_CLOSE:
         LogDebug("WM_CLOSE");
-        DestroyWindow(hwnd);
+        DestroyWindow(window);
         break;
     case WM_DESTROY:
         LogDebug("WM_DESTROY");
         PostQuitMessage(0);
         break;
     default:
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+        return DefWindowProc(window, message, wParam, lParam);
     }
     return 0;
 }
 
-ULONG CreateShellHookWindow(HWND *pWindow)
+static ULONG CreateShellHookWindow(OUT HWND *window)
 {
-    WNDCLASSEX wc;
-    HWND hwnd;
+    WNDCLASSEX windowClass;
     HINSTANCE hInstance = GetModuleHandle(NULL);
-    ULONG uResult;
+    ULONG status;
 
     LogVerbose("start");
 
-    if (!pWindow)
+    if (!window)
         return ERROR_INVALID_PARAMETER;
 
-    memset(&wc, 0, sizeof(wc));
-    wc.cbSize = sizeof(WNDCLASSEX);
-    wc.lpfnWndProc = ShellHookWndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = g_szClassName;
+    ZeroMemory(&windowClass, sizeof(windowClass));
+    windowClass.cbSize = sizeof(WNDCLASSEX);
+    windowClass.lpfnWndProc = ShellHookWindowProc;
+    windowClass.hInstance = hInstance;
+    windowClass.lpszClassName = g_ShellHookClassName;
 
-    if (!RegisterClassEx(&wc))
+    if (!RegisterClassEx(&windowClass))
         return perror("RegisterClassEx");
 
-    hwnd = CreateWindow(g_szClassName, L"QubesShellHook",
+    *window = CreateWindow(g_ShellHookClassName, L"QubesShellHook",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, NULL, NULL, hInstance, NULL);
 
-    if (hwnd == NULL)
+    if (*window == NULL)
         return perror("CreateWindow");
-    LogDebug("shell hook window: 0x%x", hwnd);
 
-    ShowWindow(hwnd, SW_HIDE);
-    UpdateWindow(hwnd);
+    LogDebug("shell hook window: 0x%x", *window);
 
-    if (!RegisterShellHookWindow(hwnd))
+    ShowWindow(*window, SW_HIDE);
+    UpdateWindow(*window);
+
+    if (!RegisterShellHookWindow(*window))
     {
-        uResult = perror("RegisterShellHookWindow");
-        DestroyWindow(hwnd);
-        UnregisterClass(g_szClassName, hInstance);
-        return uResult;
+        status = perror("RegisterShellHookWindow");
+        DestroyWindow(*window);
+        UnregisterClass(g_ShellHookClassName, hInstance);
+        return status;
     }
 
-    if (!g_uShellHookMessage)
-        g_uShellHookMessage = RegisterWindowMessage(L"SHELLHOOK");
+    if (!g_ShellHookMessage)
+        g_ShellHookMessage = RegisterWindowMessage(L"SHELLHOOK");
 
-    if (!g_uShellHookMessage)
+    if (!g_ShellHookMessage)
         return perror("RegisterWindowMessage");
-
-    *pWindow = hwnd;
 
     return ERROR_SUCCESS;
 }
 
-ULONG ShellHookMessageLoop()
+static ULONG ShellHookMessageLoop(void)
 {
-    MSG Msg;
-    HINSTANCE hInstance = GetModuleHandle(NULL);
+    MSG message;
+    HINSTANCE instance = GetModuleHandle(NULL);
 
     LogDebug("start");
-    while (GetMessage(&Msg, NULL, 0, 0) > 0)
+    while (GetMessage(&message, NULL, 0, 0) > 0)
     {
-        TranslateMessage(&Msg);
-        DispatchMessage(&Msg);
+        TranslateMessage(&message);
+        DispatchMessage(&message);
     }
 
     LogDebug("exiting");
     return ERROR_SUCCESS;
 }
 
-ULONG WINAPI ShellEventsThread(void *pParam)
+ULONG WINAPI ShellEventsThread(void *param)
 {
-    ULONG uResult;
+    ULONG status;
 
     LogDebug("start");
     if (ERROR_SUCCESS != AttachToInputDesktop())
@@ -232,10 +226,10 @@ ULONG WINAPI ShellEventsThread(void *pParam)
         return perror("CreateShellHookWindow");
 
     InvalidateRect(NULL, NULL, TRUE); // repaint everything
-    if (ERROR_SUCCESS != (uResult = ShellHookMessageLoop()))
-        return uResult;
+    if (ERROR_SUCCESS != (status = ShellHookMessageLoop()))
+        return status;
 
-    if (!UnregisterClass(g_szClassName, NULL))
+    if (!UnregisterClass(g_ShellHookClassName, NULL))
         return perror("UnregisterClass");
 
     return ERROR_SUCCESS;
