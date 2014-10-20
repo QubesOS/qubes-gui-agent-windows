@@ -39,7 +39,7 @@ typedef ULONG64 PFN_NUMBER;
 #endif
 
 // size of PFN_ARRAY
-#define PFN_ARRAY_SIZE(width, height) ((FRAMEBUFFER_PAGE_COUNT(width, height) * sizeof(PFN_NUMBER)) + sizeof(ULONG))
+#define PFN_ARRAY_SIZE(width, height) ((FRAMEBUFFER_PAGE_COUNT(width, height) * sizeof(PFN_NUMBER)) + sizeof(UINT32))
 
 #pragma warning(push)
 #pragma warning(disable: 4200) // zero-sized array
@@ -47,7 +47,7 @@ typedef ULONG64 PFN_NUMBER;
 // NOTE: this struct is variable size, use FRAMEBUFFER_PAGE_COUNT
 typedef struct _PFN_ARRAY
 {
-    ULONG uNumberOf4kPages;
+    ULONG NumberOf4kPages;
     PFN_NUMBER Pfn[0];
 } PFN_ARRAY;
 
@@ -76,16 +76,16 @@ typedef struct _PFN_ARRAY
 // wga-qvideo interface
 typedef struct _QV_SUPPORT_MODE
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
-    ULONG uHeight;
-    ULONG uWidth;
-    ULONG uBpp;
+    ULONG Height;
+    ULONG Width;
+    ULONG Bpp;
 } QV_SUPPORT_MODE;
 
 typedef struct _QV_GET_SURFACE_DATA
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
     // Must be allocated by the user mode client (use FRAMEBUFFER_PAGE_COUNT).
     // Driver will check if the size is sufficient and the buffer accessible.
@@ -93,32 +93,32 @@ typedef struct _QV_GET_SURFACE_DATA
     // two calls because driver can't easily allocate user space memory.
     // Must be here instead of the response struct because GDI
     // doesn't copy contents of ExtEscape's output from user to kernel.
-    PFN_ARRAY *pPfnArray;
+    PFN_ARRAY *PfnArray;
 
     // A surface handle is converted automatically by GDI from HDC to SURFOBJ, so do not pass it here
 } QV_GET_SURFACE_DATA;
 
 typedef struct _QV_GET_SURFACE_DATA_RESPONSE
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
-    ULONG uWidth;
-    ULONG uHeight;
-    ULONG lDelta;
-    ULONG ulBitCount;
-    BOOLEAN bIsScreen;
+    ULONG Width;
+    ULONG Height;
+    ULONG Delta;
+    ULONG Bpp;
+    BOOLEAN IsScreen;
 } QV_GET_SURFACE_DATA_RESPONSE;
 
 typedef struct _QV_WATCH_SURFACE
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
-    HANDLE hUserModeEvent;
+    HANDLE UserModeEvent;
 } QV_WATCH_SURFACE;
 
 typedef struct _QV_STOP_WATCHING_SURFACE
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
     // A surface handle is converted automatically by GDI from HDC to SURFOBJ, so do not pass it here
 } QV_STOP_WATCHING_SURFACE;
@@ -126,7 +126,7 @@ typedef struct _QV_STOP_WATCHING_SURFACE
 // wga->display: confirmation that all dirty page data has been read
 typedef struct _QV_SYNCHRONIZE
 {
-    ULONG uMagic;		// must be present at the top of every QV_ structure
+    ULONG Magic;		// must be present at the top of every QV_ structure
 
     // A surface handle is converted automatically by GDI from HDC to SURFOBJ, so do not pass it here
 } QV_SYNCHRONIZE;
@@ -167,47 +167,47 @@ typedef struct _QV_DIRTY_PAGES
 
 typedef struct _QVMINI_ALLOCATE_MEMORY
 {
-    ULONG uLength;
+    ULONG Size;
 } QVMINI_ALLOCATE_MEMORY;
 
 typedef struct _QVMINI_ALLOCATE_MEMORY_RESPONSE
 {
-    void *pVirtualAddress;
-    PFN_ARRAY *pPfnArray;
+    void *VirtualAddress;
+    PFN_ARRAY *PfnArray;
 } QVMINI_ALLOCATE_MEMORY_RESPONSE;
 
 typedef struct _QVMINI_FREE_MEMORY
 {
-    void *pVirtualAddress;
-    PFN_ARRAY *pPfnArray;
+    void *VirtualAddress;
+    PFN_ARRAY *PfnArray;
 } QVMINI_FREE_MEMORY;
 
 typedef struct _QVMINI_ALLOCATE_SECTION
 {
-    ULONG uLength;
-    BOOLEAN bUseDirtyBits;
+    ULONG Size;
+    BOOLEAN UseDirtyBits;
 } QVMINI_ALLOCATE_SECTION;
 
 typedef struct _QVMINI_ALLOCATE_SECTION_RESPONSE
 {
-    void *pVirtualAddress;
+    void *VirtualAddress;
     void *SectionObject;
-    HANDLE hSection;
-    void *pMdl;
+    HANDLE Section;
+    void *Mdl;
     void *DirtySectionObject;
-    HANDLE hDirtySection;
-    QV_DIRTY_PAGES *pDirtyPages;
-    PFN_ARRAY *pPfnArray;
+    HANDLE DirtySection;
+    QV_DIRTY_PAGES *DirtyPages;
+    PFN_ARRAY *PfnArray;
 } QVMINI_ALLOCATE_SECTION_RESPONSE;
 
 typedef struct _QVMINI_FREE_SECTION
 {
-    void *pVirtualAddress;
+    void *VirtualAddress;
     void *SectionObject;
-    HANDLE hSection;
-    void *pMdl;
+    HANDLE Section;
+    void *Mdl;
     void *DirtySectionObject;
-    HANDLE hDirtySection;
-    QV_DIRTY_PAGES *pDirtyPages;
-    PFN_ARRAY *pPfnArray;
+    HANDLE DirtySection;
+    QV_DIRTY_PAGES *DirtyPages;
+    PFN_ARRAY *PfnArray;
 } QVMINI_FREE_SECTION;

@@ -11,14 +11,14 @@ VOID QubesVideoNotImplemented(
 #endif
 
 BOOLEAN QubesVideoResetHW(
-    void *HwDeviceExtension,
-    ULONG Columns,
-    ULONG Rows
+    void *hwDeviceExtension,
+    ULONG columns,
+    ULONG rows
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
-    UNREFERENCED_PARAMETER(Columns);
-    UNREFERENCED_PARAMETER(Rows);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
+    UNREFERENCED_PARAMETER(columns);
+    UNREFERENCED_PARAMETER(rows);
 
     QubesVideoNotImplemented("QubesVideoResetHW");
 
@@ -26,14 +26,14 @@ BOOLEAN QubesVideoResetHW(
 }
 
 VP_STATUS QubesVideoGetPowerState(
-    void *HwDeviceExtension,
-    ULONG HwId,
-    VIDEO_POWER_MANAGEMENT *VideoPowerControl
+    void *hwDeviceExtension,
+    ULONG hwId,
+    VIDEO_POWER_MANAGEMENT *videoPowerControl
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
-    UNREFERENCED_PARAMETER(HwId);
-    UNREFERENCED_PARAMETER(VideoPowerControl);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
+    UNREFERENCED_PARAMETER(hwId);
+    UNREFERENCED_PARAMETER(videoPowerControl);
 
     QubesVideoNotImplemented("QubesVideoGetPowerState");
 
@@ -41,14 +41,14 @@ VP_STATUS QubesVideoGetPowerState(
 }
 
 VP_STATUS QubesVideoSetPowerState(
-    void *HwDeviceExtension,
-    ULONG HwId,
-    VIDEO_POWER_MANAGEMENT *VideoPowerControl
+    void *hwDeviceExtension,
+    ULONG hwId,
+    VIDEO_POWER_MANAGEMENT *videoPowerControl
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
-    UNREFERENCED_PARAMETER(HwId);
-    UNREFERENCED_PARAMETER(VideoPowerControl);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
+    UNREFERENCED_PARAMETER(hwId);
+    UNREFERENCED_PARAMETER(videoPowerControl);
 
     QubesVideoNotImplemented("QubesVideoSetPowerState");
 
@@ -56,20 +56,20 @@ VP_STATUS QubesVideoSetPowerState(
 }
 
 VP_STATUS QubesVideoGetChildDescriptor(
-    IN void *HwDeviceExtension,
-    IN VIDEO_CHILD_ENUM_INFO *ChildEnumInfo,
-    OUT VIDEO_CHILD_TYPE *pChildType,
-    OUT void *pChildDescriptor,
-    OUT ULONG *pUId,
-    OUT ULONG *pUnused
+    IN void *hwDeviceExtension,
+    IN VIDEO_CHILD_ENUM_INFO *childEnumInfo,
+    OUT VIDEO_CHILD_TYPE *childType,
+    OUT void *childDescriptor,
+    OUT ULONG *id,
+    OUT ULONG *unused
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
-    UNREFERENCED_PARAMETER(ChildEnumInfo);
-    UNREFERENCED_PARAMETER(pChildType);
-    UNREFERENCED_PARAMETER(pChildDescriptor);
-    UNREFERENCED_PARAMETER(pUId);
-    UNREFERENCED_PARAMETER(pUnused);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
+    UNREFERENCED_PARAMETER(childEnumInfo);
+    UNREFERENCED_PARAMETER(childType);
+    UNREFERENCED_PARAMETER(childDescriptor);
+    UNREFERENCED_PARAMETER(id);
+    UNREFERENCED_PARAMETER(unused);
 
     QubesVideoNotImplemented("QubesVideoGetChildDescriptor");
 
@@ -77,18 +77,18 @@ VP_STATUS QubesVideoGetChildDescriptor(
 }
 
 VP_STATUS __checkReturn QubesVideoFindAdapter(
-    __in void *HwDeviceExtension,
-    __in void *HwContext,
-    __in WCHAR *ArgumentString,
-    __inout_bcount(sizeof(VIDEO_PORT_CONFIG_INFO)) PVIDEO_PORT_CONFIG_INFO ConfigInfo,
-    __out UCHAR *Again
+    __in void *hwDeviceExtension,
+    __in void *hwContext,
+    __in WCHAR *argumentString,
+    __inout_bcount(sizeof(VIDEO_PORT_CONFIG_INFO)) PVIDEO_PORT_CONFIG_INFO configInfo,
+    __out UCHAR *again
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
-    UNREFERENCED_PARAMETER(HwContext);
-    UNREFERENCED_PARAMETER(ArgumentString);
-    UNREFERENCED_PARAMETER(ConfigInfo);
-    UNREFERENCED_PARAMETER(Again);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
+    UNREFERENCED_PARAMETER(hwContext);
+    UNREFERENCED_PARAMETER(argumentString);
+    UNREFERENCED_PARAMETER(configInfo);
+    UNREFERENCED_PARAMETER(again);
 
     VideoDebugPrint((0, "QubesVideoFindAdapter Called.\n"));
 
@@ -96,183 +96,184 @@ VP_STATUS __checkReturn QubesVideoFindAdapter(
 }
 
 BOOLEAN QubesVideoInitialize(
-    void *HwDeviceExtension
+    void *hwDeviceExtension
     )
 {
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
 
     VideoDebugPrint((0, "QubesVideoInitialize Called.\n"));
 
     return TRUE;
 }
 
+// main entry for function->miniport API
 BOOLEAN QubesVideoStartIO(
-    void *HwDeviceExtension,
-    VIDEO_REQUEST_PACKET *RequestPacket
+    void *hwDeviceExtension,
+    VIDEO_REQUEST_PACKET *requestPacket
     )
 {
-    QVMINI_ALLOCATE_MEMORY *pQvminiAllocateMemory = NULL;
-    QVMINI_ALLOCATE_MEMORY_RESPONSE *pQvminiAllocateMemoryResponse = NULL;
-    QVMINI_FREE_MEMORY *pQvminiFreeMemory = NULL;
-    QVMINI_ALLOCATE_SECTION *pQvminiAllocateSection = NULL;
-    QVMINI_ALLOCATE_SECTION_RESPONSE *pQvminiAllocateSectionResponse = NULL;
-    QVMINI_FREE_SECTION *pQvminiFreeSection = NULL;
+    QVMINI_ALLOCATE_MEMORY *qvminiAllocateMemory = NULL;
+    QVMINI_ALLOCATE_MEMORY_RESPONSE *qvminiAllocateMemoryResponse = NULL;
+    QVMINI_FREE_MEMORY *qvminiFreeMemory = NULL;
+    QVMINI_ALLOCATE_SECTION *qvminiAllocateSection = NULL;
+    QVMINI_ALLOCATE_SECTION_RESPONSE *qvminiAllocateSectionResponse = NULL;
+    QVMINI_FREE_SECTION *qvminiFreeSection = NULL;
 
-    ULONG uLength;
+    ULONG size;
 
-    UNREFERENCED_PARAMETER(HwDeviceExtension);
+    UNREFERENCED_PARAMETER(hwDeviceExtension);
 
-    RequestPacket->StatusBlock->Status = 0;
-    RequestPacket->StatusBlock->Information = 0;
+    requestPacket->StatusBlock->Status = 0;
+    requestPacket->StatusBlock->Information = 0;
 
     //  VideoDebugPrint((0, "QubesVideoStartIO Called.\n"));
 
-    switch (RequestPacket->IoControlCode)
+    switch (requestPacket->IoControlCode)
     {
     case IOCTL_QVMINI_ALLOCATE_MEMORY:
 
-        if (RequestPacket->InputBufferLength < sizeof(QVMINI_ALLOCATE_MEMORY))
+        if (requestPacket->InputBufferLength < sizeof(QVMINI_ALLOCATE_MEMORY))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY);
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY);
             break;
         }
 
-        if (RequestPacket->OutputBufferLength < sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE))
+        if (requestPacket->OutputBufferLength < sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = 0;
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = 0;
             break;
         }
 
-        pQvminiAllocateMemory = RequestPacket->InputBuffer;
-        pQvminiAllocateMemoryResponse = RequestPacket->OutputBuffer;
+        qvminiAllocateMemory = requestPacket->InputBuffer;
+        qvminiAllocateMemoryResponse = requestPacket->OutputBuffer;
 
-        uLength = pQvminiAllocateMemory->uLength;
+        size = qvminiAllocateMemory->Size;
 
-        pQvminiAllocateMemoryResponse->pVirtualAddress =
-            AllocateMemory(pQvminiAllocateMemory->uLength, &pQvminiAllocateMemoryResponse->pPfnArray);
+        qvminiAllocateMemoryResponse->VirtualAddress =
+            AllocateMemory(qvminiAllocateMemory->Size, &qvminiAllocateMemoryResponse->PfnArray);
 
-        if (!pQvminiAllocateMemoryResponse->pVirtualAddress)
+        if (!qvminiAllocateMemoryResponse->VirtualAddress)
         {
-            VideoDebugPrint((0, "AllocateMemory(%d) failed\n", uLength));
+            VideoDebugPrint((0, "AllocateMemory(%lu) failed\n", size));
 
-            RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
-            RequestPacket->StatusBlock->Information = 0;
+            requestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
+            requestPacket->StatusBlock->Information = 0;
         }
         else
         {
-            // VideoDebugPrint((0, "AllocateMemory(%d) succeeded (%p).\n", uLength, pQvminiAllocateMemoryResponse->pVirtualAddress));
+            // VideoDebugPrint((0, "AllocateMemory(%lu) succeeded (%p).\n", size, pQvminiAllocateMemoryResponse->pVirtualAddress));
 
-            RequestPacket->StatusBlock->Status = NO_ERROR;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
+            requestPacket->StatusBlock->Status = NO_ERROR;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
         }
         break;
 
     case IOCTL_QVMINI_FREE_MEMORY:
 
-        if (RequestPacket->InputBufferLength < sizeof(QVMINI_FREE_MEMORY))
+        if (requestPacket->InputBufferLength < sizeof(QVMINI_FREE_MEMORY))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_FREE_MEMORY);
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_FREE_MEMORY);
             break;
         }
 
-        pQvminiFreeMemory = RequestPacket->InputBuffer;
+        qvminiFreeMemory = requestPacket->InputBuffer;
 
         // VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeMemory->pVirtualAddress));
 
-        FreeMemory(pQvminiFreeMemory->pVirtualAddress, pQvminiFreeMemory->pPfnArray);
+        FreeMemory(qvminiFreeMemory->VirtualAddress, qvminiFreeMemory->PfnArray);
 
-        RequestPacket->StatusBlock->Status = NO_ERROR;
-        RequestPacket->StatusBlock->Information = 0;
+        requestPacket->StatusBlock->Status = NO_ERROR;
+        requestPacket->StatusBlock->Information = 0;
         break;
 
     case IOCTL_QVMINI_ALLOCATE_SECTION:
 
-        if (RequestPacket->InputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION))
+        if (requestPacket->InputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION);
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION);
             break;
         }
 
-        if (RequestPacket->OutputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE))
+        if (requestPacket->OutputBufferLength < sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = 0;
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = 0;
             break;
         }
 
-        pQvminiAllocateSection = RequestPacket->InputBuffer;
-        pQvminiAllocateSectionResponse = RequestPacket->OutputBuffer;
+        qvminiAllocateSection = requestPacket->InputBuffer;
+        qvminiAllocateSectionResponse = requestPacket->OutputBuffer;
 
-        uLength = pQvminiAllocateSection->uLength;
+        size = qvminiAllocateSection->Size;
 
-        if (pQvminiAllocateSection->bUseDirtyBits)
+        if (qvminiAllocateSection->UseDirtyBits)
         {
-            pQvminiAllocateSectionResponse->pVirtualAddress =
-                AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
-                &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-                &pQvminiAllocateSectionResponse->pPfnArray,
-                &pQvminiAllocateSectionResponse->hDirtySection,
-                &pQvminiAllocateSectionResponse->DirtySectionObject,
-                &pQvminiAllocateSectionResponse->pDirtyPages);
+            qvminiAllocateSectionResponse->VirtualAddress =
+                AllocateSection(qvminiAllocateSection->Size, &qvminiAllocateSectionResponse->Section,
+                &qvminiAllocateSectionResponse->SectionObject, &qvminiAllocateSectionResponse->Mdl,
+                &qvminiAllocateSectionResponse->PfnArray,
+                &qvminiAllocateSectionResponse->DirtySection,
+                &qvminiAllocateSectionResponse->DirtySectionObject,
+                &qvminiAllocateSectionResponse->DirtyPages);
         }
         else // don't alloc dirty bits section
         {
-            pQvminiAllocateSectionResponse->pVirtualAddress =
-                AllocateSection(pQvminiAllocateSection->uLength, &pQvminiAllocateSectionResponse->hSection,
-                &pQvminiAllocateSectionResponse->SectionObject, &pQvminiAllocateSectionResponse->pMdl,
-                &pQvminiAllocateSectionResponse->pPfnArray,
+            qvminiAllocateSectionResponse->VirtualAddress =
+                AllocateSection(qvminiAllocateSection->Size, &qvminiAllocateSectionResponse->Section,
+                &qvminiAllocateSectionResponse->SectionObject, &qvminiAllocateSectionResponse->Mdl,
+                &qvminiAllocateSectionResponse->PfnArray,
                 NULL, NULL, NULL
                 );
-            pQvminiAllocateSectionResponse->DirtySectionObject = NULL;
-            pQvminiAllocateSectionResponse->hDirtySection = NULL;
-            pQvminiAllocateSectionResponse->pDirtyPages = NULL;
+            qvminiAllocateSectionResponse->DirtySectionObject = NULL;
+            qvminiAllocateSectionResponse->DirtySection = NULL;
+            qvminiAllocateSectionResponse->DirtyPages = NULL;
         }
 
-        if (!pQvminiAllocateSectionResponse->pVirtualAddress)
+        if (!qvminiAllocateSectionResponse->VirtualAddress)
         {
-            VideoDebugPrint((0, "AllocateSection(%d) failed.\n", uLength));
+            VideoDebugPrint((0, "AllocateSection(%d) failed.\n", size));
 
-            RequestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
-            RequestPacket->StatusBlock->Information = 0;
+            requestPacket->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
+            requestPacket->StatusBlock->Information = 0;
         }
         else
         {
-            // VideoDebugPrint((0, "AllocateSection(%d) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
+            // VideoDebugPrint((0, "AllocateSection(%lu) succeeded (%p).\n", uLength, pQvminiAllocateSectionResponse->pVirtualAddress));
 
-            RequestPacket->StatusBlock->Status = NO_ERROR;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE);
+            requestPacket->StatusBlock->Status = NO_ERROR;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE);
         }
         break;
 
     case IOCTL_QVMINI_FREE_SECTION:
 
-        if (RequestPacket->InputBufferLength < sizeof(QVMINI_FREE_SECTION))
+        if (requestPacket->InputBufferLength < sizeof(QVMINI_FREE_SECTION))
         {
-            RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-            RequestPacket->StatusBlock->Information = sizeof(QVMINI_FREE_SECTION);
+            requestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
+            requestPacket->StatusBlock->Information = sizeof(QVMINI_FREE_SECTION);
             break;
         }
 
-        pQvminiFreeSection = RequestPacket->InputBuffer;
+        qvminiFreeSection = requestPacket->InputBuffer;
 
         // VideoDebugPrint((0, "FreeMemory(%p).\n", pQvminiFreeSection->pVirtualAddress));
 
-        FreeSection(pQvminiFreeSection->hSection, pQvminiFreeSection->SectionObject,
-            pQvminiFreeSection->pMdl, pQvminiFreeSection->pVirtualAddress,
-            pQvminiFreeSection->pPfnArray,
-            pQvminiFreeSection->hDirtySection, pQvminiFreeSection->DirtySectionObject,
-            pQvminiFreeSection->pDirtyPages);
+        FreeSection(qvminiFreeSection->Section, qvminiFreeSection->SectionObject,
+            qvminiFreeSection->Mdl, qvminiFreeSection->VirtualAddress,
+            qvminiFreeSection->PfnArray,
+            qvminiFreeSection->DirtySection, qvminiFreeSection->DirtySectionObject,
+            qvminiFreeSection->DirtyPages);
 
-        RequestPacket->StatusBlock->Status = NO_ERROR;
-        RequestPacket->StatusBlock->Information = 0;
+        requestPacket->StatusBlock->Status = NO_ERROR;
+        requestPacket->StatusBlock->Information = 0;
         break;
 
     default:
-        RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
+        requestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
         break;
     }
 

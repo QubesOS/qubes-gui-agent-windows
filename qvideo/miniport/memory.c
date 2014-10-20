@@ -2,288 +2,269 @@
 #include "ntstrsafe.h"
 #include "memory.h"
 
-NTSTATUS CreateAndMapSection(
-    UNICODE_STRING usSectionName,
-    ULONG uSize,
-    HANDLE *phSection,
-    void **pSectionObject,
-    void **pBaseAddress
+static NTSTATUS CreateAndMapSection(
+    IN UNICODE_STRING sectionName,
+    IN ULONG size,
+    OUT HANDLE *section,
+    OUT void **sectionObject,
+    OUT void **baseAddress
     )
 {
-    SIZE_T ViewSize = 0;
-    NTSTATUS Status;
-    HANDLE hSection;
-    void *BaseAddress = NULL;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    LARGE_INTEGER Size;
-    void *SectionObject;
+    SIZE_T viewSize = 0;
+    NTSTATUS status;
+    OBJECT_ATTRIBUTES objectAttributes;
+    LARGE_INTEGER sizeLarge;
 
-    if (!uSize || !phSection || !pSectionObject || !pBaseAddress)
+    if (!size || !section || !sectionObject || !baseAddress)
         return STATUS_INVALID_PARAMETER;
 
-    *pSectionObject = NULL;
-    *pBaseAddress = NULL;
+    *sectionObject = NULL;
+    *baseAddress = NULL;
 
-    InitializeObjectAttributes(&ObjectAttributes, &usSectionName, OBJ_KERNEL_HANDLE, NULL, NULL);
+    InitializeObjectAttributes(&objectAttributes, &sectionName, OBJ_KERNEL_HANDLE, NULL, NULL);
 
-    Size.HighPart = 0;
-    Size.LowPart = uSize;
+    sizeLarge.HighPart = 0;
+    sizeLarge.LowPart = size;
 
-    ViewSize = uSize;
+    viewSize = size;
 
-    Status = ZwCreateSection(&hSection, SECTION_ALL_ACCESS, &ObjectAttributes, &Size, PAGE_READWRITE, SEC_COMMIT, NULL);
-    if (!NT_SUCCESS(Status))
+    status = ZwCreateSection(section, SECTION_ALL_ACCESS, &objectAttributes, &sizeLarge, PAGE_READWRITE, SEC_COMMIT, NULL);
+    if (!NT_SUCCESS(status))
     {
-        VideoDebugPrint((0, __FUNCTION__ ": ZwCreateSection() failed with status 0x%X\n", Status));
-        return Status;
+        VideoDebugPrint((0, __FUNCTION__ ": ZwCreateSection() failed with status 0x%X\n", status));
+        return status;
     }
 
-    Status = ObReferenceObjectByHandle(hSection, SECTION_ALL_ACCESS, NULL, KernelMode, &SectionObject, NULL);
-    if (!NT_SUCCESS(Status))
+    status = ObReferenceObjectByHandle(*section, SECTION_ALL_ACCESS, NULL, KernelMode, sectionObject, NULL);
+    if (!NT_SUCCESS(status))
     {
-        VideoDebugPrint((0, __FUNCTION__ ": ObReferenceObjectByHandle() failed with status 0x%X\n", Status));
-        ZwClose(hSection);
-        return Status;
+        VideoDebugPrint((0, __FUNCTION__ ": ObReferenceObjectByHandle() failed with status 0x%X\n", status));
+        ZwClose(*section);
+        return status;
     }
 
-    Status = MmMapViewInSystemSpace(SectionObject, &BaseAddress, &ViewSize);
-    if (!NT_SUCCESS(Status))
+    // FIXME: undocumented/unsupported function
+    status = MmMapViewInSystemSpace(*sectionObject, baseAddress, &viewSize);
+    if (!NT_SUCCESS(status))
     {
-        VideoDebugPrint((0, __FUNCTION__ ": MmMapViewInSystemSpace() failed with status 0x%X\n", Status));
-        ObDereferenceObject(SectionObject);
-        ZwClose(hSection);
-        return Status;
+        VideoDebugPrint((0, __FUNCTION__ ": MmMapViewInSystemSpace() failed with status 0x%X\n", status));
+        ObDereferenceObject(*sectionObject);
+        ZwClose(*section);
+        return status;
     }
 
     VideoDebugPrint((0, __FUNCTION__": section '%wZ': %p, addr %p\n",
-        usSectionName, pSectionObject, BaseAddress));
+        sectionName, *sectionObject, *baseAddress));
 
-    *pBaseAddress = BaseAddress;
-    *phSection = hSection;
-    *pSectionObject = SectionObject;
-
-    return Status;
+    return status;
 }
 
-VOID FreeSection(
-    HANDLE hSection,
-    void *pSectionObject,
-    MDL *pMdl,
-    void *BaseAddress,
-    void *pPfnArray,
-    OPTIONAL HANDLE hDirtySection,
-    OPTIONAL void *pDirtySectionObject,
-    OPTIONAL void *pDirtySectionMemory
+static NTSTATUS GetBufferPfnArray(
+    IN void *virtualAddress,
+    IN ULONG size,
+    OUT PFN_ARRAY **pfnArray OPTIONAL, // pfn array is allocated here
+    IN KPROCESSOR_MODE processorMode,
+    IN BOOLEAN lockPages,
+    OUT MDL **bufferMdl OPTIONAL
     )
 {
-    if (pMdl)
-    {
-        MmUnlockPages(pMdl);
-        IoFreeMdl(pMdl);
-    }
+    NTSTATUS status;
+    MDL *mdl = NULL;
+    ULONG numberOfPages;
 
-    VideoDebugPrint((0, __FUNCTION__": section %p, dirty %p\n", pSectionObject, pDirtySectionObject));
-    MmUnmapViewInSystemSpace(BaseAddress);
-    ObDereferenceObject(pSectionObject);
-    ZwClose(hSection);
-
-    if (pPfnArray)
-        ExFreePoolWithTag(pPfnArray, QVMINI_TAG);
-
-    if (hDirtySection && pDirtySectionObject && pDirtySectionMemory)
-    {
-        MmUnmapViewInSystemSpace(pDirtySectionMemory);
-        ObDereferenceObject(pDirtySectionObject);
-        ZwClose(hDirtySection);
-    }
-}
-
-NTSTATUS GetBufferPfnArray(
-    IN void *pVirtualAddress,
-    IN ULONG uLength,
-    OUT OPTIONAL PFN_ARRAY **ppPfnArray, // pfn array is allocated here
-    IN KPROCESSOR_MODE ProcessorMode,
-    IN BOOLEAN bLockPages,
-    OUT OPTIONAL MDL **ppMdl
-    )
-{
-    NTSTATUS Status;
-    PHYSICAL_ADDRESS PhysAddr;
-    MDL *pMdl = NULL;
-    PFN_NUMBER *pPfnNumber = NULL;
-    ULONG i, uNumberOfPages;
-
-    if (!pVirtualAddress || !uLength)
+    if (!virtualAddress || !size)
         return STATUS_INVALID_PARAMETER;
 
-    if (ppMdl)
-        *ppMdl = NULL;
+    if (bufferMdl)
+        *bufferMdl = NULL;
 
-    pMdl = IoAllocateMdl(pVirtualAddress, uLength, FALSE, FALSE, NULL);
-    if (!pMdl)
+    mdl = IoAllocateMdl(virtualAddress, size, FALSE, FALSE, NULL);
+    if (!mdl)
     {
         VideoDebugPrint((0, __FUNCTION__ ": IoAllocateMdl() failed to allocate an MDL\n"));
         return STATUS_UNSUCCESSFUL;
     }
 
-    Status = STATUS_SUCCESS;
+    status = STATUS_SUCCESS;
 
     try
     {
-        MmProbeAndLockPages(pMdl, ProcessorMode, IoWriteAccess);
+        MmProbeAndLockPages(mdl, processorMode, IoWriteAccess);
     }
     except(EXCEPTION_EXECUTE_HANDLER)
     {
         VideoDebugPrint((0, __FUNCTION__ ": MmProbeAndLockPages() raised an exception, status 0x%08X\n", GetExceptionCode()));
-        Status = STATUS_UNSUCCESSFUL;
+        status = STATUS_UNSUCCESSFUL;
     }
 
-    if (NT_SUCCESS(Status))
+    if (NT_SUCCESS(status))
     {
-        if (ppPfnArray)
+        if (pfnArray)
         {
-            uNumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(pMdl), MmGetMdlByteCount(pMdl));
+            numberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(mdl), MmGetMdlByteCount(mdl));
             // size of PFN_ARRAY
-            *ppPfnArray = ExAllocatePoolWithTag(NonPagedPool, uNumberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG), QVMINI_TAG);
+            *pfnArray = ExAllocatePoolWithTag(NonPagedPool, numberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG), QVMINI_TAG);
 
-            if (!(*ppPfnArray))
+            if (!(*pfnArray))
                 return STATUS_NO_MEMORY;
 
-            (*ppPfnArray)->uNumberOf4kPages = uNumberOfPages;
-            RtlCopyMemory((*ppPfnArray)->Pfn, MmGetMdlPfnArray(pMdl), uNumberOfPages*sizeof(PFN_NUMBER));
+            (*pfnArray)->NumberOf4kPages = numberOfPages;
+            RtlCopyMemory((*pfnArray)->Pfn, MmGetMdlPfnArray(mdl), numberOfPages*sizeof(PFN_NUMBER));
         }
 
-        if (!bLockPages)
+        if (!lockPages)
         {
-            MmUnlockPages(pMdl);
-            IoFreeMdl(pMdl);
+            MmUnlockPages(mdl);
+            IoFreeMdl(mdl);
         }
         else
         {
-            if (ppMdl)
-                *ppMdl = pMdl;
+            if (bufferMdl)
+                *bufferMdl = mdl;
         }
     }
     else
-        IoFreeMdl(pMdl);
+        IoFreeMdl(mdl);
 
-    return Status;
+    return status;
 }
 
-PVOID AllocateMemory(
-    ULONG uLength,
-    PFN_ARRAY **ppPfnArray
+void *AllocateMemory(
+    IN ULONG size,
+    OUT PFN_ARRAY **pfnArray
     )
 {
-    void *pMemory = NULL;
-    NTSTATUS Status;
+    void *memory = NULL;
+    NTSTATUS status;
 
-    if (!uLength || !ppPfnArray)
+    if (!size || !pfnArray)
         return NULL;
 
-    uLength = ALIGN(uLength, PAGE_SIZE);
+    size = ALIGN(size, PAGE_SIZE);
 
-    pMemory = ExAllocatePoolWithTag(NonPagedPool, uLength, QVMINI_TAG);
-    if (!pMemory)
+    memory = ExAllocatePoolWithTag(NonPagedPool, size, QVMINI_TAG);
+    if (!memory)
         return NULL;
 
-    VideoDebugPrint((0, __FUNCTION__": %p\n", pMemory));
+    VideoDebugPrint((0, __FUNCTION__": %p\n", memory));
 
-    Status = GetBufferPfnArray(pMemory, uLength, ppPfnArray, KernelMode, FALSE, NULL);
-    if (!NT_SUCCESS(Status))
+    status = GetBufferPfnArray(memory, size, pfnArray, KernelMode, FALSE, NULL);
+    if (!NT_SUCCESS(status))
     {
-        FreeMemory(pMemory, NULL); // ppPfnArray is only allocated on success
+        FreeMemory(memory, NULL); // ppPfnArray is only allocated on success
         return NULL;
     }
 
-    return pMemory;
+    return memory;
 }
 
-VOID FreeMemory(
-    IN void *pMemory,
-    IN OPTIONAL void *pPfnArray
+void FreeMemory(
+    IN void *memory,
+    IN void *pfnArray OPTIONAL
     )
 {
-    if (!pMemory)
+    if (!memory)
         return;
 
-    VideoDebugPrint((0, __FUNCTION__": %p, pfn: %p\n", pMemory, pPfnArray));
+    VideoDebugPrint((0, __FUNCTION__": %p, pfn: %p\n", memory, pfnArray));
 
-    ExFreePoolWithTag(pMemory, QVMINI_TAG);
-    if (pPfnArray)
-        ExFreePoolWithTag(pPfnArray, QVMINI_TAG);
+    ExFreePoolWithTag(memory, QVMINI_TAG);
+    if (pfnArray)
+        ExFreePoolWithTag(pfnArray, QVMINI_TAG);
     return;
 }
 
 // Creates a named kernel mode section mapped in the system space, locks it,
 // and returns its handle, a referenced section object, an MDL and a PFN list.
-PVOID AllocateSection(
-    ULONG uLength,
-    HANDLE *phSection,
-    void **ppSectionObject,
-    void **ppMdl,
-    PFN_ARRAY **ppPfnArray,
-    OPTIONAL HANDLE *phDirtySection,
-    OPTIONAL void **ppDirtySectionObject,
-    OPTIONAL void **ppDirtySectionMemory
+void *AllocateSection(
+    IN ULONG size,
+    OUT HANDLE *section,
+    OUT void **sectionObject,
+    OUT MDL **mdl,
+    OUT PFN_ARRAY **pfnArray,
+    OUT HANDLE *dirtySection OPTIONAL,
+    OUT void **dirtySectionObject OPTIONAL,
+    OUT void **dirtySectionMemory OPTIONAL
     )
 {
-    NTSTATUS Status;
-    HANDLE hSection;
-    void *SectionObject = NULL;
-    void *BaseAddress = NULL;
-    MDL *pMdl = NULL;
-    UNICODE_STRING usSectionName;
-    WCHAR SectionName[100];
+    NTSTATUS status;
+    void *baseAddress = NULL;
+    UNICODE_STRING sectionNameU;
+    WCHAR sectionName[100];
 
-    if (!uLength || !phSection || !ppSectionObject || !ppMdl || !ppPfnArray)
+    if (!size || !section || !sectionObject || !mdl || !pfnArray)
         return NULL;
 
-    *phSection = NULL;
-    *ppSectionObject = NULL;
-    *ppMdl = NULL;
+    RtlStringCchPrintfW(sectionName, RTL_NUMBER_OF(sectionName), L"\\BaseNamedObjects\\QubesSharedMemory_%x", size);
+    RtlInitUnicodeString(&sectionNameU, sectionName);
 
-    RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QubesSharedMemory_%x", uLength);
-    RtlInitUnicodeString(&usSectionName, SectionName);
-
-    Status = CreateAndMapSection(usSectionName, uLength, &hSection, &SectionObject, &BaseAddress);
-    if (!NT_SUCCESS(Status))
+    status = CreateAndMapSection(sectionNameU, size, section, sectionObject, &baseAddress);
+    if (!NT_SUCCESS(status))
         return NULL;
 
     // Lock the section memory and return its MDL.
-    Status = GetBufferPfnArray(BaseAddress, uLength, ppPfnArray, KernelMode, TRUE, &pMdl);
-    if (!NT_SUCCESS(Status))
+    status = GetBufferPfnArray(baseAddress, size, pfnArray, KernelMode, TRUE, mdl);
+    if (!NT_SUCCESS(status))
     {
-        FreeSection(hSection, SectionObject, NULL, BaseAddress, NULL, NULL, NULL, NULL);
+        FreeSection(*section, *sectionObject, NULL, baseAddress, NULL, NULL, NULL, NULL);
         return NULL;
     }
 
-    *phSection = hSection;
-    *ppSectionObject = SectionObject;
-    *ppMdl = pMdl;
-
-    if (phDirtySection && ppDirtySectionObject && ppDirtySectionMemory)
+    if (dirtySection && dirtySectionObject && dirtySectionMemory)
     {
-        *phDirtySection = NULL;
-        *ppDirtySectionObject = NULL;
-        *ppDirtySectionMemory = NULL;
+        *dirtySection = NULL;
+        *dirtySectionObject = NULL;
+        *dirtySectionMemory = NULL;
 
         // struct header + bit array for dirty pages
-        uLength = sizeof(QV_DIRTY_PAGES) + ((uLength / PAGE_SIZE) >> 3) + 1;
-        RtlStringCchPrintfW(SectionName, RTL_NUMBER_OF(SectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", uLength);
-        RtlInitUnicodeString(&usSectionName, SectionName);
+        size = sizeof(QV_DIRTY_PAGES) + ((size / PAGE_SIZE) >> 3) + 1;
+        RtlStringCchPrintfW(sectionName, RTL_NUMBER_OF(sectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", size);
+        RtlInitUnicodeString(&sectionNameU, sectionName);
 
-        Status = CreateAndMapSection(usSectionName, uLength, phDirtySection, ppDirtySectionObject, ppDirtySectionMemory);
-        if (!NT_SUCCESS(Status))
+        status = CreateAndMapSection(sectionNameU, size, dirtySection, dirtySectionObject, dirtySectionMemory);
+        if (!NT_SUCCESS(status))
             return NULL;
 
         // just lock, don't get PFNs
-        Status = GetBufferPfnArray(*ppDirtySectionMemory, uLength, NULL, KernelMode, TRUE, NULL);
-        if (!NT_SUCCESS(Status))
+        status = GetBufferPfnArray(*dirtySectionMemory, size, NULL, KernelMode, TRUE, NULL);
+        if (!NT_SUCCESS(status))
         {
-            FreeSection(hSection, SectionObject, NULL, BaseAddress, NULL, *phDirtySection, *ppDirtySectionObject, *ppDirtySectionMemory);
+            FreeSection(*section, *sectionObject, NULL, baseAddress, NULL, *dirtySection, *dirtySectionObject, *dirtySectionMemory);
             return NULL;
         }
     }
-    return BaseAddress;
+    return baseAddress;
+}
+
+void FreeSection(
+    IN HANDLE section,
+    IN void *sectionObject,
+    IN MDL *mdl,
+    IN void *baseAddress,
+    IN void *pfnArray,
+    OPTIONAL HANDLE dirtySection,
+    OPTIONAL void *dirtySectionObject,
+    OPTIONAL void *dirtySectionMemory
+    )
+{
+    if (mdl)
+    {
+        MmUnlockPages(mdl);
+        IoFreeMdl(mdl);
+    }
+
+    VideoDebugPrint((0, __FUNCTION__": section %p, dirty %p\n", sectionObject, dirtySectionObject));
+    MmUnmapViewInSystemSpace(baseAddress); // FIXME: undocumented/unsupported function
+    ObDereferenceObject(sectionObject);
+    ZwClose(section);
+
+    if (pfnArray)
+        ExFreePoolWithTag(pfnArray, QVMINI_TAG);
+
+    if (dirtySection && dirtySectionObject && dirtySectionMemory)
+    {
+        MmUnmapViewInSystemSpace(dirtySectionMemory);
+        ObDereferenceObject(dirtySectionObject);
+        ZwClose(dirtySection);
+    }
 }

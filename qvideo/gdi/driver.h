@@ -1,15 +1,14 @@
-#include "stddef.h"
-
+#include <stddef.h>
 #include <stdarg.h>
 
 #pragma warning(push)
 #pragma warning(disable: 4200 4201 4214)
 
-#include "windef.h"
-#include "wingdi.h"
-#include "winddi.h"
-#include "devioctl.h"
-#include "ntddvdeo.h"
+#include <windef.h>
+#include <wingdi.h>
+#include <winddi.h>
+#include <devioctl.h>
+#include <ntddvdeo.h>
 
 #pragma warning(pop)
 // C4200: nonstandard extension used :
@@ -25,18 +24,17 @@
 typedef struct _SURFACE_DESCRIPTOR SURFACE_DESCRIPTOR;
 typedef struct _PDEV
 {
-    HANDLE hDriver;		// Handle to \Device\Screen
-    HDEV hdevEng;		// Engine's handle to PDEV
-    HSURF hsurfEng;		// Engine's handle to surface
-    HPALETTE hpalDefault;	// Handle to the default palette for device.
+    HANDLE DriverHandle;     // Handle to \Device\Screen
+    HDEV EngPdevHandle;      // Engine's handle to PDEV
+    HSURF EngSurfaceHandle;  // Engine's handle to surface
+    HPALETTE DefaultPalette; // Handle to the default palette for device.
 
-    ULONG cxScreen;		// Visible screen width
-    ULONG cyScreen;		// Visible screen height
+    ULONG ScreenWidth;       // Visible screen width
+    ULONG ScreenHeight;      // Visible screen height
+    LONG ScreenDelta;        // Distance from one scan to the next.
+    ULONG BitsPerPel;        // number of bits per pel: only 16, 24, 32 are supported.
 
-    LONG lDeltaScreen;	// Distance from one scan to the next.
-    ULONG ulBitCount;	// # of bits per pel: only 16, 24, 32 are supported.
-
-    SURFACE_DESCRIPTOR *pScreenSurfaceDescriptor;	// ptr to SURFACE_DESCRIPTOR bits for screen surface
+    SURFACE_DESCRIPTOR *ScreenSurfaceDescriptor; // ptr to SURFACE_DESCRIPTOR bits for screen surface
 } PDEV;
 
 #pragma pack(push, 1)
@@ -49,33 +47,33 @@ typedef struct _BITMAP_HEADER
 
 typedef struct _SURFACE_DESCRIPTOR
 {
-    ULONG cx;
-    ULONG cy;
-    ULONG lDelta;
-    ULONG ulBitCount;
-    BOOLEAN bIsScreen;
+    ULONG Width;
+    ULONG Height;
+    ULONG Delta;
+    ULONG BitCount;
+    BOOLEAN IsScreen;
 
-    PDEV *ppdev;
-    HDRVOBJ hDriverObj;
-    PEVENT pDamageNotificationEvent;
+    PDEV *Pdev;
+    HDRVOBJ DriverObj;
+    PEVENT DamageNotificationEvent;
 
-    void *pSurfaceData;
-    HANDLE hSection;
+    void *SurfaceData;
+    HANDLE SurfaceSection;
     void *SectionObject;
-    void *pMdl;
+    void *Mdl;
     PFN_ARRAY *pPfnArray; // this is allocated by the miniport part
 
     // page numbers that changed in the surface buffer since the last check
     // this is exposed as a section so the user mode client can easily check what changed
     void *DirtySectionObject;
-    HANDLE hDirtySection;
-    QV_DIRTY_PAGES *pDirtyPages;
+    HANDLE DirtySection;
+    QV_DIRTY_PAGES *DirtyPages;
     LARGE_INTEGER LastCheck; // timestamp of the last dirty pages check, to limit events per second
 
     //  BITMAP_HEADER BitmapHeader;
 } SURFACE_DESCRIPTOR;
 
-BOOL bInitPDEV(
+BOOL InitPdev(
     PDEV *,
     DEVMODEW *,
     GDIINFO *,

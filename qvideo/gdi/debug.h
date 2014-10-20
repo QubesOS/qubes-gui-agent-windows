@@ -10,6 +10,8 @@
 *
 * Copyright (c) 1992-1998 Microsoft Corporation
 \***************************************************************************/
+#pragma once
+#include <windef.h>
 
 #if DBG
 

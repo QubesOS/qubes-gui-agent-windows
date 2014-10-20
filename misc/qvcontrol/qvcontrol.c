@@ -63,10 +63,10 @@ ULONG SupportVideoMode(
         return ERROR_FILE_NOT_FOUND;
     }
 
-    supportMode.uMagic = QVIDEO_MAGIC;
-    supportMode.uWidth = width;
-    supportMode.uHeight = height;
-    supportMode.uBpp = bpp;
+    supportMode.Magic = QVIDEO_MAGIC;
+    supportMode.Width = width;
+    supportMode.Height = height;
+    supportMode.Bpp = bpp;
 
     status = ExtEscape(controlDC, QVESC_SUPPORT_MODE, sizeof(supportMode), (char *) &supportMode, 0, NULL);
     DeleteDC(controlDC);

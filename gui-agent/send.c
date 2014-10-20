@@ -37,7 +37,7 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
         LogDebug("fullcreen capture");
 
         pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+        pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
 
         status = GetWindowData(NULL, &surfaceData, pfnArray);
         if (ERROR_SUCCESS != status)
@@ -46,9 +46,9 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
             return status;
         }
 
-        width = surfaceData.uWidth;
-        height = surfaceData.uHeight;
-        bpp = surfaceData.ulBitCount;
+        width = surfaceData.Width;
+        height = surfaceData.Height;
+        bpp = surfaceData.Bpp;
 
         isScreen = TRUE;
     }
@@ -67,10 +67,10 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
         watchedDC ? watchedDC->WindowRect.left : 0,
         watchedDC ? watchedDC->WindowRect.top : 0, isScreen);
 
-    LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->uNumberOf4kPages,
+    LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->NumberOf4kPages,
         pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
 
-    shmCmdSize = sizeof(struct shm_cmd) + pfnArray->uNumberOf4kPages * sizeof(uint32_t);
+    shmCmdSize = sizeof(struct shm_cmd) + pfnArray->NumberOf4kPages * sizeof(uint32_t);
 
     *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
     if (*shmCmd == NULL)
@@ -84,10 +84,10 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
     (*shmCmd)->height = height;
     (*shmCmd)->bpp = bpp;
     (*shmCmd)->off = 0;
-    (*shmCmd)->num_mfn = pfnArray->uNumberOf4kPages;
+    (*shmCmd)->num_mfn = pfnArray->NumberOf4kPages;
     (*shmCmd)->domid = 0;
 
-    for (i = 0; i < pfnArray->uNumberOf4kPages; i++)
+    for (i = 0; i < pfnArray->NumberOf4kPages; i++)
         (*shmCmd)->mfns[i] = (uint32_t) pfnArray->Pfn[i];
 
     if (!watchedDC)
@@ -157,7 +157,7 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
         wi.rcWindow.top = 0;
 
         pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pfnArray->uNumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+        pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
 
         status = GetWindowData(NULL, &surfaceData, pfnArray);
         if (ERROR_SUCCESS != status)
@@ -165,8 +165,8 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
             return perror2(status, "GetWindowData");
         }
 
-        wi.rcWindow.right = surfaceData.uWidth;
-        wi.rcWindow.bottom = surfaceData.uHeight;
+        wi.rcWindow.right = surfaceData.Width;
+        wi.rcWindow.bottom = surfaceData.Height;
 
         free(pfnArray);
 

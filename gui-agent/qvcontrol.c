@@ -146,10 +146,10 @@ ULONG SupportVideoMode(
     if (!qvideoDc)
         return perror("CreateDC");
 
-    input.uMagic = QVIDEO_MAGIC;
-    input.uWidth = width;
-    input.uHeight = height;
-    input.uBpp = bpp;
+    input.Magic = QVIDEO_MAGIC;
+    input.Width = width;
+    input.Height = height;
+    input.Bpp = bpp;
 
     status = ExtEscape(qvideoDc, QVESC_SUPPORT_MODE, sizeof(input), (char *) &input, 0, NULL);
     DeleteDC(qvideoDc);
@@ -182,8 +182,8 @@ ULONG GetWindowData(
     if (!qvideoDc)
         return perror("GetDC");
 
-    input.uMagic = QVIDEO_MAGIC;
-    input.pPfnArray = pfnArray;
+    input.Magic = QVIDEO_MAGIC;
+    input.PfnArray = pfnArray;
 
     status = ExtEscape(qvideoDc, QVESC_GET_SURFACE_DATA, sizeof(QV_GET_SURFACE_DATA),
         (LPCSTR) &input, sizeof(QV_GET_SURFACE_DATA_RESPONSE), (char *) surfaceData);
@@ -196,15 +196,15 @@ ULONG GetWindowData(
         return ERROR_NOT_SUPPORTED;
     }
 
-    if (QVIDEO_MAGIC != surfaceData->uMagic)
+    if (QVIDEO_MAGIC != surfaceData->Magic)
     {
         LogError("The response to QVESC_GET_SURFACE_DATA is not valid\n");
         return ERROR_NOT_SUPPORTED;
     }
 
-    LogDebug("hdc 0x%0x, IsScreen %d, %dx%d @ %d, delta %d", qvideoDc, surfaceData->bIsScreen,
-        surfaceData->uWidth, surfaceData->uHeight,
-        surfaceData->ulBitCount, surfaceData->lDelta);
+    LogDebug("hdc 0x%0x, IsScreen %d, %dx%d @ %d, delta %d", qvideoDc, surfaceData->IsScreen,
+        surfaceData->Width, surfaceData->Height,
+        surfaceData->Bpp, surfaceData->Delta);
 
     return ERROR_SUCCESS;
 }
@@ -303,8 +303,8 @@ ULONG RegisterWatchedDC(
     int status;
 
     LogDebug("hdc=0x%x, event=0x%x", dc, damageEvent);
-    input.uMagic = QVIDEO_MAGIC;
-    input.hUserModeEvent = damageEvent;
+    input.Magic = QVIDEO_MAGIC;
+    input.UserModeEvent = damageEvent;
 
     status = ExtEscape(dc, QVESC_WATCH_SURFACE, sizeof(QV_WATCH_SURFACE), (char *) &input, 0, NULL);
 
@@ -326,7 +326,7 @@ ULONG UnregisterWatchedDC(
     int status;
 
     LogDebug("hdc=0x%x", dc);
-    input.uMagic = QVIDEO_MAGIC;
+    input.Magic = QVIDEO_MAGIC;
 
     status = ExtEscape(dc, QVESC_STOP_WATCHING_SURFACE, sizeof(QV_STOP_WATCHING_SURFACE),
         (char *) &input, 0, NULL);
@@ -348,7 +348,7 @@ ULONG SynchronizeDirtyBits(
     QV_SYNCHRONIZE input;
     int status;
 
-    input.uMagic = QVIDEO_MAGIC;
+    input.Magic = QVIDEO_MAGIC;
     status = ExtEscape(dc, QVESC_SYNCHRONIZE, sizeof(input), (char *) &input, 0, NULL);
     if (status <= 0)
     {
