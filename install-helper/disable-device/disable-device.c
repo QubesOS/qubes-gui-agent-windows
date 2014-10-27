@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <tchar.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <setupapi.h>
@@ -7,89 +6,89 @@
 #include <devpkey.h>
 #include <strsafe.h>
 
-void usage(LPCTSTR self)
+void Usage(IN const WCHAR *selfName)
 {
-    fprintf(stderr, "Usage: %S -e|-d class-name [enumerator] [hwID]\n", self);
-    fprintf(stderr, "Enumerator defaults to \"PCI\"\n");
-    fprintf(stderr, "Error codes: \n");
-    fprintf(stderr, "  1 - other error\n");
-    fprintf(stderr, "  2 - invalid parameters\n");
-    fprintf(stderr, "  3 - empty class-name\n");
-    fprintf(stderr, "  4 - cannot get device list\n");
-    fprintf(stderr, "  5 - failed to get class GUID\n");
-    fprintf(stderr, "  6 - failed SetupDiSetClassInstallParams call\n");
-    fprintf(stderr, "  7 - failed SetupDiCallClassInstaller call\n");
+    fwprintf(stderr, L"Usage: %s -e|-d class-name [enumerator] [hwID]\n", selfName);
+    fwprintf(stderr, L"Enumerator defaults to \"PCI\"\n");
+    fwprintf(stderr, L"Error codes: \n");
+    fwprintf(stderr, L"  1 - other error\n");
+    fwprintf(stderr, L"  2 - invalid parameters\n");
+    fwprintf(stderr, L"  3 - empty class-name\n");
+    fwprintf(stderr, L"  4 - cannot get device list\n");
+    fwprintf(stderr, L"  5 - failed to get class GUID\n");
+    fwprintf(stderr, L"  6 - failed SetupDiSetClassInstallParams call\n");
+    fwprintf(stderr, L"  7 - failed SetupDiCallClassInstaller call\n");
 }
 
-int __cdecl _tmain(int argc, PZPWSTR argv)
+int __cdecl wmain(int argc, WCHAR* argv[])
 {
-    HDEVINFO DeviceInfoSet = INVALID_HANDLE_VALUE;
-    SP_DEVINFO_DATA DeviceInfoData;
-    GUID ClassGUID;
-    TCHAR hwIdList[LINE_LEN + 4];
-    PTCHAR currentHwId;
-    LPCTSTR ClassName = NULL;
-    LPCTSTR Enumerator = TEXT("PCI");
-    LPCTSTR ExpectedHwId = NULL;
+    HDEVINFO deviceInfoSet = INVALID_HANDLE_VALUE;
+    SP_DEVINFO_DATA deviceInfoData;
+    GUID classGUID;
+    WCHAR hwIdList[LINE_LEN + 4];
+    WCHAR *currentHwId;
+    WCHAR *className = NULL;
+    WCHAR *enumerator = L"PCI";
+    WCHAR *expectedHwId = NULL;
     DWORD requiredSize = 0;
-    DWORD DeviceIndex = 0;
-    ULONG DevicePropertyType;
+    DWORD deviceIndex = 0;
+    ULONG devicePropertyType;
     BOOL match;
-    SP_PROPCHANGE_PARAMS PropchangeParams;
-    int retcode = 1;
+    SP_PROPCHANGE_PARAMS propchangeParams;
+    int status = 1;
     int action;
 
     if (argc < 3)
     {
-        usage(argv[0]);
+        Usage(argv[0]);
         return 2;
     }
 
-    if (_tcscmp(argv[1], TEXT("-e")) == 0)
+    if (wcscmp(argv[1], L"-e") == 0)
         action = DICS_ENABLE;
-    else if (_tcscmp(argv[1], TEXT("-d")) == 0)
+    else if (wcscmp(argv[1], L"-d") == 0)
         action = DICS_DISABLE;
     else
     {
-        usage(argv[0]);
+        Usage(argv[0]);
         return 2;
     }
 
-    ClassName = argv[2];
-    if (!ClassName[0])
+    className = argv[2];
+    if (!className[0])
     {
-        usage(argv[0]);
+        Usage(argv[0]);
         return 3;
     }
 
     if (argc >= 4 && argv[3][0])
-        Enumerator = argv[3];
+        enumerator = argv[3];
 
     if (argc >= 5 && argv[4][0])
-        ExpectedHwId = argv[4];
+        expectedHwId = argv[4];
 
-    if (!SetupDiClassGuidsFromName(ClassName, &ClassGUID, 1, &requiredSize))
+    if (!SetupDiClassGuidsFromName(className, &classGUID, 1, &requiredSize))
     {
-        fprintf(stderr, "GetLastError: %d\n", GetLastError());
-        retcode = 5;
+        fwprintf(stderr, L"GetLastError: %d\n", GetLastError());
+        status = 5;
         goto cleanup;
     }
 
     // List devices of given enumerator
-    DeviceInfoSet = SetupDiGetClassDevs(&ClassGUID, Enumerator, NULL, DIGCF_PRESENT);
-    if (DeviceInfoSet == INVALID_HANDLE_VALUE)
+    deviceInfoSet = SetupDiGetClassDevs(&classGUID, enumerator, NULL, DIGCF_PRESENT);
+    if (deviceInfoSet == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "GetLastError: %d\n", GetLastError());
-        retcode = 4;
+        fwprintf(stderr, L"GetLastError: %d\n", GetLastError());
+        status = 4;
         goto cleanup;
     }
 
-    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-    DeviceIndex = 0;
-    while (SetupDiEnumDeviceInfo(DeviceInfoSet, DeviceIndex, &DeviceInfoData))
+    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    deviceIndex = 0;
+    while (SetupDiEnumDeviceInfo(deviceInfoSet, deviceIndex, &deviceInfoData))
     {
         match = FALSE;
-        if (!ExpectedHwId)
+        if (!expectedHwId)
         {
             // any device
             match = TRUE;
@@ -97,63 +96,65 @@ int __cdecl _tmain(int argc, PZPWSTR argv)
         else
         {
             if (!SetupDiGetDeviceProperty(
-                DeviceInfoSet,
-                &DeviceInfoData,
+                deviceInfoSet,
+                &deviceInfoData,
                 &DEVPKEY_Device_HardwareIds,
-                &DevicePropertyType,
-                (LPBYTE) hwIdList,
+                &devicePropertyType,
+                (BYTE *) hwIdList,
                 sizeof(hwIdList),
                 NULL,
                 0))
             {
-                DeviceIndex++;
+                deviceIndex++;
                 continue;
             }
+            
             currentHwId = hwIdList;
             while (currentHwId[0])
             {
-                if (_tcscmp(currentHwId, ExpectedHwId))
+                if (wcscmp(currentHwId, expectedHwId))
                 {
                     match = TRUE;
                     break;
                 }
-                currentHwId += _tcslen(currentHwId) + 1;
+                currentHwId += wcslen(currentHwId) + 1;
             }
         }
         if (match)
         {
-            PropchangeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
-            PropchangeParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
-            PropchangeParams.StateChange = action;
-            PropchangeParams.Scope = DICS_FLAG_CONFIGSPECIFIC;
-            PropchangeParams.HwProfile = 0;
+            propchangeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+            propchangeParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
+            propchangeParams.StateChange = action;
+            propchangeParams.Scope = DICS_FLAG_CONFIGSPECIFIC;
+            propchangeParams.HwProfile = 0;
+            
             if (!SetupDiSetClassInstallParams(
-                DeviceInfoSet,
-                &DeviceInfoData,
-                &PropchangeParams.ClassInstallHeader,
-                sizeof(PropchangeParams)))
+                deviceInfoSet,
+                &deviceInfoData,
+                &propchangeParams.ClassInstallHeader,
+                sizeof(propchangeParams)))
             {
-                fprintf(stderr, "GetLastError: %d\n", GetLastError());
-                retcode = 6;
+                fwprintf(stderr, L"GetLastError: %d\n", GetLastError());
+                status = 6;
                 goto cleanup;
             }
-
-            if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, DeviceInfoSet, &DeviceInfoData))
+            
+            if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, deviceInfoSet, &deviceInfoData))
             {
-                fprintf(stderr, "GetLastError: %d\n", GetLastError());
-                retcode = 7;
+                fwprintf(stderr, L"GetLastError: %d\n", GetLastError());
+                status = 7;
                 goto cleanup;
             }
         }
-        DeviceIndex++;
+        deviceIndex++;
     }
 
-    retcode = 0;
+    status = 0;
 
 cleanup:
 
-    if (DeviceInfoSet != INVALID_HANDLE_VALUE)
-        SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+    if (deviceInfoSet != INVALID_HANDLE_VALUE)
+        SetupDiDestroyDeviceInfoList(deviceInfoSet);
 
-    return retcode;
+    return status;
 }

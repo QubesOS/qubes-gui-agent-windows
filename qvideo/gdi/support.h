@@ -22,10 +22,10 @@ VOID ReadRegistryConfig(VOID);
 
 // returns number of changed pages
 ULONG UpdateDirtyBits(
-    PVOID va,
+    void *va,
     ULONG size,
-    PQV_DIRTY_PAGES pDirtyPages,
-    IN OUT PLARGE_INTEGER pTimestamp
+    QV_DIRTY_PAGES *pDirtyPages,
+    IN OUT LARGE_INTEGER *pTimestamp
     );
 
 extern BOOLEAN g_bUseDirtyBits;

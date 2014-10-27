@@ -10,12 +10,14 @@
 *
 * Copyright (c) 1992-1998 Microsoft Corporation
 \***************************************************************************/
+#pragma once
+#include <windef.h>
 
 #if DBG
 
 VOID DebugPrint(
     __in ULONG DebugPrintLevel,
-    __in PCHAR DebugMessage,
+    __in CHAR *DebugMessage,
     ...
     );
 

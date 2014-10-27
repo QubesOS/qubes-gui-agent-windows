@@ -1,52 +1,47 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <windows.h>
-#include <tchar.h>
 
-int apply_settings()
+int ApplySettings(void)
 {
-    int ret;
-
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) FALSE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) FALSE, SPIF_UPDATEINIFILE))
         return 1;
 
     return 0;
 }
 
-int rollback_settings()
+int RollbackSettings(void)
 {
-    int ret;
-
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) TRUE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) TRUE, SPIF_UPDATEINIFILE))
         return 1;
 
     return 0;
 }
 
-void usage()
+void Usage(void)
 {
-    fprintf(stderr, "Usage: system-settings --apply|--rollback\n");
+    fwprintf(stderr, L"Usage: system-settings --apply|--rollback\n");
     exit(1);
 }
 
-int __cdecl _tmain(int argc, PZPWSTR argv)
+int __cdecl wmain(int argc, WCHAR *argv[])
 {
     if (argc < 2)
     {
-        usage();
+        Usage();
     }
 
-    if (_tcscmp(argv[1], TEXT("--apply")) == 0)
+    if (wcscmp(argv[1], L"--apply") == 0)
     {
-        return apply_settings();
+        return ApplySettings();
     }
-    else if (_tcscmp(argv[1], TEXT("--rollback")) == 0)
+    else if (wcscmp(argv[1], L"--rollback") == 0)
     {
-        return rollback_settings();
+        return RollbackSettings();
     }
     else
     {
-        usage();
+        Usage();
     }
     return 1;
 }

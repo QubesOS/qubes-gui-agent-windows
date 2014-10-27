@@ -28,11 +28,11 @@ const DEVINFO gDevInfoFrameBuffer = {
 *
 \**************************************************************************/
 
-BOOL bInitPDEV(
-    PPDEV ppdev,
-    DEVMODEW * pDevMode,
-    GDIINFO * pGdiInfo,
-    DEVINFO * pDevInfo
+BOOL InitPdev(
+    PDEV *ppdev,
+    DEVMODEW *pDevMode,
+    GDIINFO *pGdiInfo,
+    DEVINFO *pDevInfo
     )
 {
     //
@@ -40,18 +40,18 @@ BOOL bInitPDEV(
     // the kernel driver.
     //
 
-    ppdev->cxScreen = pDevMode->dmPelsWidth;
-    ppdev->cyScreen = pDevMode->dmPelsHeight;
-    ppdev->ulBitCount = pDevMode->dmBitsPerPel;
-    ppdev->lDeltaScreen = ppdev->cxScreen * ppdev->ulBitCount;
+    ppdev->ScreenWidth = pDevMode->dmPelsWidth;
+    ppdev->ScreenHeight = pDevMode->dmPelsHeight;
+    ppdev->BitsPerPel = pDevMode->dmBitsPerPel;
+    ppdev->ScreenDelta = ppdev->ScreenWidth * ppdev->BitsPerPel;
 
     pGdiInfo->ulVersion = GDI_DRIVER_VERSION;
     pGdiInfo->ulTechnology = DT_RASDISPLAY;
     pGdiInfo->ulHorzSize = 320;
     pGdiInfo->ulVertSize = 240;
 
-    pGdiInfo->ulHorzRes = ppdev->cxScreen;
-    pGdiInfo->ulVertRes = ppdev->cyScreen;
+    pGdiInfo->ulHorzRes = ppdev->ScreenWidth;
+    pGdiInfo->ulVertRes = ppdev->ScreenHeight;
     pGdiInfo->ulPanningHorzRes = 0;
     pGdiInfo->ulPanningVertRes = 0;
     pGdiInfo->cBitsPixel = 32;
@@ -138,7 +138,7 @@ BOOL bInitPDEV(
 
     *pDevInfo = gDevInfoFrameBuffer;
 
-    switch (ppdev->ulBitCount)
+    switch (ppdev->BitsPerPel)
     {
     case 16:
         pGdiInfo->ulHTOutputFormat = HT_FORMAT_16BPP;
@@ -154,7 +154,7 @@ BOOL bInitPDEV(
         break;
     }
 
-    pDevInfo->hpalDefault = ppdev->hpalDefault = EngCreatePalette(PAL_BITFIELDS, 0, NULL, 0xFF0000, 0xFF00, 0xFF);
+    pDevInfo->hpalDefault = ppdev->DefaultPalette = EngCreatePalette(PAL_BITFIELDS, 0, NULL, 0xFF0000, 0xFF00, 0xFF);
     if (!pDevInfo->hpalDefault)
         return FALSE;
 

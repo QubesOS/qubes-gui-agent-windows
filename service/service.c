@@ -8,21 +8,20 @@
 
 #define SERVICE_NAME L"QTWHelper"
 
-#define WGA_TERMINATE_TIMEOUT 5000
-// FIXME: move shared definitions to one common file
+#define WGA_TERMINATE_TIMEOUT 2000
 
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
 HANDLE g_ConsoleEvent;
 
-void WINAPI ServiceMain(DWORD argc, WCHAR *argv[]);
-DWORD WINAPI ControlHandlerEx(DWORD controlCode, DWORD eventType, void *eventData, void *context);
+void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[]);
+DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context);
 
-typedef void (WINAPI *SendSASFunction)(BOOL);
+typedef void (WINAPI *fSendSAS)(BOOL);
 // this is not defined in WDK headers
-SendSASFunction SendSAS = NULL;
+fSendSAS SendSAS = NULL;
 
-WCHAR *g_SessionEventName[] = {
+const WCHAR *g_SessionEventName[] = {
     L"<invalid>",
     L"WTS_CONSOLE_CONNECT",
     L"WTS_CONSOLE_DISCONNECT",
@@ -37,37 +36,37 @@ WCHAR *g_SessionEventName[] = {
     L"WTS_SESSION_TERMINATE"
 };
 
+// Held when restarting gui agent.
+CRITICAL_SECTION g_wgaCs;
+
 // Entry point.
-int main(int argc, WCHAR *argv[])
+int wmain(int argc, WCHAR *argv[])
 {
     SERVICE_TABLE_ENTRY	serviceTable[] = {
-            { SERVICE_NAME, ServiceMain },
-            { NULL, NULL }
+        { SERVICE_NAME, ServiceMain },
+        { NULL, NULL }
     };
 
+    InitializeCriticalSection(&g_wgaCs);
     StartServiceCtrlDispatcher(serviceTable);
+    return ERROR_SUCCESS;
 }
 
-void TerminateTargetProcess(WCHAR *exeName)
+BOOL IsProcessRunning(IN const WCHAR *exeName, OUT DWORD *processId OPTIONAL, OUT DWORD *sessionId OPTIONAL)
 {
     WTS_PROCESS_INFO *processInfo = NULL;
     DWORD count = 0, i;
-    HANDLE targetProcess;
-    HANDLE shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
+    HANDLE shutdownEvent = NULL;
+    BOOL found = FALSE;
 
-    LogInfo("Process name: %s", exeName);
+    // check if the shutdown event is present first
+    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
     if (!shutdownEvent)
     {
-        LogDebug("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
+        LogVerbose("Shutdown event not found");
+        return FALSE;
     }
-    else
-    {
-        LogDebug("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
-        SetEvent(shutdownEvent);
-        CloseHandle(shutdownEvent);
-
-        LogDebug("Waiting for process shutdown");
-    }
+    CloseHandle(shutdownEvent);
 
     if (!WTSEnumerateProcesses(WTS_CURRENT_SERVER, 0, 1, &processInfo, &count))
     {
@@ -79,22 +78,12 @@ void TerminateTargetProcess(WCHAR *exeName)
     {
         if (0 == _wcsnicmp(exeName, processInfo[i].pProcessName, wcslen(exeName))) // match
         {
-            LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
-                exeName, processInfo[i].ProcessId, processInfo[i].SessionId, WGA_TERMINATE_TIMEOUT);
-            targetProcess = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, processInfo[i].ProcessId);
-            if (!targetProcess)
-            {
-                perror("OpenProcess");
-                goto cleanup;
-            }
-
-            // wait for exit
-            if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, WGA_TERMINATE_TIMEOUT))
-            {
-                LogWarning("Process didn't exit in time, killing it");
-                TerminateProcess(targetProcess, 0);
-            }
-            CloseHandle(targetProcess);
+            if (processId)
+                *processId = processInfo[i].ProcessId;
+            if (sessionId)
+                *sessionId = processInfo[i].SessionId;
+            LogVerbose("%s: PID %d, session %d", processInfo[i].pProcessName, processInfo[i].ProcessId, processInfo[i].SessionId);
+            found = TRUE;
             break;
         }
     }
@@ -102,74 +91,175 @@ void TerminateTargetProcess(WCHAR *exeName)
 cleanup:
     if (processInfo)
         WTSFreeMemory(processInfo);
+    return found;
 }
 
-DWORD WINAPI WorkerThread(void *param)
+DWORD TerminateTargetProcess(IN const WCHAR *exeName)
 {
-    WCHAR *cmdline;
-    WCHAR *exeName;
+    HANDLE targetProcess;
+    HANDLE shutdownEvent;
+    DWORD processId, sessionId, status;
+
+    status = GetLastError();
+    LogInfo("Process name: '%s'", exeName);
+
+    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
+    if (!shutdownEvent)
+    {
+        perror("OpenEvent");
+        LogInfo("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
+    }
+    else
+    {
+        LogDebug("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
+        SetEvent(shutdownEvent);
+        CloseHandle(shutdownEvent);
+
+        LogDebug("Waiting for process shutdown");
+    }
+
+    if (IsProcessRunning(exeName, &processId, &sessionId))
+    {
+        LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
+            exeName, processId, sessionId, WGA_TERMINATE_TIMEOUT);
+
+        targetProcess = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, processId);
+
+        if (!targetProcess)
+        {
+            return perror("OpenProcess");
+        }
+
+        // wait for exit
+        if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, WGA_TERMINATE_TIMEOUT))
+        {
+            LogWarning("Process didn't exit in time, killing it");
+            TerminateProcess(targetProcess, 0);
+        }
+        CloseHandle(targetProcess);
+    }
+    return ERROR_SUCCESS;
+}
+
+// Starts the process as SYSTEM in currently active console session.
+DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modified by CreateProcess*
+{
     PROCESS_INFORMATION pi;
     STARTUPINFO si;
     HANDLE newToken;
-    DWORD sessionId;
+    DWORD currenttSessionId, consoleSessionId;
     DWORD size;
     HANDLE currentToken;
     HANDLE currentProcess = GetCurrentProcess();
-    HANDLE events[2];
-    DWORD signaledEvent = 3;
+
+    consoleSessionId = WTSGetActiveConsoleSessionId();
+    if (consoleSessionId == 0xFFFFFFFF) // disconnected or changing
+    {
+        LogDebug("console session is 0x%x, skipping", consoleSessionId);
+        return ERROR_SUCCESS;
+        // we'll launch wga when the console connects to a session again
+    }
+
+    // Get access token from ourselves.
+    OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
+    // Session ID is stored in the access token. For services it's normally 0.
+    GetTokenInformation(currentToken, TokenSessionId, &currenttSessionId, sizeof(currenttSessionId), &size);
+    LogDebug("current session: %d, console session: %d", currenttSessionId, consoleSessionId);
+
+    // We need to create a primary token for CreateProcessAsUser.
+    if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
+    {
+        return perror("DuplicateTokenEx");
+    }
+    CloseHandle(currentProcess);
+
+    // Change the session ID in the new access token to the target session ID.
+    // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
+    if (!SetTokenInformation(newToken, TokenSessionId, &consoleSessionId, sizeof(consoleSessionId)))
+    {
+        return perror("SetTokenInformation(TokenSessionId)");
+    }
+
+    LogInfo("Running process '%s' in session %d", exePath, consoleSessionId);
+    // Create process with the new token.
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+
+    // No need to set desktop here, gui agent attaches to the input desktop anyway,
+    // and hardcodint this to winlogon is wrong.
+    if (!CreateProcessAsUser(newToken, NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    {
+        return perror("CreateProcessAsUser");
+    }
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return ERROR_SUCCESS;
+}
+
+// Restarts gui agent in active session if it's dead for too long.
+DWORD WINAPI WatchdogThread(void *param)
+{
+    WCHAR *cmdline;
+    WCHAR *exeName;
 
     cmdline = (WCHAR*) param;
     PathUnquoteSpaces(cmdline);
     exeName = PathFindFileName(cmdline);
 
+    LogDebug("cmdline: '%s', exe: '%s'", cmdline, exeName);
+
+    while (TRUE)
+    {
+        Sleep(2000);
+
+        EnterCriticalSection(&g_wgaCs);
+        // Check if the gui agent is running.
+        if (!IsProcessRunning(exeName, NULL, NULL))
+        {
+            LogWarning("Process '%s' not running, restarting it", exeName);
+            StartTargetProcess(cmdline);
+        }
+        LeaveCriticalSection(&g_wgaCs);
+    }
+
+    return ERROR_SUCCESS;
+}
+
+DWORD WINAPI SessionChangeThread(void *param)
+{
+    WCHAR *cmdline;
+    WCHAR *exeName;
+    HANDLE events[2];
+    DWORD signaledEvent = 3;
+
+    LogDebug("start");
+
+    cmdline = (WCHAR*) param;
+    PathUnquoteSpaces(cmdline);
+    exeName = PathFindFileName(cmdline);
+
+    LogDebug("cmdline: '%s', exe: '%s'", cmdline, exeName);
+
     events[0] = g_ConsoleEvent;
     // Default security for the SAS event, only SYSTEM processes can signal it.
     events[1] = CreateEvent(NULL, FALSE, FALSE, WGA_SAS_EVENT_NAME);
 
-    LogDebug("start");
-
-    while (1)
+    while (TRUE)
     {
-        // Wait until the interactive session changes (to winlogon console).
+        // Wait until the interactive session changes.
         signaledEvent = WaitForMultipleObjects(2, events, FALSE, INFINITE) - WAIT_OBJECT_0;
 
         switch (signaledEvent)
         {
         case 0: // console event: restart wga
+            EnterCriticalSection(&g_wgaCs);
             // Make sure process is not running.
             TerminateTargetProcess(exeName);
-
-            // Get access token from ourselves.
-            OpenProcessToken(currentProcess, TOKEN_ALL_ACCESS, &currentToken);
-            // Session ID is stored in the access token. For services it's normally 0.
-            GetTokenInformation(currentToken, TokenSessionId, &sessionId, sizeof(sessionId), &size);
-            LogDebug("current session: %d, console session: %d", sessionId, WTSGetActiveConsoleSessionId());
-
-            // We need to create a primary token for CreateProcessAsUser.
-            if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
-            {
-                return perror("DuplicateTokenEx");
-            }
-            CloseHandle(currentProcess);
-
-            sessionId = WTSGetActiveConsoleSessionId();
-            // Change the session ID in the new access token to the target session ID.
-            // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
-            if (!SetTokenInformation(newToken, TokenSessionId, &sessionId, sizeof(sessionId)))
-            {
-                return perror("SetTokenInformation(TokenSessionId)");
-            }
-
-            LogInfo("Running process '%s' in session %d", cmdline, sessionId);
-            // Create process with the new token.
-            ZeroMemory(&si, sizeof(si));
-            si.cb = sizeof(si);
-            // Don't forget to set the correct desktop.
-            si.lpDesktop = L"WinSta0\\Winlogon";
-            if (!CreateProcessAsUser(newToken, NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-            {
-                perror("CreateProcessAsUser");
-            }
+            // restart
+            StartTargetProcess(cmdline);
+            LeaveCriticalSection(&g_wgaCs);
             break;
 
         case 1: // SAS event
@@ -186,28 +276,32 @@ DWORD WINAPI WorkerThread(void *param)
     return ERROR_SUCCESS;
 }
 
-void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
+void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
 {
-    WCHAR cmdline[MAX_PATH];
+    WCHAR cmdline1[MAX_PATH], cmdline2[MAX_PATH];
     WCHAR moduleName[CFG_MODULE_MAX];
-    HANDLE workerHandle = 0;
+    HANDLE workerHandle = NULL;
+    HANDLE watchdogHandle = NULL;
     DWORD status;
     HANDLE sasDll;
 
     // Read the registry configuration.
     CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
-    status = CfgReadString(moduleName, REG_CONFIG_AUTOSTART_VALUE, cmdline, RTL_NUMBER_OF(cmdline), NULL);
+    status = CfgReadString(moduleName, REG_CONFIG_AUTOSTART_VALUE, cmdline1, RTL_NUMBER_OF(cmdline1), NULL);
     if (ERROR_SUCCESS != status)
     {
         perror("RegQueryValueEx(Autostart)");
         goto cleanup;
     }
 
+    // 2nd copy is for the 2nd thread since it will be modified by Path* functions
+    memcpy(cmdline2, cmdline1, sizeof(cmdline2));
+
     // Get SendSAS address.
     sasDll = LoadLibrary(L"sas.dll");
     if (sasDll)
     {
-        SendSAS = (SendSASFunction) GetProcAddress(sasDll, "SendSAS");
+        SendSAS = (fSendSAS) GetProcAddress(sasDll, "SendSAS");
         if (!SendSAS)
             LogWarning("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
     }
@@ -238,16 +332,24 @@ void WINAPI ServiceMain(DWORD argc, WCHAR *argv[])
     g_ConsoleEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // Start the worker thread.
-    LogInfo("Starting worker thread");
-    workerHandle = CreateThread(NULL, 0, WorkerThread, cmdline, 0, NULL);
+    LogDebug("Starting worker thread");
+    workerHandle = CreateThread(NULL, 0, SessionChangeThread, cmdline1, 0, NULL);
     if (!workerHandle)
     {
         perror("CreateThread");
         goto cleanup;
     }
 
-    // Signal the console change event to trigger initial spawning of the target process.
-    SetEvent(g_ConsoleEvent);
+    LogDebug("Starting watchdog thread");
+    watchdogHandle = CreateThread(NULL, 0, WatchdogThread, cmdline2, 0, NULL);
+    if (!watchdogHandle)
+    {
+        perror("CreateThread");
+        goto cleanup;
+    }
+
+    // Start the gui agent.
+    StartTargetProcess(cmdline1);
 
     // Wait for the worker thread to exit.
     WaitForSingleObject(workerHandle, INFINITE);
@@ -261,23 +363,28 @@ cleanup:
     return;
 }
 
-void SessionChange(DWORD eventType, WTSSESSION_NOTIFICATION *sn)
+void SessionChange(IN DWORD eventType, IN const WTSSESSION_NOTIFICATION *sn)
 {
-    if (eventType < RTL_NUMBER_OF(g_SessionEventName))
-        LogDebug("%s, session ID %d", g_SessionEventName[eventType], sn->dwSessionId);
-    else
-        LogDebug("<unknown event: %d>, session id %d", eventType, sn->dwSessionId);
+    static DWORD previousConsoleId = 0;
+    DWORD consoleId = WTSGetActiveConsoleSessionId();
 
-    if (eventType == WTS_CONSOLE_CONNECT || eventType == WTS_SESSION_LOGON)
+    if (eventType < RTL_NUMBER_OF(g_SessionEventName))
+        LogDebug("%s, session ID %d, console session: %d", g_SessionEventName[eventType], sn->dwSessionId, consoleId);
+    else
+        LogDebug("<unknown event: %d>, session ID %d, console session: %d", eventType, sn->dwSessionId, consoleId);
+
+    if (consoleId != previousConsoleId)
     {
+        LogDebug("console session change, signaling event");
+        previousConsoleId = consoleId;
         // Signal trigger event for the worker thread.
         SetEvent(g_ConsoleEvent);
     }
 }
 
-DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context)
 {
-    switch (dwControl)
+    switch (controlCode)
     {
     case SERVICE_CONTROL_STOP:
     case SERVICE_CONTROL_SHUTDOWN:
@@ -288,11 +395,11 @@ DWORD WINAPI ControlHandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEvent
         break;
 
     case SERVICE_CONTROL_SESSIONCHANGE:
-        SessionChange(dwEventType, (WTSSESSION_NOTIFICATION*) lpEventData);
+        SessionChange(eventType, (WTSSESSION_NOTIFICATION*) eventData);
         break;
 
     default:
-        LogDebug("code 0x%x, event 0x%x", dwControl, dwEventType);
+        LogDebug("code 0x%x, event 0x%x", controlCode, eventType);
         break;
     }
 

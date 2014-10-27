@@ -67,7 +67,7 @@ typedef struct _HARDWARE_PTE
     ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS + 1);
     ULONG64 SoftwareWsIndex : _HARDWARE_PTE_WORKING_SET_BITS;
     ULONG64 NoExecute : 1;
-} HARDWARE_PTE, *PHARDWARE_PTE;
+} HARDWARE_PTE;
 
 typedef struct _MMPTE_SOFTWARE
 {
@@ -166,7 +166,7 @@ typedef struct _MMPTE_HARDWARE_LARGEPAGE
     ULONGLONG reserved1 : 8;   // software field
     ULONGLONG PageFrameNumber : 19;
     ULONGLONG reserved2 : 24;   // software field
-} MMPTE_HARDWARE_LARGEPAGE, *PMMPTE_HARDWARE_LARGEPAGE;
+} MMPTE_HARDWARE_LARGEPAGE;
 
 //
 // A Page Table Entry on AMD64 has the following definition.
@@ -203,7 +203,7 @@ typedef struct _MMPTE_HARDWARE
     ULONG64 reserved1 : 24 - (_HARDWARE_PTE_WORKING_SET_BITS + 1);
     ULONGLONG SoftwareWsIndex : _HARDWARE_PTE_WORKING_SET_BITS;
     ULONG64 NoExecute : 1;
-} MMPTE_HARDWARE, *PMMPTE_HARDWARE;
+} MMPTE_HARDWARE;
 
 #if defined(NT_UP)
 #define HARDWARE_PTE_DIRTY_MASK     0x40
@@ -247,15 +247,13 @@ typedef struct _MMPTE
     } u;
 } MMPTE;
 
-typedef MMPTE *PMMPTE;
-
-#define MiGetPxeAddress(va)   ((PMMPTE)PXE_BASE + MiGetPxeOffset(va))
+#define MiGetPxeAddress(va)   ((MMPTE *)PXE_BASE + MiGetPxeOffset(va))
 #define MiGetPpeAddress(va)   \
-    ((PMMPTE)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PPI_SHIFT) << PTE_SHIFT) + PPE_BASE))
+    ((MMPTE *)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PPI_SHIFT) << PTE_SHIFT) + PPE_BASE))
 #define MiGetPdeAddress(va)  \
-    ((PMMPTE)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PDI_SHIFT) << PTE_SHIFT) + PDE_BASE))
+    ((MMPTE *)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PDI_SHIFT) << PTE_SHIFT) + PDE_BASE))
 #define MiGetPteAddress(va) \
-    ((PMMPTE)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PTI_SHIFT) << PTE_SHIFT) + PTE_BASE))
+    ((MMPTE *)(((((ULONG_PTR)(va) & VIRTUAL_ADDRESS_MASK) >> PTI_SHIFT) << PTE_SHIFT) + PTE_BASE))
 
 #pragma warning(pop)
 

@@ -8,7 +8,7 @@
 // to monitor 32-bit GUI processes.
 
 // TODO: use common logger from windows-utils (would need to be built for 32bit...)
-#define perror(x) (OutputDebugString(L"QGuiHookServer32: " L##x),GetLastError())
+#define perror(x) (OutputDebugString(L"QGuiHookServer32: " L##x L"\n"),GetLastError())
 
 // This is not pretty but WDK 7.1 build requires that all source files for a project
 // must be in one directory. Welcome to 1970's I suppose...

@@ -159,6 +159,6 @@
         REMOVE="ALL" AND ?qvideo=3 AND $qvideo=2
       </Custom>
     </InstallExecuteSequence>
-	
-	</Module>
+
+  </Module>
 </Wix>

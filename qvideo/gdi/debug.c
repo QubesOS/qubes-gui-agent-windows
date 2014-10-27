@@ -42,7 +42,7 @@ ULONG DebugLevel = 90;
 
 VOID DebugPrint(
     __in ULONG DebugPrintLevel,
-    __in PCHAR DebugMessage,
+    __in CHAR *DebugMessage,
     ...
     )
 {

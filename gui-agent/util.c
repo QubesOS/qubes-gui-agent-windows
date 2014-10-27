@@ -10,10 +10,10 @@
 
 DWORD g_DisableCursor = TRUE;
 
-PSID BuildSid()
+static SID *BuildSid(void)
 {
-    SID_IDENTIFIER_AUTHORITY sia = SECURITY_LOCAL_SID_AUTHORITY;
-    PSID sid = NULL;
+    SID_IDENTIFIER_AUTHORITY sia = SECURITY_NT_AUTHORITY; // don't use LOCAL - only processes running in interactive session belong to that...
+    SID *sid = NULL;
     if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
     {
         perror("AllocateAndInitializeSid");
@@ -26,9 +26,11 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;
     EXPLICIT_ACCESS ea = { 0 };
-    PACL acl = NULL;
+    ACL *acl = NULL;
     HANDLE event = NULL;
-    PSID localSid = NULL;
+    SID *localSid = NULL;
+
+    LogDebug("%s", name);
 
     localSid = BuildSid();
 
@@ -38,7 +40,7 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    ea.Trustee.ptstrName = localSid;
+    ea.Trustee.ptstrName = (WCHAR *) localSid;
 
     if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
     {
@@ -75,7 +77,7 @@ cleanup:
     return event;
 }
 
-ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
+ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
 {
     STARTUPINFO si = { 0 };
     PROCESS_INFORMATION pi;
@@ -95,31 +97,25 @@ ULONG StartProcess(IN WCHAR *executable, OUT PHANDLE processHandle)
     return ERROR_SUCCESS;
 }
 
-ULONG IncreaseProcessWorkingSetSize(SIZE_T uNewMinimumWorkingSetSize, SIZE_T uNewMaximumWorkingSetSize)
+ULONG IncreaseProcessWorkingSetSize(IN SIZE_T minimumSize, IN SIZE_T maximumSize)
 {
-    SIZE_T uMinimumWorkingSetSize = 0;
-    SIZE_T uMaximumWorkingSetSize = 0;
-
-    if (!GetProcessWorkingSetSize(GetCurrentProcess(), &uMinimumWorkingSetSize, &uMaximumWorkingSetSize))
-        return perror("GetProcessWorkingSetSize");
-
-    if (!SetProcessWorkingSetSize(GetCurrentProcess(), uNewMinimumWorkingSetSize, uNewMaximumWorkingSetSize))
+    if (!SetProcessWorkingSetSize(GetCurrentProcess(), minimumSize, maximumSize))
         return perror("SetProcessWorkingSetSize");
 
-    if (!GetProcessWorkingSetSize(GetCurrentProcess(), &uMinimumWorkingSetSize, &uMaximumWorkingSetSize))
+    if (!GetProcessWorkingSetSize(GetCurrentProcess(), &minimumSize, &maximumSize))
         return perror("GetProcessWorkingSetSize");
 
-    LogDebug("New working set size: %d pages\n", uMaximumWorkingSetSize >> 12);
+    LogDebug("New working set size: %d pages\n", maximumSize >> 12);
 
     return ERROR_SUCCESS;
 }
 
 ULONG HideCursors(void)
 {
-    HCURSOR	hBlankCursor;
-    HCURSOR	hBlankCursorCopy;
+    HCURSOR	blankCursor;
+    HCURSOR	blankCursorCopy;
     UCHAR i;
-    ULONG CursorsToHide[] = {
+    ULONG cursorsToHide[] = {
         OCR_APPSTARTING,	// Standard arrow and small hourglass
         OCR_NORMAL,		// Standard arrow
         OCR_CROSS,		// Crosshair
@@ -142,25 +138,25 @@ ULONG HideCursors(void)
 
     LogDebug("disabling cursors");
 
-    hBlankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
-    if (!hBlankCursor)
+    blankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
+    if (!blankCursor)
         return perror("LoadImage");
 
-    for (i = 0; i < RTL_NUMBER_OF(CursorsToHide); i++)
+    for (i = 0; i < RTL_NUMBER_OF(cursorsToHide); i++)
     {
         // The system destroys hcur by calling the DestroyCursor function.
         // Therefore, hcur cannot be a cursor loaded using the LoadCursor function.
         // To specify a cursor loaded from a resource, copy the cursor using
         // the CopyCursor function, then pass the copy to SetSystemCursor.
-        hBlankCursorCopy = CopyCursor(hBlankCursor);
-        if (!hBlankCursorCopy)
+        blankCursorCopy = CopyCursor(blankCursor);
+        if (!blankCursorCopy)
             return perror("CopyCursor");
 
-        if (!SetSystemCursor(hBlankCursorCopy, CursorsToHide[i]))
+        if (!SetSystemCursor(blankCursorCopy, cursorsToHide[i]))
             return perror("SetSystemCursor");
     }
 
-    if (!DestroyCursor(hBlankCursor))
+    if (!DestroyCursor(blankCursor))
         return perror("DestroyCursor");
 
     return ERROR_SUCCESS;
@@ -168,16 +164,16 @@ ULONG HideCursors(void)
 
 ULONG DisableEffects(void)
 {
-    ANIMATIONINFO AnimationInfo;
+    ANIMATIONINFO animationInfo;
 
     LogDebug("start");
-    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (PVOID) FALSE, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) FALSE, SPIF_UPDATEINIFILE))
         return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
 
-    AnimationInfo.cbSize = sizeof(AnimationInfo);
-    AnimationInfo.iMinAnimate = FALSE;
+    animationInfo.cbSize = sizeof(animationInfo);
+    animationInfo.iMinAnimate = FALSE;
 
-    if (!SystemParametersInfo(SPI_SETANIMATION, sizeof(AnimationInfo), &AnimationInfo, SPIF_UPDATEINIFILE))
+    if (!SystemParametersInfo(SPI_SETANIMATION, sizeof(animationInfo), &animationInfo, SPIF_UPDATEINIFILE))
         return perror("SystemParametersInfo(SPI_SETANIMATION)");
 
     return ERROR_SUCCESS;
@@ -186,14 +182,16 @@ ULONG DisableEffects(void)
 // Set current thread's desktop to the current input desktop.
 ULONG AttachToInputDesktop(void)
 {
-    ULONG uResult = ERROR_SUCCESS;
+    ULONG status = ERROR_SUCCESS;
     HDESK desktop = 0, oldDesktop = 0;
-    WCHAR name[256];
-    DWORD needed;
+    HANDLE currentProcess = GetCurrentProcess();
+#ifdef DEBUG
+    HANDLE currentToken;
     DWORD sessionId;
     DWORD size;
-    HANDLE currentToken;
-    HANDLE currentProcess = GetCurrentProcess();
+    WCHAR name[256];
+    DWORD needed;
+#endif
 
     LogVerbose("start");
     desktop = OpenInputDesktop(0, FALSE,
@@ -202,7 +200,7 @@ ULONG AttachToInputDesktop(void)
 
     if (!desktop)
     {
-        uResult = perror("OpenInputDesktop");
+        status = perror("OpenInputDesktop");
         goto cleanup;
     }
 
@@ -227,33 +225,33 @@ ULONG AttachToInputDesktop(void)
     oldDesktop = GetThreadDesktop(GetCurrentThreadId());
     if (!SetThreadDesktop(desktop))
     {
-        uResult = perror("SetThreadDesktop");
+        status = perror("SetThreadDesktop");
         goto cleanup;
     }
 
-    g_DesktopHwnd = GetDesktopWindow();
+    g_DesktopWindow = GetDesktopWindow();
 
 cleanup:
     if (oldDesktop)
         if (!CloseDesktop(oldDesktop))
             perror("CloseDesktop(previous)");
-    return uResult;
+    return status;
 }
 
 // Convert memory page number in the screen buffer to a rectangle that covers it.
-void PageToRect(ULONG uPageNumber, OUT PRECT pRect)
+void PageToRect(IN ULONG pageNumber, OUT RECT *rect)
 {
-    ULONG uStride = g_ScreenWidth * 4;
-    ULONG uPageStart = uPageNumber * PAGE_SIZE;
+    ULONG stride = g_ScreenWidth * 4;
+    ULONG pageStart = pageNumber * PAGE_SIZE;
 
-    pRect->left = (uPageStart % uStride) / 4;
-    pRect->top = uPageStart / uStride;
-    pRect->right = ((uPageStart + PAGE_SIZE - 1) % uStride) / 4;
-    pRect->bottom = (uPageStart + PAGE_SIZE - 1) / uStride;
+    rect->left = (pageStart % stride) / 4;
+    rect->top = pageStart / stride;
+    rect->right = ((pageStart + PAGE_SIZE - 1) % stride) / 4;
+    rect->bottom = (pageStart + PAGE_SIZE - 1) / stride;
 
-    if (pRect->left > pRect->right) // page crossed right border
+    if (rect->left > rect->right) // page crossed right border
     {
-        pRect->left = 0;
-        pRect->right = g_ScreenWidth - 1;
+        rect->left = 0;
+        rect->right = g_ScreenWidth - 1;
     }
 }

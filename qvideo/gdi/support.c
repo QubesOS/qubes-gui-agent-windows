@@ -8,14 +8,14 @@ LARGE_INTEGER g_RefreshInterval;
 ULONG g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
 BOOLEAN g_bUseDirtyBits = TRUE;
 
-ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
+ULONG CfgReadDword(IN WCHAR *valueName, OUT ULONG *value)
 {
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     HANDLE handleRegKey = NULL;
     OBJECT_ATTRIBUTES attributes;
     UNICODE_STRING usKeyName;
     UNICODE_STRING usValueName;
-    PKEY_VALUE_FULL_INFORMATION pKeyInfo = NULL;
+    KEY_VALUE_FULL_INFORMATION *pKeyInfo = NULL;
     ULONG ulKeyInfoSize = 0;
     ULONG ulKeyInfoSizeNeeded = 0;
 
@@ -47,7 +47,7 @@ ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
     if ((status == STATUS_BUFFER_TOO_SMALL) || (status == STATUS_BUFFER_OVERFLOW))
     {
         ulKeyInfoSize = ulKeyInfoSizeNeeded;
-        pKeyInfo = (PKEY_VALUE_FULL_INFORMATION) ExAllocatePoolWithTag(NonPagedPool, ulKeyInfoSizeNeeded, QVDISPLAY_TAG);
+        pKeyInfo = (KEY_VALUE_FULL_INFORMATION *) ExAllocatePoolWithTag(NonPagedPool, ulKeyInfoSizeNeeded, QVDISPLAY_TAG);
         if (NULL == pKeyInfo)
         {
             ERRORF("No memory");
@@ -76,7 +76,7 @@ ULONG CfgReadDword(IN PWCHAR valueName, OUT ULONG *value)
             goto cleanup;
         }
 
-        RtlCopyMemory(value, (PUCHAR) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
+        RtlCopyMemory(value, (UCHAR *) pKeyInfo + pKeyInfo->DataOffset, sizeof(ULONG));
     }
 
     status = STATUS_SUCCESS;
@@ -106,7 +106,7 @@ VOID ReadRegistryConfig()
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_FPS_VALUE, &g_MaxFps)))
     {
         g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
-        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
+        WARNINGF("failed to read '%S' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
     }
 
     if (g_MaxFps > MAX_REFRESH_FPS)
@@ -128,19 +128,19 @@ VOID ReadRegistryConfig()
     // dirty bits
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_DIRTY_VALUE, &ulUseDirtyBits)))
     {
-        WARNINGF("failed to read '%s' config value, using %lu", REG_CONFIG_DIRTY_VALUE, g_bUseDirtyBits);
+        WARNINGF("failed to read '%S' config value, using %lu", REG_CONFIG_DIRTY_VALUE, g_bUseDirtyBits);
     }
     else
     {
         g_bUseDirtyBits = (BOOLEAN) ulUseDirtyBits;
-        DEBUGF("%s: %lu", REG_CONFIG_DIRTY_VALUE, ulUseDirtyBits);
+        DEBUGF("%S: %lu", REG_CONFIG_DIRTY_VALUE, ulUseDirtyBits);
     }
 
     bInitialized = TRUE;
 }
 
 // debug
-VOID DumpPte(PVOID va, PMMPTE pte)
+VOID DumpPte(void *va, MMPTE *pte)
 {
     UNREFERENCED_PARAMETER(va);
     UNREFERENCED_PARAMETER(pte);
@@ -164,16 +164,16 @@ VOID DumpPte(PVOID va, PMMPTE pte)
 
 // returns number of changed pages
 ULONG UpdateDirtyBits(
-    PVOID va,
+    void *va,
     ULONG size,
-    PQV_DIRTY_PAGES pDirtyPages,
-    IN OUT PLARGE_INTEGER pTimestamp
+    QV_DIRTY_PAGES *pDirtyPages,
+    IN OUT LARGE_INTEGER *pTimestamp
     )
 {
     LARGE_INTEGER timestamp;
     ULONG pages, pageNumber, dirty = 0;
-    PUCHAR ptr;
-    PMMPTE pte;
+    UCHAR *ptr;
+    MMPTE *pte;
 #ifdef DBG
     static ULONG counter = 0;
     LARGE_INTEGER stime, ltime;
@@ -203,8 +203,8 @@ ULONG UpdateDirtyBits(
         DEBUGF("WGA ready");
     }
 
-    for (ptr = (PUCHAR) va, pageNumber = 0;
-        ptr < (PUCHAR) va + size;
+    for (ptr = (UCHAR *) va, pageNumber = 0;
+        ptr < (UCHAR *) va + size;
         ptr += PAGE_SIZE, pageNumber++
         )
     {

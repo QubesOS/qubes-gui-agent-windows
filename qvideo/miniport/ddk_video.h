@@ -17,7 +17,7 @@ typedef enum VIDEO_DEBUG_LEVEL
     Warn,
     Trace,
     Info
-} VIDEO_DEBUG_LEVEL, *PVIDEO_DEBUG_LEVEL;
+} VIDEO_DEBUG_LEVEL;
 
 #define VIDEOPORT_API __declspec(dllimport)
 

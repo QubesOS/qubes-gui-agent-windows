@@ -6,59 +6,59 @@
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
-extern BOOL g_bUseDirtyBits;
-extern BOOL g_bFullScreenMode;
+extern BOOL g_UseDirtyBits;
+extern BOOL g_SeamlessMode;
 extern LONG g_ScreenHeight;
 extern LONG g_ScreenWidth;
 extern LONG g_HostScreenWidth;
 extern LONG g_HostScreenHeight;
 extern BOOL g_VchanClientConnected;
-extern HWND g_DesktopHwnd;
+extern HWND g_DesktopWindow;
 extern char g_DomainName[256];
 extern CRITICAL_SECTION g_csWatchedWindows;
 
 typedef struct _WATCHED_DC
 {
-    HWND    hWnd;
-    HDC     hDC;
+    HWND WindowHandle;
+    HDC DC;
 
-    RECT	rcWindow;
-    LIST_ENTRY	le;
+    RECT WindowRect;
+    LIST_ENTRY ListEntry;
 
-    BOOL	bVisible;
-    BOOL	bOverrideRedirect;
-    HWND    ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
-    ULONG   uTimeModalChecked; // time of last check for modal window
+    BOOL IsVisible;
+    BOOL IsOverrideRedirect;
+    HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
+    ULONG TimeModalChecked; // time of last check for modal window
 
-    BOOL	bStyleChecked;
-    ULONG	uTimeAdded;
+    BOOL IsStyleChecked;
+    ULONG TimeAdded;
 
-    BOOL	bIconic;
+    BOOL IsIconic;
 
-    LONG	MaxWidth;
-    LONG	MaxHeight;
-    PPFN_ARRAY	pPfnArray;
-} WATCHED_DC, *PWATCHED_DC;
+    LONG MaxWidth;
+    LONG MaxHeight;
+    PFN_ARRAY *PfnArray;
+} WATCHED_DC;
 
-typedef struct _BANNED_POPUP_WINDOWS
+typedef struct _BANNED_WINDOWS
 {
-    ULONG	uNumberOfBannedPopups;
-    HWND	hBannedPopupArray[1];
-} BANNED_POPUP_WINDOWS, *PBANNED_POPUP_WINDOWS;
+    ULONG Count;
+    HWND BannedHandles[1]; // variable length
+} BANNED_WINDOWS;
 
 // used when searching for modal window that's blocking another window
 typedef struct _MODAL_SEARCH_PARAMS
 {
     HWND ParentWindow; // window that's disabled by a modal window, input
     HWND ModalWindow; // modal window that's active, output
-} MODAL_SEARCH_PARAMS, *PMODAL_SEARCH_PARAMS;
+} MODAL_SEARCH_PARAMS;
 
 #define InitializeListHead(ListHead) (\
     (ListHead)->Flink = (ListHead)->Blink = (ListHead))
 
 #define RemoveEntryList(Entry) {\
-    PLIST_ENTRY _EX_Blink; \
-    PLIST_ENTRY _EX_Flink; \
+    LIST_ENTRY *_EX_Blink; \
+    LIST_ENTRY *_EX_Flink; \
     _EX_Flink = (Entry)->Flink; \
     _EX_Blink = (Entry)->Blink; \
     _EX_Blink->Flink = _EX_Flink; \
@@ -73,8 +73,8 @@ typedef struct _MODAL_SEARCH_PARAMS
     ((ListHead)->Flink == (ListHead))
 
 #define InsertHeadList(ListHead,Entry) {\
-    PLIST_ENTRY _EX_Flink; \
-    PLIST_ENTRY _EX_ListHead; \
+    LIST_ENTRY *_EX_Flink; \
+    LIST_ENTRY *_EX_ListHead; \
     _EX_ListHead = (ListHead); \
     _EX_Flink = _EX_ListHead->Flink; \
     (Entry)->Flink = _EX_Flink; \
@@ -84,8 +84,8 @@ typedef struct _MODAL_SEARCH_PARAMS
 }
 
 #define InsertTailList(ListHead,Entry) {\
-    PLIST_ENTRY _EX_Blink; \
-    PLIST_ENTRY _EX_ListHead; \
+    LIST_ENTRY *_EX_Blink; \
+    LIST_ENTRY *_EX_ListHead; \
     _EX_ListHead = (ListHead); \
     _EX_Blink = _EX_ListHead->Blink; \
     (Entry)->Flink = _EX_ListHead; \
@@ -94,10 +94,27 @@ typedef struct _MODAL_SEARCH_PARAMS
     _EX_ListHead->Blink = (Entry); \
 }
 
-ULONG CheckWatchedWindowUpdates(PWATCHED_DC pWatchedDC, WINDOWINFO *pwi, BOOL bDamageDetected, PRECT prcDamageArea);
-BOOL ShouldAcceptWindow(HWND hWnd, OPTIONAL WINDOWINFO *pwi);
-PWATCHED_DC FindWindowByHwnd(HWND hWnd);
-PWATCHED_DC AddWindowWithInfo(HWND hWnd, WINDOWINFO *pwi);
-ULONG RemoveWatchedDC(PWATCHED_DC pWatchedDC);
+ULONG CheckWatchedWindowUpdates(
+    IN OUT WATCHED_DC *watchedDC,
+    IN const WINDOWINFO *windowInfo,
+    IN BOOL damageDetected,
+    IN const RECT *damageArea
+    );
+
+BOOL ShouldAcceptWindow(
+    IN HWND window,
+    IN const WINDOWINFO *pwi OPTIONAL
+    );
+
+WATCHED_DC *FindWindowByHandle(
+    HWND hWnd
+    );
+
+WATCHED_DC *AddWindowWithInfo(
+    IN HWND hWnd,
+    IN const WINDOWINFO *windowInfo
+    );
+
+ULONG RemoveWatchedDC(WATCHED_DC *pWatchedDC);
 ULONG StartShellEventsThread(void);
 ULONG StopShellEventsThread(void);

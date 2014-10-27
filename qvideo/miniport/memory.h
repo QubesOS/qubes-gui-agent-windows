@@ -2,34 +2,36 @@
 
 #define QVMINI_TAG	'MMVQ'
 
-PVOID AllocateMemory(
-    ULONG uLength,
-    PPFN_ARRAY *ppPfnArray
+void *AllocateMemory(
+    IN ULONG size,
+    OUT PFN_ARRAY **pfnArray
     );
 
-VOID FreeMemory(
-    IN PVOID pMemory,
-    IN PVOID pPfnArray
+void FreeMemory(
+    IN void *memory,
+    IN void *pfnArray OPTIONAL
     );
 
-PVOID AllocateSection(
-    ULONG uLength,
-    HANDLE *phSection,
-    PVOID *ppSectionObject,
-    PVOID *ppMdl,
-    PPFN_ARRAY *ppPfnArray,
-    OPTIONAL HANDLE *phDirtySection,
-    OPTIONAL PVOID *ppDirtySectionObject,
-    OPTIONAL PVOID *ppDirtySectionMemory
+// Creates a named kernel mode section mapped in the system space, locks it,
+// and returns its handle, a referenced section object, an MDL and a PFN list.
+void *AllocateSection(
+    IN ULONG size,
+    OUT HANDLE *section,
+    OUT void **sectionObject,
+    OUT void **mdl, // MDL**, but good luck including required headers for the type
+    OUT PFN_ARRAY **pfnArray,
+    OUT HANDLE *dirtySection OPTIONAL,
+    OUT void **dirtySectionObject OPTIONAL,
+    OUT void **dirtySectionMemory OPTIONAL
     );
 
 VOID FreeSection(
-    HANDLE hSection,
-    PVOID pSectionObject,
-    PVOID pMdl,
-    PVOID BaseAddress,
-    PVOID pPfnArray,
-    OPTIONAL HANDLE hDirtySection,
-    OPTIONAL PVOID pDirtySectionObject,
-    OPTIONAL PVOID pDirtySectionMemory
+    IN HANDLE section,
+    IN void *sectionObject,
+    IN void *mdl, // MDL*, but good luck including required headers for the type
+    IN void *baseAddress,
+    IN void *pfnArray,
+    IN HANDLE dirtySection OPTIONAL,
+    IN void *dirtySectionObject OPTIONAL,
+    IN void *dirtySectionMemory OPTIONAL
     );
