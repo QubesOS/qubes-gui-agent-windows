@@ -23,7 +23,7 @@
 #define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
 
 // Shutdown event for the 32-bit hook server.
-#define WGA32_SHUTDOWN_EVENT_NAME L"Global\\WGA_HOOK32_SHUTDOWN"
+#define HOOK32_SHUTDOWN_EVENT_NAME L"Global\\WGA_HOOK32_SHUTDOWN"
 
 // these are hardcoded
 #define	MIN_RESOLUTION_WIDTH	320UL

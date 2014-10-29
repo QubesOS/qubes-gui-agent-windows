@@ -32,8 +32,9 @@ LONG g_ScreenHeight;
 LONG g_ScreenWidth;
 
 BOOL g_VchanClientConnected = FALSE;
-
 BOOL g_SeamlessMode = TRUE;
+
+HOOK_DATA g_HookData = { 0 };
 
 // used to determine whether our window in fullscreen mode should be borderless
 // (when resolution is smaller than host's)
@@ -45,21 +46,120 @@ char g_DomainName[256] = "<unknown>";
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
 
-HANDLE g_ShellEventsThread = NULL;
-
 HWND g_DesktopWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
-ULONG ProcessUpdatedWindows(BOOL bUpdateEverything, HDC screenDC);
+static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
 
-// can be called from main thread, shell hook thread or ResetWatch thread
-ULONG RemoveWatchedDC(IN OUT WATCHED_DC *watchedDC)
+// watched windows critical section must be entered
+WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
+{
+    WATCHED_DC *watchedDC = NULL;
+
+    if (!windowInfo)
+        return NULL;
+
+    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
+        hWnd, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom, windowInfo->dwStyle, windowInfo->dwExStyle);
+
+    watchedDC = FindWindowByHandle(hWnd);
+    if (watchedDC) // already in list
+        return watchedDC;
+
+    // empty window rectangle?
+    if ((windowInfo->rcWindow.top - windowInfo->rcWindow.bottom == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
+    {
+        LogDebug("window rectangle is empty");
+        return NULL;
+    }
+
+    watchedDC = (WATCHED_DC *) malloc(sizeof(WATCHED_DC));
+    if (!watchedDC)
+    {
+        LogError("Failed to malloc WATCHED_DC");
+        return NULL;
+    }
+
+    ZeroMemory(watchedDC, sizeof(WATCHED_DC));
+
+    watchedDC->IsVisible = IsWindowVisible(hWnd);
+    watchedDC->IsIconic = IsIconic(hWnd);
+
+    watchedDC->IsStyleChecked = FALSE;
+    watchedDC->TimeAdded = watchedDC->TimeModalChecked = GetTickCount();
+
+    LogDebug("0x%x: visible=%d, iconic=%d", watchedDC->WindowHandle, watchedDC->IsVisible, watchedDC->IsIconic);
+
+    // FIXME: better prevention of large popup windows that can obscure dom0 screen
+    // this is mainly for the logon window (which is screen-sized without caption)
+    if (windowInfo->rcWindow.right - windowInfo->rcWindow.left == g_ScreenWidth
+        && windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == g_ScreenHeight)
+    {
+        LogDebug("popup too large: %dx%d, screen %dx%d",
+            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
+            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
+            g_ScreenWidth, g_ScreenHeight);
+        watchedDC->IsOverrideRedirect = FALSE;
+    }
+    else
+    {
+        // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
+        if ((windowInfo->dwStyle & WS_CAPTION) == WS_CAPTION)
+        {
+            // normal window
+            watchedDC->IsOverrideRedirect = FALSE;
+        }
+        else if (((windowInfo->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((windowInfo->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
+        {
+            // Metro apps without WS_CAPTION.
+            // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
+            // but I guess MS doesn't adhere to its own standards...
+            watchedDC->IsOverrideRedirect = FALSE;
+        }
+        else
+            watchedDC->IsOverrideRedirect = TRUE;
+    }
+
+    if (watchedDC->IsOverrideRedirect)
+    {
+        LogDebug("popup: %dx%d, screen %dx%d",
+            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
+            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
+            g_ScreenWidth, g_ScreenHeight);
+    }
+
+    watchedDC->WindowHandle = hWnd;
+    watchedDC->WindowRect = windowInfo->rcWindow;
+
+    watchedDC->PfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+    if (!watchedDC->PfnArray)
+    {
+        LogError("Failed to malloc PFN array");
+        return NULL;
+    }
+
+    watchedDC->MaxWidth = g_ScreenWidth;
+    watchedDC->MaxHeight = g_ScreenHeight;
+
+    InsertTailList(&g_WatchedWindowsList, &watchedDC->ListEntry);
+
+    // send window info to gui daemon
+    if (g_VchanClientConnected)
+    {
+        SendWindowCreate(watchedDC);
+        SendWindowName(hWnd);
+    }
+
+    return watchedDC;
+}
+
+ULONG UnmapWindow(IN OUT WATCHED_DC *watchedDC)
 {
     if (!watchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("hwnd=0x%x, hdc=0x%x", watchedDC->WindowHandle, watchedDC->DC);
+    LogDebug("window 0x%x", watchedDC->WindowHandle);
     free(watchedDC->PfnArray);
 
     if (g_VchanClientConnected)
@@ -74,75 +174,172 @@ ULONG RemoveWatchedDC(IN OUT WATCHED_DC *watchedDC)
     return ERROR_SUCCESS;
 }
 
-ULONG StartShellEventsThread(void)
+static ULONG StartHooks(IN OUT HOOK_DATA *hookData)
 {
-    DWORD threadId;
+    ULONG status;
 
     LogVerbose("start");
 
-    if (g_ShellEventsThread)
+    // Event for shutting down 32bit hooks.
+    if (!hookData->ShutdownEvent32)
     {
-        LogError("shell events thread already running: handle 0x%x, window 0x%x", g_ShellEventsThread, g_ShellEventsWindow);
-        // this is abnormal, returning error here will cause termination
-        return ERROR_ALREADY_EXISTS;
+        hookData->ShutdownEvent32 = CreateNamedEvent(HOOK32_SHUTDOWN_EVENT_NAME);
+        if (!hookData->ShutdownEvent32)
+            return ERROR_UNIDENTIFIED_ERROR;
     }
 
-    g_ShellEventsThread = CreateThread(NULL, 0, ShellEventsThread, NULL, 0, &threadId);
-    if (!g_ShellEventsThread)
-        return perror("CreateThread(ShellEventsThread)");
+    // Start 64-bit hooks.
+    status = SetHooks(HOOK_DLL_NAME_64, hookData);
+    if (ERROR_SUCCESS != status)
+        return perror2(status, "SetHooks");
 
-    LogInfo("shell events thread ID: 0x%x (created)", threadId);
+    // Start the 32-bit hook server. It exits when the hookShutdownEvent is signaled.
+    status = StartProcess(HOOK_SERVER_NAME_32, &hookData->ServerProcess32);
+    if (ERROR_SUCCESS != status)
+        return perror2(status, "StartProcess");
+
+    hookData->HooksActive = TRUE;
+
     return ERROR_SUCCESS;
 }
 
-ULONG StopShellEventsThread(void)
+static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
 {
-    ULONG status;
-    DWORD waitResult;
+    LogVerbose("start");
 
-    LogVerbose("shell hook window: 0x%x", g_ShellEventsWindow);
-    if (!g_ShellEventsThread)
-        return ERROR_SUCCESS;
+    if (!hookData->HooksActive)
+        return ERROR_SUCCESS; // nothing to do
 
-    // SendMessage waits until the message is processed
-    if (!SendMessage(g_ShellEventsWindow, WM_CLOSE, 0, 0))
+    // Shutdown QGuiHookServer32.
+    if (!SetEvent(hookData->ShutdownEvent32))
+        return perror("SetEvent");
+
+    if (WAIT_OBJECT_0 != WaitForSingleObject(hookData->ShutdownEvent32, 1000))
     {
-        status = perror("PostMessage(WM_CLOSE)");
-        LogWarning("Terminating shell events thread forcibly");
-        TerminateThread(g_ShellEventsThread, 0);
+        LogWarning("32bit hook server didn't exit in time, killing it");
+        TerminateProcess(hookData->ServerProcess32, 0);
+        CloseHandle(hookData->ServerProcess32);
     }
 
-    LogVerbose("waiting for thread to exit");
-    waitResult = WaitForSingleObject(g_ShellEventsThread, 5000);
-    if (waitResult != WAIT_OBJECT_0)
-    {
-        LogWarning("wait failed or timed out, killing thread forcibly");
-        TerminateThread(g_ShellEventsThread, 0);
-    }
+    hookData->ServerProcess32 = NULL;
 
-    CloseHandle(g_ShellEventsThread);
+    // Stop 64bit hooks.
+    if (!UnhookWindowsHookEx(hookData->CbtHook))
+        return perror("UnhookWindowsHookEx(CBTHooh)");
 
-    g_ShellEventsThread = NULL;
-    g_ShellEventsWindow = NULL;
+    hookData->CbtHook = NULL;
 
-    LogDebug("shell events thread terminated");
+    if (!UnhookWindowsHookEx(hookData->CallWndHook))
+        return perror("UnhookWindowsHookEx(CallWndHook)");
+
+    hookData->CallWndHook = NULL;
+
+    if (!UnhookWindowsHookEx(hookData->GetMsgHook))
+        return perror("UnhookWindowsHookEx(GetMsgHook)");
+
+    hookData->GetMsgHook = NULL;
+
+    hookData->HooksActive = FALSE;
+
     return ERROR_SUCCESS;
 }
 
-// Reinitialize everything, called after a session switch.
-// This is executed as another thread to avoid shell events killing itself without finishing the job.
-// TODO: use this with session change notification instead of AttachToInputDesktop every time?
+static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
+{
+    WINDOWINFO wi = { 0 };
+    BANNED_WINDOWS *bannedWindows = (BANNED_WINDOWS *) lParam;
+
+    LogVerbose("window %x", window);
+
+    wi.cbSize = sizeof(wi);
+    if (!GetWindowInfo(window, &wi))
+    {
+        perror("GetWindowInfo");
+        LogWarning("Skipping window %x", window);
+        return TRUE;
+    }
+
+    if (!ShouldAcceptWindow(window, &wi))
+        return TRUE; // skip
+
+    if (bannedWindows)
+    {
+        if (bannedWindows->Explorer == window ||
+            bannedWindows->Desktop == window ||
+            bannedWindows->Start == window ||
+            bannedWindows->Taskbar == window
+            )
+            return TRUE; // skip
+    }
+
+    AddWindowWithInfo(window, &wi);
+
+    return TRUE;
+}
+
+// Adds all top-level windows to the watched list.
+// watched windows critical section must be entered
+static ULONG AddAllWindows(void)
+{
+    static BANNED_WINDOWS bannedWindows = { 0 };
+
+    LogVerbose("start");
+
+    // First, check for special windows that should be ignored.
+    if (!bannedWindows.Explorer || !IsWindow(bannedWindows.Explorer))
+        bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
+
+    if (!bannedWindows.Taskbar || !IsWindow(bannedWindows.Taskbar))
+    {
+        bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
+
+        if (bannedWindows.Taskbar)
+        {
+            if (g_SeamlessMode)
+                ShowWindow(bannedWindows.Taskbar, SW_HIDE);
+            else
+                ShowWindow(bannedWindows.Taskbar, SW_SHOW);
+        }
+    }
+
+    if (!bannedWindows.Start || !IsWindow(bannedWindows.Start))
+    {
+        bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
+
+        if (bannedWindows.Start)
+        {
+            if (g_SeamlessMode)
+                ShowWindow(bannedWindows.Start, SW_HIDE);
+            else
+                ShowWindow(bannedWindows.Start, SW_SHOW);
+        }
+    }
+
+    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
+        g_DesktopWindow, bannedWindows.Explorer, bannedWindows.Taskbar, bannedWindows.Start);
+
+    // Enum top-level windows and add all that are not filtered.
+    if (!EnumWindows(AddWindowsProc, (LPARAM) &bannedWindows))
+        return perror("EnumWindows");
+
+    return ERROR_SUCCESS;
+}
+
+// Reinitialize hooks/watched windows, called after a seamless/fullscreen switch or resolution change.
 // NOTE: this function doesn't close/reopen qvideo's screen section
-static DWORD WINAPI ResetWatch(IN void *threadParam)
+static ULONG ResetWatch(BOOL seamlessMode)
 {
     WATCHED_DC *watchedDC;
     WATCHED_DC *nextWatchedDC;
+    ULONG status;
 
     LogVerbose("start");
 
-    StopShellEventsThread();
+    status = StopHooks(&g_HookData);
+    if (ERROR_SUCCESS != status)
+        return perror2(status, "StopHooks");
 
-    LogDebug("removing watches");
+    LogDebug("removing all windows");
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
@@ -153,24 +350,29 @@ static DWORD WINAPI ResetWatch(IN void *threadParam)
         nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
 
         RemoveEntryList(&watchedDC->ListEntry);
-        RemoveWatchedDC(watchedDC);
+        UnmapWindow(watchedDC);
 
         watchedDC = nextWatchedDC;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    g_DesktopWindow = NULL;
+    g_DesktopWindow = NULL; // this causes reinitialization of "banned windows"
 
-    // todo: wait for desktop switch - it can take some time after the session event
-    // (if using session switch event)
-
-    // don't start shell events thread if we're in fullscreen mode
-    // WatchForEvents will map the whole screen as one window
-    if (g_SeamlessMode)
+    // Only start hooks if we're in seamless mode.
+    // FIXME: this means we rely on qvideo's damage notifications in fullscreen
+    // WatchForEvents will map the whole screen as one window.
+    if (seamlessMode)
     {
-        StartShellEventsThread();
-        ProcessUpdatedWindows(TRUE, GetDC(NULL));
+        status = StartHooks(&g_HookData);
+        if (ERROR_SUCCESS != status)
+            return perror2(status, "StartHooks");
+
+        // Add all eligible windows to watch list.
+        // Since this is a switch from fullscreen, no windows were watched.
+        EnterCriticalSection(&g_csWatchedWindows);
+        AddAllWindows();
+        LeaveCriticalSection(&g_csWatchedWindows);
     }
 
     LogVerbose("success");
@@ -178,18 +380,23 @@ static DWORD WINAPI ResetWatch(IN void *threadParam)
 }
 
 // set fullscreen/seamless mode
-static void SetFullscreenMode(void)
+ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
 {
-    LogInfo("Seamless mode changed to %d", g_SeamlessMode);
+    ULONG status;
 
-    // ResetWatch kills the shell event thread and removes all watched windows.
-    // If fullscreen is off the shell event thread is also restarted.
-    ResetWatch(NULL);
+    LogVerbose("Seamless mode changing to %d", seamlessMode);
 
-    if (!g_SeamlessMode)
+    if (g_SeamlessMode == seamlessMode && !forceUpdate)
+        return ERROR_SUCCESS; // nothing to do
+
+    CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, seamlessMode, NULL);
+
+    if (!seamlessMode)
     {
         // show the screen window
-        SendWindowMap(NULL);
+        status = SendWindowMap(NULL);
+        if (ERROR_SUCCESS != status)
+            return perror2(status, "SendWindowMap(NULL)");
     }
     else // seamless mode
     {
@@ -198,10 +405,25 @@ static void SetFullscreenMode(void)
         {
             LogDebug("Changing resolution to match host's");
             RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 32, 0, 0);
+            // FIXME: wait until the resolution actually changes?
         }
         // hide the screen window
-        SendWindowUnmap(NULL);
+        status = SendWindowUnmap(NULL);
+        if (ERROR_SUCCESS != status)
+            return perror2(status, "SendWindowUnmap(NULL)");
     }
+
+    // ResetWatch kills hooks if active and removes all watched windows.
+    // If seamless mode is on, hooks are restarted and top-level windows are added to watch list.
+    status = ResetWatch(seamlessMode);
+    if (ERROR_SUCCESS != status)
+        return perror2(status, "ResetWatch");
+
+    g_SeamlessMode = seamlessMode;
+
+    LogInfo("Seamless mode changed to %d", seamlessMode);
+
+    return ERROR_SUCCESS;
 }
 
 WATCHED_DC *FindWindowByHandle(IN HWND window)
@@ -243,7 +465,7 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
     return FALSE; // stop enumeration
 }
 
-// can be called from main thread or shell hook thread
+// TODO: remove all this polling, handle changes in hook events
 ULONG CheckWatchedWindowUpdates(
     IN OUT WATCHED_DC *watchedDC,
     IN const WINDOWINFO *windowInfo,
@@ -261,7 +483,7 @@ ULONG CheckWatchedWindowUpdates(
     if (!watchedDC)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("hwnd=0x%x, hdc=0x%x", watchedDC->WindowHandle, watchedDC->DC);
+    LogDebug("window 0x%x", watchedDC->WindowHandle);
 
     if (!windowInfo)
     {
@@ -414,56 +636,27 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *pwi OPTIONAL)
 
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
     // 0x800 exstyle is undocumented...
+    // FIXME: ignoring these border "windows" causes weird window looks.
+    // Investigate why moving main Office window doesn't move these windows.
     if (pwi->dwExStyle == (WS_EX_LAYERED | WS_EX_TOOLWINDOW | 0x800))
         return FALSE;
 
     return TRUE;
 }
 
-// Enumerate top-level windows and add them to the watch list.
-static BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
-{
-    WINDOWINFO wi;
-    BANNED_WINDOWS *bannedWindowList = (BANNED_WINDOWS *) lParam;
-    ULONG i;
-
-    wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(hWnd, &wi))
-        return TRUE;
-
-    if (!ShouldAcceptWindow(hWnd, &wi))
-        return TRUE;
-
-    if (bannedWindowList)
-    {
-        for (i = 0; i < bannedWindowList->Count; i++)
-        {
-            if (bannedWindowList->BannedHandles[i] == hWnd)
-                return TRUE;
-        }
-    }
-
-    AddWindowWithInfo(hWnd, &wi);
-
-    return TRUE;
-}
-
 // Main function that scans for window updates.
 // Called after receiving damage event from qvideo.
+// TODO: remove this, handle changes in hook events (what about fullscreen?)
 static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 {
     WATCHED_DC *watchedDC;
     WATCHED_DC *nextWatchedDC;
-    BYTE bannedWindowListBuffer[sizeof(BANNED_WINDOWS) * 4];
-    BANNED_WINDOWS *bannedWindowList = (BANNED_WINDOWS *) &bannedWindowListBuffer;
+    static BANNED_WINDOWS bannedWindows = { 0 };
     BOOL recheckWindows = FALSE;
     HWND oldDesktopWindow = g_DesktopWindow;
     ULONG totalPages, page, dirtyPages = 0;
     RECT dirtyArea, currentArea;
     BOOL first = TRUE;
-    static HWND explorerWindow = NULL;
-    static HWND taskbarWindow = NULL;
-    static HWND startButtonWindow = NULL;
 
     if (g_UseDirtyBits)
     {
@@ -505,37 +698,37 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         DisableEffects();
     }
 
-    if (!explorerWindow || recheckWindows || !IsWindow(explorerWindow))
-        explorerWindow = FindWindow(NULL, L"Program Manager");
+    if (!bannedWindows.Explorer || recheckWindows || !IsWindow(bannedWindows.Explorer))
+        bannedWindows.Explorer = FindWindow(NULL, L"Program Manager");
 
-    if (!taskbarWindow || recheckWindows || !IsWindow(taskbarWindow))
+    if (!bannedWindows.Taskbar || recheckWindows || !IsWindow(bannedWindows.Taskbar))
     {
-        taskbarWindow = FindWindow(L"Shell_TrayWnd", NULL);
+        bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
 
-        if (taskbarWindow)
+        if (bannedWindows.Taskbar)
         {
             if (g_SeamlessMode)
-                ShowWindow(taskbarWindow, SW_HIDE);
+                ShowWindow(bannedWindows.Taskbar, SW_HIDE);
             else
-                ShowWindow(taskbarWindow, SW_SHOW);
+                ShowWindow(bannedWindows.Taskbar, SW_SHOW);
         }
     }
 
-    if (!startButtonWindow || recheckWindows || !IsWindow(startButtonWindow))
+    if (!bannedWindows.Start || recheckWindows || !IsWindow(bannedWindows.Start))
     {
-        startButtonWindow = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
+        bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
 
-        if (startButtonWindow)
+        if (bannedWindows.Start)
         {
             if (g_SeamlessMode)
-                ShowWindow(startButtonWindow, SW_HIDE);
+                ShowWindow(bannedWindows.Start, SW_HIDE);
             else
-                ShowWindow(startButtonWindow, SW_SHOW);
+                ShowWindow(bannedWindows.Start, SW_SHOW);
         }
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-        g_DesktopWindow, explorerWindow, taskbarWindow, startButtonWindow);
+        g_DesktopWindow, bannedWindows.Explorer, bannedWindows.Taskbar, bannedWindows.Start);
 
     if (!g_SeamlessMode)
     {
@@ -552,15 +745,7 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         return ERROR_SUCCESS;
     }
 
-    bannedWindowList->Count = 4;
-    bannedWindowList->BannedHandles[0] = g_DesktopWindow;
-    bannedWindowList->BannedHandles[1] = explorerWindow;
-    bannedWindowList->BannedHandles[2] = taskbarWindow;
-    bannedWindowList->BannedHandles[3] = startButtonWindow;
-
     EnterCriticalSection(&g_csWatchedWindows);
-
-    EnumWindows(EnumWindowsProc, (LPARAM) bannedWindowList);
 
     watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
     while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
@@ -571,7 +756,7 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         if (!IsWindow(watchedDC->WindowHandle) || !ShouldAcceptWindow(watchedDC->WindowHandle, NULL))
         {
             RemoveEntryList(&watchedDC->ListEntry);
-            RemoveWatchedDC(watchedDC);
+            UnmapWindow(watchedDC);
             watchedDC = NULL;
         }
         else
@@ -594,100 +779,45 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
     return ERROR_SUCCESS;
 }
 
-// g_csWatchedWindows critical section must be entered
-WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
+// Process events from hooks.
+// Updates watched windows state.
+static DWORD HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
 {
-    WATCHED_DC *watchedDC = NULL;
+    DWORD cbRead;
 
-    if (!windowInfo)
-        return NULL;
-
-    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
-        hWnd, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom, windowInfo->dwStyle, windowInfo->dwExStyle);
-
-    watchedDC = FindWindowByHandle(hWnd);
-    if (watchedDC)
-        // already being watched
-        return watchedDC;
-
-    if ((windowInfo->rcWindow.top - windowInfo->rcWindow.bottom == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
-        return NULL;
-
-    watchedDC = (WATCHED_DC *) malloc(sizeof(WATCHED_DC));
-    if (!watchedDC)
-        return NULL;
-
-    ZeroMemory(watchedDC, sizeof(WATCHED_DC));
-
-    watchedDC->IsVisible = IsWindowVisible(hWnd);
-    watchedDC->IsIconic = IsIconic(hWnd);
-
-    watchedDC->IsStyleChecked = FALSE;
-    watchedDC->TimeAdded = watchedDC->TimeModalChecked = GetTickCount();
-
-    LogDebug("0x%x: visible=%d, iconic=%d", watchedDC->WindowHandle, watchedDC->IsVisible, watchedDC->IsIconic);
-
-    // FIXME: better prevention of large popup windows that can obscure dom0 screen
-    // this is mainly for the logon window (which is screen-sized without caption)
-    if (windowInfo->rcWindow.right - windowInfo->rcWindow.left == g_ScreenWidth
-        && windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == g_ScreenHeight)
+    if (!GetOverlappedResult(hookIpc, hookAsyncState, &cbRead, FALSE))
     {
-        LogDebug("popup too large: %dx%d, screen %dx%d",
-            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
-            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
-            g_ScreenWidth, g_ScreenHeight);
-        watchedDC->IsOverrideRedirect = FALSE;
+        return perror("GetOverlappedResult(hook mailslot)");
+    }
+
+    if (cbRead != sizeof(*qhm))
+    {
+        LogWarning("Invalid hook message size: %d (expected %d)", cbRead, sizeof(*qhm));
+        // non-fatal although shouldn't happen
     }
     else
     {
-        // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
-        if ((windowInfo->dwStyle & WS_CAPTION) == WS_CAPTION) // normal window
-            watchedDC->IsOverrideRedirect = FALSE;
-        else if (((windowInfo->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((windowInfo->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
-            // Metro apps without WS_CAPTION.
-            // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
-            // but I guess MS doesn't adhere to its own standards...
-            watchedDC->IsOverrideRedirect = FALSE;
-        else
-            watchedDC->IsOverrideRedirect = TRUE;
+        LogDebug("%8x: %4x %8x %8x\n",
+            qhm->WindowHandle,
+            qhm->Message,
+            //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
+            qhm->wParam, qhm->lParam);
     }
 
-    if (watchedDC->IsOverrideRedirect)
-    {
-        LogDebug("popup: %dx%d, screen %dx%d",
-            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
-            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
-            g_ScreenWidth, g_ScreenHeight);
-    }
+    // TODO
 
-    watchedDC->WindowHandle = hWnd;
-    watchedDC->WindowRect = windowInfo->rcWindow;
-
-    watchedDC->PfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-
-    watchedDC->MaxWidth = g_ScreenWidth;
-    watchedDC->MaxHeight = g_ScreenHeight;
-
-    if (g_VchanClientConnected)
-    {
-        SendWindowCreate(watchedDC);
-        SendWindowName(hWnd);
-    }
-
-    InsertTailList(&g_WatchedWindowsList, &watchedDC->ListEntry);
-
-    return watchedDC;
+    return ERROR_SUCCESS;
 }
 
 // main event loop
 // TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents(void)
 {
-    HANDLE vchan, mailslot;
-    OVERLAPPED olVchan, olMailslot;
+    HANDLE vchan, hookIpc;
+    OVERLAPPED vchanAsyncState = { 0 }, hookIpcAsyncState = { 0 };
     unsigned int firedPort;
     ULONG eventCount;
-    DWORD i, signaledEvent, size;
+    DWORD i, signaledEvent;
     BOOL vchanIoInProgress;
     ULONG status;
     BOOL exitLoop;
@@ -697,8 +827,6 @@ static ULONG WINAPI WatchForEvents(void)
     ULONG damageNumber = 0;
     struct shm_cmd *shmCmd = NULL;
     QH_MESSAGE qhm;
-    HANDLE hookServerProcess;
-    HANDLE hookShutdownEvent;
 
     LogDebug("start");
     windowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -712,15 +840,10 @@ static ULONG WINAPI WatchForEvents(void)
 
     vchan = VchanGetHandle();
 
-    ZeroMemory(&olVchan, sizeof(olVchan));
-    olVchan.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    vchanAsyncState.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    ZeroMemory(&olMailslot, sizeof(olMailslot));
-    olMailslot.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    hookIpcAsyncState.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hookShutdownEvent = CreateNamedEvent(WGA32_SHUTDOWN_EVENT_NAME);
-    if (!hookShutdownEvent)
-        return GetLastError();
     fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!fullScreenOnEvent)
         return GetLastError();
@@ -732,17 +855,9 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
 
     // Create IPC object for hook DLLs.
-    mailslot = CreateMailslot(HOOK_IPC_NAME, 0, MAILSLOT_WAIT_FOREVER, NULL);
-    if (!mailslot)
+    hookIpc = CreateMailslot(HOOK_IPC_NAME, 0, MAILSLOT_WAIT_FOREVER, NULL);
+    if (!hookIpc)
         return perror("CreateMailslot");
-
-    // Start 64-bit hooks.
-    if (ERROR_SUCCESS != SetHooks(HOOK_DLL_NAME_64))
-        return GetLastError();
-
-    // Start the 32-bit hook server. It exits when the wga shutdown event is signaled.
-    if (ERROR_SUCCESS != StartProcess(HOOK_SERVER_NAME_32, &hookServerProcess))
-        return GetLastError();
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
@@ -752,15 +867,12 @@ static ULONG WINAPI WatchForEvents(void)
 
     while (TRUE)
     {
-        eventCount = 0;
-
-        // Order matters.
-        watchedEvents[eventCount++] = g_ShutdownEvent;
-        watchedEvents[eventCount++] = windowDamageEvent;
-        watchedEvents[eventCount++] = fullScreenOnEvent;
-        watchedEvents[eventCount++] = fullScreenOffEvent;
-        watchedEvents[eventCount++] = g_ResolutionChangeEvent;
-        watchedEvents[eventCount++] = olMailslot.hEvent;
+        watchedEvents[0] = g_ShutdownEvent;
+        watchedEvents[1] = windowDamageEvent;
+        watchedEvents[2] = fullScreenOnEvent;
+        watchedEvents[3] = fullScreenOffEvent;
+        watchedEvents[4] = g_ResolutionChangeEvent;
+        watchedEvents[5] = hookIpcAsyncState.hEvent;
 
         status = ERROR_SUCCESS;
 
@@ -768,7 +880,7 @@ static ULONG WINAPI WatchForEvents(void)
         // read 1 byte instead of sizeof(fired_port) to not flush fired port
         // from evtchn buffer; evtchn driver will read only whole fired port
         // numbers (sizeof(fired_port)), so this will end in zero-length read
-        if (!vchanIoInProgress && !ReadFile(vchan, &firedPort, 1, NULL, &olVchan))
+        if (!vchanIoInProgress && !ReadFile(vchan, &firedPort, 1, NULL, &vchanAsyncState))
         {
             status = GetLastError();
             if (ERROR_IO_PENDING != status)
@@ -781,11 +893,12 @@ static ULONG WINAPI WatchForEvents(void)
 
         vchanIoInProgress = TRUE;
 
-        watchedEvents[eventCount++] = olVchan.hEvent;
+        watchedEvents[6] = vchanAsyncState.hEvent;
+        eventCount = 7;
 
-        // Start hook maislot async read.
+        // Start hook mailslot async read.
         // Even if there is data available right away, processing is done in the event handler.
-        status = ReadFile(mailslot, &qhm, sizeof(qhm), NULL, &olMailslot);
+        status = ReadFile(hookIpc, &qhm, sizeof(qhm), NULL, &hookIpcAsyncState);
 
         signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
         if (signaledEvent >= MAXIMUM_WAIT_OBJECTS)
@@ -793,194 +906,177 @@ static ULONG WINAPI WatchForEvents(void)
             status = perror("WaitForMultipleObjects");
             break;
         }
-        else
+
+        if (0 == signaledEvent)
         {
-            if (0 == signaledEvent)
+            // shutdown event
+            LogDebug("Shutdown event signaled");
+            exitLoop = TRUE;
+            break;
+        }
+
+        //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
+        switch (signaledEvent)
+        {
+        case 1: // damage event
+
+            LogVerbose("Damage %d\n", damageNumber++);
+
+            if (g_VchanClientConnected)
             {
-                // shutdown event
-                LogDebug("Shutdown event signaled");
-                exitLoop = TRUE;
-                break;
+                ProcessUpdatedWindows(TRUE, screenDC);
             }
+            break;
 
-            //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
-            switch (signaledEvent)
+        case 2: // seamless off event
+            status = SetSeamlessMode(FALSE, FALSE);
+            if (ERROR_SUCCESS != status)
             {
-            case 1: // damage event
+                perror2(status, "SetSeamlessMode(FALSE)");
+                exitLoop = TRUE;
+            }
+            break;
 
-                LogVerbose("Damage %d\n", damageNumber++);
+        case 3: // seamless on event
+            status = SetSeamlessMode(TRUE, FALSE);
+            if (ERROR_SUCCESS != status)
+            {
+                perror2(status, "SetSeamlessMode(TRUE)");
+                exitLoop = TRUE;
+            }
+            break;
 
-                if (g_VchanClientConnected)
-                {
-                    ProcessUpdatedWindows(TRUE, screenDC);
-                }
-                break;
+        case 4: // resolution change event, signaled by ResolutionChangeThread
+            // Params are in g_ResolutionChangeParams
+            ChangeResolution(&screenDC, windowDamageEvent);
+            break;
 
-            case 2: // fullscreen on event
-                if (!g_SeamlessMode)
-                    break; // already in fullscreen
-                g_SeamlessMode = FALSE;
-                CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, g_SeamlessMode, NULL);
-                SetFullscreenMode();
-                break;
+        case 5: // mailslot read: message from our gui hook
+            status = HandleHookEvent(hookIpc, &hookIpcAsyncState, &qhm);
+            if (ERROR_SUCCESS != status)
+            {
+                perror2(status, "HandleHookEvent");
+                exitLoop = TRUE;
+            }
+            break;
 
-            case 3: // fullscreen off event
-                if (g_SeamlessMode)
-                    break; // already in seamless
-                g_SeamlessMode = TRUE;
-                CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, g_SeamlessMode, NULL);
-                SetFullscreenMode();
-                break;
-
-            case 4: // resolution change event, signaled by ResolutionChangeThread
-                // Params are in g_ResolutionChangeParams
-                ChangeResolution(&screenDC, windowDamageEvent);
-                break;
-
-            case 5: // mailslot read: message from our gui hook
-                if (!GetOverlappedResult(mailslot, &olMailslot, &size, FALSE))
-                {
-                    perror("GetOverlappedResult(mailslot)");
-                    exitLoop = TRUE;
-                    break;
-                }
-
-                if (size != sizeof(qhm))
-                {
-                    LogWarning("Invalid hook message size: %d (expected %d)", size, sizeof(qhm));
-                    // non-fatal although shouldn't happen
-                    break;
-                }
-                LogDebug("%8x: %4x %8x %8x\n",
-                    qhm.WindowHandle,
-                    qhm.Message,
-                    //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
-                    qhm.wParam, qhm.lParam);
-                break;
-
-            case 6: // vchan receive
-                // the following will never block; we need to do this to
-                // clear libvchan_fd pending state
-                //
-                // using libvchan_wait here instead of reading fired
-                // port at the beginning of the loop (ReadFile call) to be
-                // sure that we clear pending state _only_
-                // when handling vchan data in this loop iteration (not any
-                // other process)
-                if (!g_VchanClientConnected)
-                {
-                    VchanWait();
-
-                    vchanIoInProgress = FALSE;
-
-                    LogInfo("A vchan client has connected\n");
-
-                    // Remove the xenstore device/vchan/N entry.
-                    if (!VchanIsServerConnected())
-                    {
-                        LogError("VchanIsServerConnected() failed");
-                        exitLoop = TRUE;
-                        break;
-                    }
-
-                    SendProtocolVersion();
-
-                    // This will probably change the current video mode.
-                    if (ERROR_SUCCESS != HandleXconf())
-                    {
-                        exitLoop = TRUE;
-                        break;
-                    }
-
-                    // The screen DC should be opened only after the resolution changes.
-                    screenDC = GetDC(NULL);
-                    status = RegisterWatchedDC(screenDC, windowDamageEvent);
-                    if (ERROR_SUCCESS != status)
-                    {
-                        perror("RegisterWatchedDC");
-                        exitLoop = TRUE;
-                        break;
-                    }
-
-                    // send the whole screen framebuffer map
-                    SendWindowCreate(NULL);
-                    SendWindowMfns(NULL);
-
-                    if (!g_SeamlessMode)
-                    {
-                        LogInfo("init in fullscreen mode");
-                        SendWindowMap(NULL);
-                    }
-                    else
-                    {
-                        if (ERROR_SUCCESS != StartShellEventsThread())
-                        {
-                            LogError("StartShellEventsThread failed, exiting");
-                            exitLoop = TRUE;
-                            break;
-                        }
-                    }
-
-                    g_VchanClientConnected = TRUE;
-                    break;
-                }
-
-                if (!GetOverlappedResult(vchan, &olVchan, &i, FALSE))
-                {
-                    if (GetLastError() == ERROR_IO_DEVICE)
-                    {
-                        // in case of ring overflow, libvchan_wait
-                        // will reset the evtchn ring, so ignore this
-                        // error as already handled
-                        //
-                        // Overflow can happen when below loop ("while
-                        // (read_ready_vchan_ext())") handle a lot of data
-                        // in the same time as qrexec-daemon writes it -
-                        // there where be no libvchan_wait call (which
-                        // receive the events from the ring), but one will
-                        // be signaled after each libvchan_write in
-                        // qrexec-daemon. I don't know how to fix it
-                        // properly (without introducing any race
-                        // condition), so reset the evtchn ring (do not
-                        // confuse with vchan ring, which stays untouched)
-                        // in case of overflow.
-                    }
-                    else
-                    {
-                        if (GetLastError() != ERROR_OPERATION_ABORTED)
-                        {
-                            perror("GetOverlappedResult(evtchn)");
-                            exitLoop = TRUE;
-                            break;
-                        }
-                    }
-                }
-
-                EnterCriticalSection(&g_VchanCriticalSection);
+        case 6: // vchan receive
+            // the following will never block; we need to do this to
+            // clear libvchan_fd pending state
+            //
+            // using libvchan_wait here instead of reading fired
+            // port at the beginning of the loop (ReadFile call) to be
+            // sure that we clear pending state _only_
+            // when handling vchan data in this loop iteration (not any
+            // other process)
+            if (!g_VchanClientConnected)
+            {
                 VchanWait();
 
                 vchanIoInProgress = FALSE;
 
-                if (VchanIsEof())
+                LogInfo("A vchan client has connected\n");
+
+                // Remove the xenstore device/vchan/N entry.
+                if (!VchanIsServerConnected())
+                {
+                    LogError("VchanIsServerConnected() failed");
+                    exitLoop = TRUE;
+                    break;
+                }
+
+                SendProtocolVersion();
+
+                // This will probably change the current video mode.
+                if (ERROR_SUCCESS != HandleXconf())
                 {
                     exitLoop = TRUE;
                     break;
                 }
 
-                while (VchanGetReadBufferSize())
+                // The screen DC should be opened only after the resolution changes.
+                screenDC = GetDC(NULL);
+                status = RegisterWatchedDC(screenDC, windowDamageEvent);
+                if (ERROR_SUCCESS != status)
                 {
-                    status = HandleServerData();
-                    if (ERROR_SUCCESS != status)
-                    {
-                        exitLoop = TRUE;
-                        LogError("handle_server_data() failed: 0x%x", status);
-                        break;
-                    }
+                    perror2(status, "RegisterWatchedDC");
+                    exitLoop = TRUE;
+                    break;
                 }
-                LeaveCriticalSection(&g_VchanCriticalSection);
+
+                // send the whole screen framebuffer map
+                SendWindowCreate(NULL);
+                SendWindowMfns(NULL);
+
+                g_VchanClientConnected = TRUE; // needs to be set before enumerating windows so maps get sent
+
+                // This initializes watched windows, hooks etc.
+                status = SetSeamlessMode(g_SeamlessMode, TRUE);
+                if (ERROR_SUCCESS != status)
+                {
+                    perror2(status, "SetSeamlessMode");
+                    exitLoop = TRUE;
+                    break;
+                }
 
                 break;
             }
+
+            if (!GetOverlappedResult(vchan, &vchanAsyncState, &i, FALSE))
+            {
+                if (GetLastError() == ERROR_IO_DEVICE)
+                {
+                    // in case of ring overflow, libvchan_wait
+                    // will reset the evtchn ring, so ignore this
+                    // error as already handled
+                    //
+                    // Overflow can happen when below loop ("while
+                    // (read_ready_vchan_ext())") handle a lot of data
+                    // in the same time as qrexec-daemon writes it -
+                    // there where be no libvchan_wait call (which
+                    // receive the events from the ring), but one will
+                    // be signaled after each libvchan_write in
+                    // qrexec-daemon. I don't know how to fix it
+                    // properly (without introducing any race
+                    // condition), so reset the evtchn ring (do not
+                    // confuse with vchan ring, which stays untouched)
+                    // in case of overflow.
+                }
+                else
+                {
+                    if (GetLastError() != ERROR_OPERATION_ABORTED)
+                    {
+                        perror("GetOverlappedResult(evtchn)");
+                        exitLoop = TRUE;
+                        break;
+                    }
+                }
+            }
+
+            EnterCriticalSection(&g_VchanCriticalSection);
+            VchanWait();
+
+            vchanIoInProgress = FALSE;
+
+            if (VchanIsEof())
+            {
+                exitLoop = TRUE;
+                break;
+            }
+
+            while (VchanGetReadBufferSize())
+            {
+                status = HandleServerData();
+                if (ERROR_SUCCESS != status)
+                {
+                    exitLoop = TRUE;
+                    LogError("handle_server_data() failed: 0x%x", status);
+                    break;
+                }
+            }
+            LeaveCriticalSection(&g_VchanCriticalSection);
+
+            break;
         }
 
         if (exitLoop)
@@ -995,7 +1091,7 @@ static ULONG WINAPI WatchForEvents(void)
         {
             // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
             // OVERLAPPED structure.
-            WaitForSingleObject(olVchan.hEvent, INFINITE);
+            WaitForSingleObject(vchanAsyncState.hEvent, INFINITE);
         }
     }
 
@@ -1008,19 +1104,11 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         VchanClose();
 
-    // Shutdown QGuiHookServer32.
-    SetEvent(hookShutdownEvent);
+    StopHooks(&g_HookData); // don't care if it fails at this point
 
-    if (WAIT_OBJECT_0 != WaitForSingleObject(hookServerProcess, 1000))
-    {
-        LogWarning("QGuiHookServer32 didn't exit in time, killing it");
-        TerminateProcess(hookServerProcess, 0);
-    }
-
-    CloseHandle(olVchan.hEvent);
+    CloseHandle(vchanAsyncState.hEvent);
     CloseHandle(windowDamageEvent);
 
-    StopShellEventsThread();
     UnregisterWatchedDC(screenDC);
     CloseScreenSection();
     ReleaseDC(NULL, screenDC);

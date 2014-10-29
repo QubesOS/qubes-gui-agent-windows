@@ -132,8 +132,7 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
     ULONG status;
 
     LogDebug("deinitializing");
-    if (ERROR_SUCCESS != (status = StopShellEventsThread()))
-        return status;
+
     if (ERROR_SUCCESS != (status = UnregisterWatchedDC(*screenDC)))
         return status;
     if (ERROR_SUCCESS != (status = CloseScreenSection()))
@@ -153,24 +152,14 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
     if (ERROR_SUCCESS != (status = RegisterWatchedDC(*screenDC, damageEvent)))
         return status;
 
-    SendWindowMfns(NULL); // update framebuffer
+    SendWindowMfns(NULL); // update screen framebuffer
 
     // is it possible to have VM resolution bigger than host set by user?
     if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
         g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
 
-    HideCursors();
-    DisableEffects();
+    SetSeamlessMode(g_SeamlessMode, TRUE);
 
-    if (!g_SeamlessMode)
-    {
-        SendWindowMap(NULL); // show desktop window
-    }
-    else
-    {
-        if (ERROR_SUCCESS != StartShellEventsThread())
-            return status;
-    }
     LogDebug("done");
 
     // Reply to the daemon's request (with just the same data).

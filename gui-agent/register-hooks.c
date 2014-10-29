@@ -1,10 +1,14 @@
 #include <windows.h>
+#include "register-hooks.h"
+
+// This can be used by either 64bit or 32bit code.
+// 32bit hook server includes this code.
 
 #ifdef _AMD64_
 #include "log.h"
 #endif
 
-DWORD SetHooks(IN const WCHAR *dllName)
+DWORD SetHooks(IN const WCHAR *dllName, OUT HOOK_DATA *hookData)
 {
     HMODULE hookDll = NULL;
     void *hookProc = NULL;
@@ -18,7 +22,8 @@ DWORD SetHooks(IN const WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(CBTProc)");
 
-    if (!SetWindowsHookEx(WH_CBT, (HOOKPROC) hookProc, hookDll, 0))
+    hookData->CbtHook = SetWindowsHookEx(WH_CBT, (HOOKPROC) hookProc, hookDll, 0);
+    if (!hookData->CbtHook)
         return perror("SetWindowsHookEx(CBTProc)");
 
     // CallWndProc hook
@@ -26,7 +31,8 @@ DWORD SetHooks(IN const WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(CallWndProc)");
 
-    if (!SetWindowsHookEx(WH_CALLWNDPROC, (HOOKPROC) hookProc, hookDll, 0))
+    hookData->CallWndHook = SetWindowsHookEx(WH_CALLWNDPROC, (HOOKPROC) hookProc, hookDll, 0);
+    if (!hookData->CallWndHook)
         return perror("SetWindowsHookEx(CallWndProc)");
 
     // GetMsgProc hook
@@ -34,7 +40,8 @@ DWORD SetHooks(IN const WCHAR *dllName)
     if (!hookProc)
         return perror("GetProcAddress(GetMsgProc)");
 
-    if (!SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC) hookProc, hookDll, 0))
+    hookData->GetMsgHook = SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC) hookProc, hookDll, 0);
+    if (!hookData->GetMsgHook)
         return perror("SetWindowsHookEx(GetMsgProc)");
 
     return ERROR_SUCCESS;

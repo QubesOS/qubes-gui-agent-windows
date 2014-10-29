@@ -31,7 +31,10 @@ static void AddWindow(IN HWND window)
         return;
 
     EnterCriticalSection(&g_csWatchedWindows);
-    AddWindowWithInfo(window, &wi);
+    if (!AddWindowWithInfo(window, &wi))
+    {
+        LogError("AddWindowWithInfo failed");
+    }
     LeaveCriticalSection(&g_csWatchedWindows);
 }
 
@@ -50,7 +53,7 @@ static void RemoveWindow(IN HWND window)
     }
 
     RemoveEntryList(&watchedDC->ListEntry);
-    RemoveWatchedDC(watchedDC);
+    RemoveWindow(watchedDC);
     watchedDC = NULL;
 
     LeaveCriticalSection(&g_csWatchedWindows);

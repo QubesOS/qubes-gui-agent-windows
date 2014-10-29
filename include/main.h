@@ -20,7 +20,6 @@ extern CRITICAL_SECTION g_csWatchedWindows;
 typedef struct _WATCHED_DC
 {
     HWND WindowHandle;
-    HDC DC;
 
     RECT WindowRect;
     LIST_ENTRY ListEntry;
@@ -42,8 +41,10 @@ typedef struct _WATCHED_DC
 
 typedef struct _BANNED_WINDOWS
 {
-    ULONG Count;
-    HWND BannedHandles[1]; // variable length
+    HWND Explorer;
+    HWND Desktop;
+    HWND Taskbar;
+    HWND Start;
 } BANNED_WINDOWS;
 
 // used when searching for modal window that's blocking another window
@@ -115,6 +116,10 @@ WATCHED_DC *AddWindowWithInfo(
     IN const WINDOWINFO *windowInfo
     );
 
-ULONG RemoveWatchedDC(WATCHED_DC *pWatchedDC);
-ULONG StartShellEventsThread(void);
-ULONG StopShellEventsThread(void);
+ULONG UnmapWindow(WATCHED_DC *pWatchedDC);
+
+// This (re)initializes watched windows, hooks etc.
+ULONG SetSeamlessMode(
+    IN BOOL seamlessMode,
+    IN BOOL forceUpdate
+    );

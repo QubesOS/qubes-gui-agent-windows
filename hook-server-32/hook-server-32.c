@@ -16,13 +16,14 @@
 
 int __cdecl wmain(int argc, WCHAR* argv[])
 {
-    HANDLE shutdownEvent = OpenEvent(SYNCHRONIZE, FALSE, WGA32_SHUTDOWN_EVENT_NAME);
+    HANDLE shutdownEvent = OpenEvent(SYNCHRONIZE, FALSE, HOOK32_SHUTDOWN_EVENT_NAME);
+    HOOK_DATA hookData;
     DWORD status;
 
     if (!shutdownEvent)
         return perror("OpenEvent(shutdown event)");
 
-    status = SetHooks(HOOK_DLL_NAME_32);
+    status = SetHooks(HOOK_DLL_NAME_32, &hookData);
     if (ERROR_SUCCESS != status)
         return status;
 

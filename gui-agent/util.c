@@ -21,6 +21,7 @@ static SID *BuildSid(void)
     return sid;
 }
 
+// returns NULL on failure
 HANDLE CreateNamedEvent(IN const WCHAR *name)
 {
     SECURITY_ATTRIBUTES sa;
