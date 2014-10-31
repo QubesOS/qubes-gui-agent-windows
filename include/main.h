@@ -116,7 +116,7 @@ WATCHED_DC *AddWindowWithInfo(
     IN const WINDOWINFO *windowInfo
     );
 
-ULONG UnmapWindow(WATCHED_DC *pWatchedDC);
+ULONG RemoveWindow(WATCHED_DC *pWatchedDC);
 
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(

@@ -53,7 +53,7 @@ HANDLE g_ShutdownEvent = NULL;
 static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
 
 // watched windows critical section must be entered
-WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
+WATCHED_DC *AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo)
 {
     WATCHED_DC *watchedDC = NULL;
 
@@ -61,9 +61,9 @@ WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
         return NULL;
 
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
-        hWnd, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom, windowInfo->dwStyle, windowInfo->dwExStyle);
+        window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom, windowInfo->dwStyle, windowInfo->dwExStyle);
 
-    watchedDC = FindWindowByHandle(hWnd);
+    watchedDC = FindWindowByHandle(window);
     if (watchedDC) // already in list
         return watchedDC;
 
@@ -83,11 +83,10 @@ WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
 
     ZeroMemory(watchedDC, sizeof(WATCHED_DC));
 
-    watchedDC->IsVisible = IsWindowVisible(hWnd);
-    watchedDC->IsIconic = IsIconic(hWnd);
+    watchedDC->IsVisible = IsWindowVisible(window);
+    watchedDC->IsIconic = IsIconic(window);
 
-    watchedDC->IsStyleChecked = FALSE;
-    watchedDC->TimeAdded = watchedDC->TimeModalChecked = GetTickCount();
+    watchedDC->TimeModalChecked = GetTickCount();
 
     LogDebug("0x%x: visible=%d, iconic=%d", watchedDC->WindowHandle, watchedDC->IsVisible, watchedDC->IsIconic);
 
@@ -129,7 +128,7 @@ WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
             g_ScreenWidth, g_ScreenHeight);
     }
 
-    watchedDC->WindowHandle = hWnd;
+    watchedDC->WindowHandle = window;
     watchedDC->WindowRect = windowInfo->rcWindow;
 
     watchedDC->PfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
@@ -147,14 +146,14 @@ WATCHED_DC *AddWindowWithInfo(IN HWND hWnd, IN const WINDOWINFO *windowInfo)
     // send window info to gui daemon
     if (g_VchanClientConnected)
     {
-        SendWindowCreate(watchedDC);
-        SendWindowName(hWnd);
+        SendWindowCreate(watchedDC); // also maps (shows) the window if it's visible and not minimized
+        SendWindowName(window);
     }
 
     return watchedDC;
 }
 
-ULONG UnmapWindow(IN OUT WATCHED_DC *watchedDC)
+ULONG RemoveWindow(IN OUT WATCHED_DC *watchedDC)
 {
     if (!watchedDC)
         return ERROR_INVALID_PARAMETER;
@@ -350,7 +349,7 @@ static ULONG ResetWatch(BOOL seamlessMode)
         nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
 
         RemoveEntryList(&watchedDC->ListEntry);
-        UnmapWindow(watchedDC);
+        RemoveWindow(watchedDC);
 
         watchedDC = nextWatchedDC;
     }
@@ -615,30 +614,33 @@ ULONG CheckWatchedWindowUpdates(
     return ERROR_SUCCESS;
 }
 
-BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *pwi OPTIONAL)
+BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL)
 {
     WINDOWINFO wi;
 
-    if (!pwi)
+    if (!windowInfo)
     {
         if (!GetWindowInfo(window, &wi))
+        {
+            perror("GetWindowInfo");
             return FALSE;
-        pwi = &wi;
+        }
+        windowInfo = &wi;
     }
 
-    //LogVerbose("0x%x: %x %x", hWnd, pwi->dwStyle, pwi->dwExStyle);
-    if (!IsWindowVisible(window))
-        return FALSE;
+    // Don't skip invisible windows. We keep all windows in the list and map them when/if they become visible.
+    //if (!IsWindowVisible(window))
+    //    return FALSE;
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
-    if (pwi->dwStyle & WS_CHILD)
+    if (windowInfo->dwStyle & WS_CHILD)
         return FALSE;
 
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
     // 0x800 exstyle is undocumented...
     // FIXME: ignoring these border "windows" causes weird window looks.
     // Investigate why moving main Office window doesn't move these windows.
-    if (pwi->dwExStyle == (WS_EX_LAYERED | WS_EX_TOOLWINDOW | 0x800))
+    if (windowInfo->dwExStyle == (WS_EX_LAYERED | WS_EX_TOOLWINDOW | 0x800))
         return FALSE;
 
     return TRUE;
@@ -756,7 +758,7 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         if (!IsWindow(watchedDC->WindowHandle) || !ShouldAcceptWindow(watchedDC->WindowHandle, NULL))
         {
             RemoveEntryList(&watchedDC->ListEntry);
-            UnmapWindow(watchedDC);
+            RemoveWindow(watchedDC);
             watchedDC = NULL;
         }
         else
@@ -779,6 +781,30 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
     return ERROR_SUCCESS;
 }
 
+// Hook event: window created. Add it to the window list.
+static void HookCreateWindow(IN const QH_MESSAGE *qhm)
+{
+    WINDOWINFO wi = { 0 };
+
+    wi.cbSize = sizeof(wi);
+    wi.dwStyle = qhm->Style;
+    wi.dwExStyle = qhm->ExStyle;
+    wi.rcWindow.left = qhm->X;
+    wi.rcWindow.top = qhm->Y;
+    wi.rcWindow.right = qhm->X + qhm->Width;
+    wi.rcWindow.bottom = qhm->Y + qhm->Height;
+
+    if (!ShouldAcceptWindow((HWND) qhm->WindowHandle, &wi))
+        return;
+
+    EnterCriticalSection(&g_csWatchedWindows);
+    if (!AddWindowWithInfo((HWND) qhm->WindowHandle, &wi))
+    {
+        LogError("AddWindowWithInfo failed");
+    }
+    LeaveCriticalSection(&g_csWatchedWindows);
+}
+
 // Process events from hooks.
 // Updates watched windows state.
 static DWORD HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
@@ -794,14 +820,20 @@ static DWORD HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncStat
     {
         LogWarning("Invalid hook message size: %d (expected %d)", cbRead, sizeof(*qhm));
         // non-fatal although shouldn't happen
+        return ERROR_SUCCESS;
     }
-    else
+
+    LogDebug("%8x: %4x %8x %8x\n",
+        qhm->WindowHandle,
+        qhm->Message,
+        //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
+        qhm->wParam, qhm->lParam);
+
+    switch (qhm->Message)
     {
-        LogDebug("%8x: %4x %8x %8x\n",
-            qhm->WindowHandle,
-            qhm->Message,
-            //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
-            qhm->wParam, qhm->lParam);
+    case WM_CREATE:
+        HookCreateWindow(qhm);
+        break;
     }
 
     // TODO

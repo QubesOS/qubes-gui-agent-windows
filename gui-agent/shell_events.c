@@ -38,26 +38,6 @@ static void AddWindow(IN HWND window)
     LeaveCriticalSection(&g_csWatchedWindows);
 }
 
-static void RemoveWindow(IN HWND window)
-{
-    WATCHED_DC *watchedDC;
-
-    LogDebug("0x%x", window);
-    EnterCriticalSection(&g_csWatchedWindows);
-
-    watchedDC = FindWindowByHandle(window);
-    if (!watchedDC)
-    {
-        LeaveCriticalSection(&g_csWatchedWindows);
-        return;
-    }
-
-    RemoveEntryList(&watchedDC->ListEntry);
-    RemoveWindow(watchedDC);
-    watchedDC = NULL;
-
-    LeaveCriticalSection(&g_csWatchedWindows);
-}
 
 // called from shell hook proc
 static ULONG CheckWindowUpdates(IN HWND window)
