@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <strsafe.h>
 
 #include "hook.h"
 #include "hook-messages.h"
@@ -34,15 +35,60 @@ static void SendMsg(IN const QH_MESSAGE *qhm)
 
 void ProcessMessage(IN OUT QH_MESSAGE *qhm)
 {
-    WINDOWPOS *wp = (WINDOWPOS*) qhm->lParam;
-    STYLESTRUCT *ss = (STYLESTRUCT*) qhm->lParam;
+    WINDOWPOS *wp = (WINDOWPOS *) qhm->lParam;
+    STYLESTRUCT *ss = (STYLESTRUCT *) qhm->lParam;
+    CREATESTRUCT *cs = (CREATESTRUCT *) qhm->lParam;
 
     switch (qhm->Message)
     {
-    case WM_ACTIVATE:
+    case WM_CREATE: // window created (but not yet visible)
+        qhm->X = cs->x;
+        qhm->Y = cs->y;
+        qhm->Width = cs->cx;
+        qhm->Height = cs->cy;
+        qhm->Style = cs->style;
+        qhm->ExStyle = cs->dwExStyle;
+        qhm->ParentWindowHandle = (UINT64) cs->hwndParent;
+        if (cs->lpszName)
+        {
+            StringCbCopy(qhm->Caption, sizeof(qhm->Caption), cs->lpszName);
+        }
         SendMsg(qhm);
         break;
 
+    case WM_DESTROY:
+        SendMsg(qhm);
+        break;
+
+    // WM_MOVE and WM_SIZE only have coordinatef of client area... useless for us
+
+    case WM_ACTIVATE:
+        // wParam is WA_ACTIVE/WA_CLICKACTIVE/WA_INACTIVE
+        // If the low-order word of wParam is WA_INACTIVE, lParam is the handle to the window being activated.
+        // If the low-order word of wParam is WA_ACTIVE or WA_CLICKACTIVE, lParam is the handle to the window being deactivated.
+        // This handle can be NULL.
+        SendMsg(qhm);
+        break;
+
+    case WM_SETTEXT:
+        if (qhm->lParam)
+        {
+            StringCbCopy(qhm->Caption, sizeof(qhm->Caption), (WCHAR *) qhm->lParam);
+        }
+        SendMsg(qhm);
+        break;
+
+    case WM_PAINT:
+    case WM_NCPAINT:
+        SendMsg(qhm);
+        break;
+
+    case WM_SHOWWINDOW:
+        // wParam is show/hide
+        SendMsg(qhm);
+        break;
+
+    //case WM_WINDOWPOSCHANGING:
     case WM_WINDOWPOSCHANGED:
         qhm->Flags = wp->flags;
         qhm->X = wp->x;
@@ -53,8 +99,16 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         break;
 
     case WM_STYLECHANGED:
-        qhm->Style = ss->styleNew;
-        qhm->StyleOld = ss->styleOld;
+        // gui agent's handler will still need to check wParam...
+        if (qhm->wParam == GWL_STYLE)
+            qhm->Style = ss->styleNew;
+        else if (qhm->wParam == GWL_EXSTYLE)
+            qhm->ExStyle = ss->styleNew;
+        else
+        {
+            OutputDebugString(L"QHook: WM_STYLECHANGED unknown wParam");
+            break;
+        }
         SendMsg(qhm);
         break;
     }

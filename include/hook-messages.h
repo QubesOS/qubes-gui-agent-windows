@@ -19,12 +19,13 @@ typedef struct _QH_MESSAGE
     UINT64 lParam; // message's lparam
 
     // These fields are message-dependent.
-    UINT64 DstWindowHandle;
     UINT64 Flags;
     int X;
     int Y;
     int Width;
     int Height;
     UINT32 Style;
-    UINT32 StyleOld;
+    UINT32 ExStyle;
+    UINT64 ParentWindowHandle;
+    WCHAR Caption[256];
 } QH_MESSAGE;
