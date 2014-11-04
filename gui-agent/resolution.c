@@ -49,9 +49,10 @@ static DWORD WINAPI ResolutionChangeThread(void *param)
         // If we're here, that means the wait finally timed out.
         // We can change the resolution now.
         LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
-        SetEvent(g_ResolutionChangeEvent); // handled in WatchForEvents, actual resolution change
+        if (!SetEvent(g_ResolutionChangeEvent)) // handled in WatchForEvents, actual resolution change
+            return perror("SetEvent");
     }
-    return 0;
+    return ERROR_SUCCESS;
 }
 
 // Signals g_ResolutionChangeRequestedEvent
@@ -70,7 +71,8 @@ void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG bpp, IN LONG
     g_ResolutionChangeParams.Bpp = bpp;
     g_ResolutionChangeParams.X = x;
     g_ResolutionChangeParams.Y = y;
-    SetEvent(g_ResolutionChangeRequestedEvent);
+    if (!SetEvent(g_ResolutionChangeRequestedEvent))
+        perror("SetEvent");
 }
 
 // Actually set video mode through qvideo calls.
@@ -152,19 +154,25 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
     if (ERROR_SUCCESS != (status = RegisterWatchedDC(*screenDC, damageEvent)))
         return status;
 
-    SendWindowMfns(NULL); // update screen framebuffer
+    status = SendWindowMfns(NULL); // update screen framebuffer
+    if (ERROR_SUCCESS != status)
+        return status;
 
     // is it possible to have VM resolution bigger than host set by user?
     if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
         g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
 
-    SetSeamlessMode(g_SeamlessMode, TRUE);
+    status = SetSeamlessMode(g_SeamlessMode, TRUE);
+    if (ERROR_SUCCESS != status)
+        return status;
 
     LogDebug("done");
 
     // Reply to the daemon's request (with just the same data).
     // Otherwise daemon won't send screen resize requests again.
-    SendScreenConfigure(g_ResolutionChangeParams.X, g_ResolutionChangeParams.Y, g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
+    status = SendScreenConfigure(g_ResolutionChangeParams.X, g_ResolutionChangeParams.Y, g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
+    if (ERROR_SUCCESS != status)
+        return status;
 
     return ERROR_SUCCESS;
 }

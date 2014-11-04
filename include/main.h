@@ -111,9 +111,10 @@ WATCHED_DC *FindWindowByHandle(
     HWND hWnd
     );
 
-WATCHED_DC *AddWindowWithInfo(
+ULONG AddWindowWithInfo(
     IN HWND hWnd,
-    IN const WINDOWINFO *windowInfo
+    IN const WINDOWINFO *windowInfo,
+    OUT WATCHED_DC **windowEntry
     );
 
 ULONG RemoveWindow(WATCHED_DC *pWatchedDC);

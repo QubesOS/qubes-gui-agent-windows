@@ -12,10 +12,10 @@ void VchanWait(void);
 BOOL VchanIsEof(void);
 void VchanClose(void);
 int VchanGetReadBufferSize(void);
-int VchanReceiveBuffer(OUT void *buffer, IN int size);
-int VchanSendBuffer(IN const void *buffer, IN int size);
+BOOL VchanReceiveBuffer(OUT void *buffer, IN int size);
+BOOL VchanSendBuffer(IN const void *buffer, IN int size);
 int VchanGetWriteBufferSize(void);
-int VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int datasize);
+BOOL VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int datasize);
 
 #define VCHAN_SEND_MSG(header, body) (\
     header.untrusted_len = sizeof(header), \

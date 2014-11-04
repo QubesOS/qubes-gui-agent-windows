@@ -5,40 +5,40 @@ CRITICAL_SECTION g_VchanCriticalSection;
 
 static struct libvchan *g_Vchan;
 
-int VchanSendBuffer(IN const void *buffer, IN int size)
+BOOL VchanSendBuffer(IN const void *buffer, IN int size)
 {
     int written = 0;
     int status;
 
     if (!g_Vchan)
-        return -1;
+        return FALSE;
 
     while (written < size)
     {
         status = libvchan_write(g_Vchan, (char *) buffer + written, size - written);
         if (status <= 0)
-            return status;
+            return FALSE;
 
         written += status;
     }
 
-    return size;
+    return TRUE;
 }
 
-int VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int dataSize)
+BOOL VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int dataSize)
 {
     int status;
 
     status = VchanSendBuffer(header, headerSize);
     if (status <= 0)
-        return status;
+        return FALSE;
     status = VchanSendBuffer(data, dataSize);
     if (status <= 0)
-        return status;
-    return 0;
+        return FALSE;
+    return TRUE;
 }
 
-int VchanReceiveBuffer(OUT void *buffer, IN int size)
+BOOL VchanReceiveBuffer(OUT void *buffer, IN int size)
 {
     int written = 0;
     int status;
@@ -47,11 +47,11 @@ int VchanReceiveBuffer(OUT void *buffer, IN int size)
     {
         status = libvchan_read(g_Vchan, (char *) buffer + written, size - written);
         if (status <= 0)
-            return status;
+            return FALSE;
 
         written += status;
     }
-    return size;
+    return TRUE;
 }
 
 int VchanGetReadBufferSize(void)

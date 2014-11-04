@@ -33,7 +33,11 @@ DWORD HandleXconf(void)
     struct msg_xconf xconf;
 
     LogVerbose("start");
-    VchanReceiveBuffer(&xconf, sizeof(xconf));
+    if (!VchanReceiveBuffer(&xconf, sizeof(xconf)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
     LogInfo("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
@@ -70,7 +74,12 @@ static DWORD HandleKeymapNotify(void)
     };
 
     LogVerbose("start");
-    VchanReceiveBuffer(remoteKeys, sizeof(remoteKeys));
+    if (!VchanReceiveBuffer(remoteKeys, sizeof(remoteKeys)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
+
     i = 0;
     while (modifierKeys[i])
     {
@@ -138,7 +147,11 @@ static DWORD HandleKeypress(IN HWND window)
     DWORD status;
 
     LogVerbose("0x%x", window);
-    VchanReceiveBuffer(&keyMsg, sizeof(keyMsg));
+    if (!VchanReceiveBuffer(&keyMsg, sizeof(keyMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
 
     /* ignore x, y */
     /* TODO: send to correct window */
@@ -186,7 +199,11 @@ static DWORD HandleButton(IN HWND window)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", window);
-    VchanReceiveBuffer(&buttonMsg, sizeof(buttonMsg));
+    if (!VchanReceiveBuffer(&buttonMsg, sizeof(buttonMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
 
     if (window)
         GetWindowRect(window, &rect);
@@ -240,7 +257,11 @@ static DWORD HandleMotion(IN HWND window)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", window);
-    VchanReceiveBuffer(&motionMsg, sizeof(motionMsg));
+    if (!VchanReceiveBuffer(&motionMsg, sizeof(motionMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
 
     if (window)
         GetWindowRect(window, &rect);
@@ -267,7 +288,12 @@ static DWORD HandleConfigure(IN HWND window)
 {
     struct msg_configure configureMsg;
 
-    VchanReceiveBuffer(&configureMsg, sizeof(configureMsg));
+    if (!VchanReceiveBuffer(&configureMsg, sizeof(configureMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
+
     LogDebug("0x%x (%d,%d) %dx%d", window, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
 
     if (window != 0) // 0 is full screen
@@ -304,7 +330,11 @@ static DWORD HandleFocus(IN HWND window)
     struct msg_focus focusMsg;
 
     LogVerbose("0x%x", window);
-    VchanReceiveBuffer(&focusMsg, sizeof(focusMsg));
+    if (!VchanReceiveBuffer(&focusMsg, sizeof(focusMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
 
     BringWindowToTop(window);
     SetForegroundWindow(window);
@@ -326,7 +356,12 @@ static DWORD HandleWindowFlags(IN HWND window)
 {
     struct msg_window_flags flagsMsg;
 
-    VchanReceiveBuffer(&flagsMsg, sizeof(flagsMsg));
+    if (!VchanReceiveBuffer(&flagsMsg, sizeof(flagsMsg)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
+
     LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsMsg.flags_set, flagsMsg.flags_unset);
 
     if (flagsMsg.flags_unset & WINDOW_FLAG_MINIMIZE) // restore
@@ -348,7 +383,11 @@ DWORD HandleServerData(void)
     int readSize;
     DWORD status = ERROR_SUCCESS;
 
-    VchanReceiveBuffer(&header, sizeof(header));
+    if (!VchanReceiveBuffer(&header, sizeof(header)))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
 
     LogVerbose("received message type %d for 0x%x", header.type, header.window);
 
@@ -384,9 +423,12 @@ DWORD HandleServerData(void)
         /* discard unsupported message body */
         while (header.untrusted_len > 0)
         {
-            readSize = VchanReceiveBuffer(discardBuffer, min(header.untrusted_len, sizeof(discardBuffer)));
-            if (readSize <= 0)
-                break;
+            readSize = min(header.untrusted_len, sizeof(discardBuffer));
+            if (!VchanReceiveBuffer(discardBuffer, readSize))
+            {
+                LogError("VchanReceiveBuffer failed");
+                return ERROR_UNIDENTIFIED_ERROR;
+            }
             header.untrusted_len -= readSize;
         }
     }

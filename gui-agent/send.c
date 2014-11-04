@@ -97,7 +97,7 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
     return ERROR_SUCCESS;
 }
 
-void SendWindowMfns(IN const WATCHED_DC *watchedDC)
+ULONG SendWindowMfns(IN const WATCHED_DC *watchedDC)
 {
     ULONG status;
     struct shm_cmd *shmCmd = NULL;
@@ -111,16 +111,13 @@ void SendWindowMfns(IN const WATCHED_DC *watchedDC)
 
     status = PrepareShmCmd(watchedDC, &shmCmd);
     if (ERROR_SUCCESS != status)
-    {
-        perror2(status, "PrepareShmCmd");
-        return;
-    }
+        return perror2(status, "PrepareShmCmd");
 
     if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
     {
         LogError("too large num_mfn=%lu for window 0x%x", shmCmd->num_mfn, window);
         free(shmCmd);
-        return;
+        return ERROR_INSUFFICIENT_BUFFER;
     }
 
     size = shmCmd->num_mfn * sizeof(uint32_t);
@@ -130,11 +127,20 @@ void SendWindowMfns(IN const WATCHED_DC *watchedDC)
     header.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(header);
-    VchanSendBuffer(shmCmd, sizeof(struct shm_cmd) + size);
+    if (!VCHAN_SEND(header))
+    {
+        LeaveCriticalSection(&g_VchanCriticalSection);
+        return perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
+    }
+
+    status = VchanSendBuffer(shmCmd, sizeof(struct shm_cmd) + size);
     LeaveCriticalSection(&g_VchanCriticalSection);
+    if (!status)
+        return perror2(status, "VchanSendBuffer");
 
     free(shmCmd);
+
+    return ERROR_SUCCESS;
 }
 
 ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
@@ -143,13 +149,13 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
     struct msg_hdr header;
     struct msg_create createMsg;
     PFN_ARRAY *pfnArray = NULL;
+    ULONG status;
 
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
     if (watchedDC == NULL)
     {
         QV_GET_SURFACE_DATA_RESPONSE surfaceData;
-        ULONG status;
 
         LogDebug("fullscreen");
         /* TODO: multiple screens? */
@@ -161,9 +167,7 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
 
         status = GetWindowData(NULL, &surfaceData, pfnArray);
         if (ERROR_SUCCESS != status)
-        {
             return perror2(status, "GetWindowData");
-        }
 
         wi.rcWindow.right = surfaceData.Width;
         wi.rcWindow.bottom = surfaceData.Height;
@@ -193,14 +197,26 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
     createMsg.override_redirect = watchedDC ? watchedDC->IsOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, createMsg);
+    if (!VCHAN_SEND_MSG(header, createMsg))
+    {
+        LeaveCriticalSection(&g_VchanCriticalSection);
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     if (watchedDC && watchedDC->IsVisible && !watchedDC->IsIconic)
-        SendWindowMap(watchedDC);
+    {
+        status = SendWindowMap(watchedDC);
+        if (ERROR_SUCCESS != status)
+            return status;
+    }
 
     if (watchedDC)
-        SendWindowHints(watchedDC->WindowHandle, PPosition); // program-specified position
+    {
+        status = SendWindowHints(watchedDC->WindowHandle, PPosition); // program-specified position
+        if (ERROR_SUCCESS != status)
+            return status;
+    }
 
     return ERROR_SUCCESS;
 }
@@ -208,22 +224,24 @@ ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
 ULONG SendWindowDestroy(IN HWND window)
 {
     struct msg_hdr header;
+    BOOL status;
 
     LogDebug("0x%x", window);
     header.type = MSG_DESTROY;
     header.window = (uint32_t) window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(header);
+    status = VCHAN_SEND(header);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    return ERROR_SUCCESS;
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
 ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset)
 {
     struct msg_hdr header;
     struct msg_window_flags flags;
+    BOOL status;
 
     LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsToSet, flagsToUnset);
     header.type = MSG_WINDOW_FLAGS;
@@ -232,16 +250,17 @@ ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsT
     flags.flags_set = flagsToSet;
     flags.flags_unset = flagsToUnset;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, flags);
+    status = VCHAN_SEND_MSG(header, flags);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    return ERROR_SUCCESS;
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-void SendWindowHints(IN HWND window, IN uint32_t flags)
+ULONG SendWindowHints(IN HWND window, IN uint32_t flags)
 {
     struct msg_hdr header;
     struct msg_window_hints hintsMsg = { 0 };
+    BOOL status;
 
     hintsMsg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
@@ -250,14 +269,17 @@ void SendWindowHints(IN HWND window, IN uint32_t flags)
     header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, hintsMsg);
+    status = VCHAN_SEND_MSG(header, hintsMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-void SendScreenHints(void)
+ULONG SendScreenHints(void)
 {
     struct msg_hdr header;
     struct msg_window_hints hintsMsg = { 0 };
+    BOOL status;
 
     hintsMsg.flags = PMinSize; // minimum size
     hintsMsg.min_width = MIN_RESOLUTION_WIDTH;
@@ -268,13 +290,16 @@ void SendScreenHints(void)
     header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, hintsMsg);
+    status = VCHAN_SEND_MSG(header, hintsMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
 ULONG SendWindowUnmap(IN HWND window)
 {
     struct msg_hdr header;
+    BOOL status;
 
     LogInfo("Unmapping window 0x%x\n", window);
 
@@ -282,10 +307,10 @@ ULONG SendWindowUnmap(IN HWND window)
     header.window = (uint32_t) window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(header);
+    status = VCHAN_SEND(header);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    return ERROR_SUCCESS;
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
 // if watchedDC == 0, use the whole screen
@@ -293,6 +318,7 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_map_info mapMsg;
+    ULONG status;
 
     if (watchedDC)
         LogInfo("Mapping window 0x%x\n", watchedDC->WindowHandle);
@@ -317,7 +343,11 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
         mapMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, mapMsg);
+    if (!VCHAN_SEND_MSG(header, mapMsg))
+    {
+        LeaveCriticalSection(&g_VchanCriticalSection);
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
@@ -325,12 +355,20 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
         (watchedDC->WindowRect.right - watchedDC->WindowRect.left == g_ScreenWidth &&
         watchedDC->WindowRect.bottom - watchedDC->WindowRect.top == g_ScreenHeight))
     {
-        SendScreenHints(); // min/max screen size
-        SendWindowName(NULL);
+        status = SendScreenHints(); // min/max screen size
+        if (ERROR_SUCCESS != status)
+            return status;
+
+        status = SendWindowName(NULL);
+        if (ERROR_SUCCESS != status)
+            return status;
+
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             LogDebug("fullscreen window");
-            SendWindowFlags(watchedDC ? watchedDC->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+            status = SendWindowFlags(watchedDC ? watchedDC->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+            if (ERROR_SUCCESS != status)
+                return status;
         }
     }
 
@@ -343,6 +381,7 @@ ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL)
     struct msg_hdr header;
     struct msg_configure configureMsg;
     struct msg_map_info mapMsg;
+    BOOL status;
 
     if (watchedDC)
     {
@@ -371,12 +410,15 @@ ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL)
         configureMsg.override_redirect = 0;
     }
 
+    status = ERROR_SUCCESS;
     EnterCriticalSection(&g_VchanCriticalSection);
     /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
     * will follow */
     if (configureMsg.width > 0 && configureMsg.height > 0)
     {
-        VCHAN_SEND_MSG(header, configureMsg);
+        status = VCHAN_SEND_MSG(header, configureMsg);
+        if (!status)
+            goto cleanup;
     }
 
     if (watchedDC && watchedDC->IsVisible)
@@ -385,11 +427,12 @@ ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL)
         mapMsg.override_redirect = watchedDC->IsOverrideRedirect;
 
         header.type = MSG_MAP;
-        VCHAN_SEND_MSG(header, mapMsg);
+        status = VCHAN_SEND_MSG(header, mapMsg);
     }
+cleanup:
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    return ERROR_SUCCESS;
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
 // Send screen resolution back to gui daemon.
@@ -397,6 +440,7 @@ ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 h
 {
     struct msg_hdr header;
     struct msg_configure configMsg;
+    BOOL status;
 
     LogDebug("(%d,%d) %dx%d", x, y, width, height);
     header.window = 0; // 0 = screen
@@ -410,16 +454,17 @@ ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 h
     configMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, configMsg);
+    status = VCHAN_SEND_MSG(header, configMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    return ERROR_SUCCESS;
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-void SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height)
+ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height)
 {
     struct msg_shmimage shmMsg;
     struct msg_hdr header;
+    BOOL status;
 
     LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
     header.type = MSG_SHMIMAGE;
@@ -429,14 +474,17 @@ void SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN 
     shmMsg.width = width;
     shmMsg.height = height;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, shmMsg);
+    status = VCHAN_SEND_MSG(header, shmMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-void SendWindowName(IN HWND window)
+ULONG SendWindowName(IN HWND window)
 {
     struct msg_hdr header;
     struct msg_wmname nameMsg;
+    BOOL status;
 
     if (window)
     {
@@ -444,26 +492,33 @@ void SendWindowName(IN HWND window)
         if (!GetWindowTextA(window, nameMsg.data, sizeof(nameMsg.data)))
         {
             // ignore empty/non-readable captions
-            return;
+            return ERROR_SUCCESS;
         }
     }
     else
     {
         StringCchPrintfA(nameMsg.data, RTL_NUMBER_OF(nameMsg.data), "%s (Windows Desktop)", g_DomainName);
     }
+
     LogDebug("0x%x %S", window, nameMsg.data);
 
     header.window = (uint32_t) window;
     header.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND_MSG(header, nameMsg);
+    status = VCHAN_SEND_MSG(header, nameMsg);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-void SendProtocolVersion(void)
+ULONG SendProtocolVersion(void)
 {
     uint32_t version = QUBES_GUI_PROTOCOL_VERSION_WINDOWS;
+    BOOL status;
+
     EnterCriticalSection(&g_VchanCriticalSection);
-    VCHAN_SEND(version);
+    status = VCHAN_SEND(version);
     LeaveCriticalSection(&g_VchanCriticalSection);
+
+    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
