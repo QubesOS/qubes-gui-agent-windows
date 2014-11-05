@@ -6,7 +6,7 @@
 
 #include "qubes-gui-protocol.h"
 
-// window hints constants
+// window size hint constants
 // http://tronche.com/gui/x/icccm/sec-4.html
 #define USPosition  1       // User-specified x, y
 #define USSize      2       // User-specified width, height
@@ -18,6 +18,17 @@
 #define PAspect     128 	// Program-specified min and max aspect ratios
 #define PBaseSize   256 	// Program-specified base size
 #define PWinGravity 512 	// Program-specified window gravity
+
+// window hint flags
+#define InputHint          1  // input
+#define StateHint          2  // initial_state
+#define IconPixmapHint     4  // icon_pixmap
+#define IconWindowHint     8  // icon_window
+#define IconPositionHint  16  // icon_x & icon_y
+#define IconMaskHint      32  // icon_mask
+#define WindowGroupHint   64  // window_group
+#define MessageHint      128  // (this bit is obsolete)
+#define UrgencyHint      256  // urgency
 
 ULONG SendWindowMfns(IN const WATCHED_DC *watchedDC);
 ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC);
