@@ -359,7 +359,7 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
         if (ERROR_SUCCESS != status)
             return status;
 
-        status = SendWindowName(NULL);
+        status = SendWindowName(NULL, NULL); // desktop
         if (ERROR_SUCCESS != status)
             return status;
 
@@ -480,7 +480,7 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-ULONG SendWindowName(IN HWND window)
+ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_wmname nameMsg;
@@ -488,11 +488,17 @@ ULONG SendWindowName(IN HWND window)
 
     if (window)
     {
-        // FIXME: this fails for non-ascii strings
-        if (!GetWindowTextA(window, nameMsg.data, sizeof(nameMsg.data)))
+        if (caption)
         {
-            // ignore empty/non-readable captions
-            return ERROR_SUCCESS;
+            StringCchPrintfA(nameMsg.data, RTL_NUMBER_OF(nameMsg.data), "%S", caption);
+        }
+        else
+        {
+            if (0 == GetWindowTextA(window, nameMsg.data, RTL_NUMBER_OF(nameMsg.data)))
+            {
+                perror("GetWindowTextA");
+                return ERROR_SUCCESS; // whatever
+            }
         }
     }
     else

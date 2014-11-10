@@ -17,6 +17,7 @@ typedef struct _QH_MESSAGE
     UINT64 WindowHandle;
     UINT64 wParam; // message's wparam
     UINT64 lParam; // message's lparam
+    BOOL Is64bit;
 
     // These fields are message-dependent.
     UINT64 Flags;

@@ -41,5 +41,5 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC ==
 ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
 ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height);
 ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
-ULONG SendWindowName(IN HWND window);
+ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL);
 ULONG SendProtocolVersion(void);

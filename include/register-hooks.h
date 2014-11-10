@@ -13,6 +13,7 @@ typedef struct _HOOK_DATA
     // 32bit hooks stop when their server process terminates.
     HHOOK CbtHook;
     HHOOK CallWndHook;
+    HHOOK CallWndRetHook;
     HHOOK GetMsgHook;
 
 } HOOK_DATA;

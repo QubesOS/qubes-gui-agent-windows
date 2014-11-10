@@ -158,7 +158,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WAT
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowCreate");
 
-        status = SendWindowName(window);
+        status = SendWindowName(window, NULL);
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowName");
     }
@@ -255,6 +255,11 @@ static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
         return perror("UnhookWindowsHookEx(CallWndHook)");
 
     hookData->CallWndHook = NULL;
+
+    if (!UnhookWindowsHookEx(hookData->CallWndRetHook))
+        return perror("UnhookWindowsHookEx(CallWndRetHook)");
+
+    hookData->CallWndRetHook = NULL;
 
     if (!UnhookWindowsHookEx(hookData->GetMsgHook))
         return perror("UnhookWindowsHookEx(GetMsgHook)");
@@ -898,6 +903,33 @@ static ULONG HookDestroyWindow(IN const QH_MESSAGE *qhm)
     return status;
 }
 
+/*
+FIXME: only send activation notifications if activation
+was not a result of user action (HandleFocus).
+This would need keeping track of window state changes in
+WATCHED_DC (which will probably be needed anyway).
+
+Anyway, gui daemon can't actually properly handle activation
+requests (and they can be seen as a security risk -- focus
+stealing). Ideally gui daemon should set the window's z-order
+so that it's on top of all other windows from the same domain,
+but not above current top-level window if its domain is different.
+*/
+static ULONG HookActivateWindow(IN const QH_MESSAGE *qhm)
+{
+    LogVerbose("%x", qhm->WindowHandle);
+
+    return SendWindowHints((HWND) qhm->WindowHandle, UrgencyHint);
+}
+
+// window text changed
+static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
+{
+    LogVerbose("%x '%s'", qhm->WindowHandle, qhm->Caption);
+
+    return SendWindowName((HWND) qhm->WindowHandle, qhm->Caption);
+}
+
 // Process events from hooks.
 // Updates watched windows state.
 static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
@@ -934,7 +966,11 @@ static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncStat
         break;
 
     case WM_ACTIVATE:
-        //status = HookActivateWindow(qhm);
+        status = HookActivateWindow(qhm);
+        break;
+
+    case WM_SETTEXT:
+        status = HookSetWindowText(qhm);
         break;
 
     default:
