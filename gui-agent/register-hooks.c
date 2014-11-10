@@ -35,6 +35,15 @@ DWORD SetHooks(IN const WCHAR *dllName, OUT HOOK_DATA *hookData)
     if (!hookData->CallWndHook)
         return perror("SetWindowsHookEx(CallWndProc)");
 
+    // CallWndProcRet hook
+    hookProc = GetProcAddress(hookDll, "CallWndRetProc");
+    if (!hookProc)
+        return perror("GetProcAddress(CallWndRetProc)");
+
+    hookData->CallWndRetHook = SetWindowsHookEx(WH_CALLWNDPROCRET, (HOOKPROC) hookProc, hookDll, 0);
+    if (!hookData->CallWndRetHook)
+        return perror("SetWindowsHookEx(CallWndRetProc)");
+
     // GetMsgProc hook
     hookProc = GetProcAddress(hookDll, "GetMsgProc");
     if (!hookProc)
