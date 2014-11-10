@@ -6,6 +6,12 @@ LRESULT CALLBACK CallWndProc(
     LPARAM lParam
     );
 
+LRESULT CALLBACK CallWndRetProc(
+    int code,
+    WPARAM wParam,
+    LPARAM lParam
+    );
+
 LRESULT CALLBACK GetMsgProc(
     int code,
     WPARAM wParam,

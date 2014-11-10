@@ -2,5 +2,6 @@ LIBRARY QubesGuiHook
 
 EXPORTS
     CallWndProc
+    CallWndRetProc
     GetMsgProc
     CBTProc

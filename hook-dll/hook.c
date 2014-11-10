@@ -4,7 +4,7 @@
 #include "hook.h"
 #include "hook-messages.h"
 
-HANDLE g_Slot = INVALID_HANDLE_VALUE; // IPC mailslot
+HANDLE g_Slot = NULL; // IPC mailslot
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, void *reserved)
 {
@@ -13,12 +13,13 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, void *reserved)
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(module);
         OutputDebugString(L"QHook: +ATTACH\n");
-        g_Slot = CreateFile(HOOK_IPC_NAME, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (!g_Slot)
+            g_Slot = CreateFile(HOOK_IPC_NAME, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
         break;
 
     case DLL_PROCESS_DETACH:
-        if (g_Slot != INVALID_HANDLE_VALUE)
+        if (g_Slot)
             CloseHandle(g_Slot);
         OutputDebugString(L"QHook: -DETACH\n");
         break;
@@ -26,9 +27,15 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, void *reserved)
     return TRUE;
 }
 
-static void SendMsg(IN const QH_MESSAGE *qhm)
+static void SendMsg(IN OUT QH_MESSAGE *qhm)
 {
     DWORD written;
+
+#ifdef _AMD64_
+    qhm->Is64bit = TRUE;
+#else
+    qhm->Is64bit = FALSE;
+#endif
     if (g_Slot != INVALID_HANDLE_VALUE)
         WriteFile(g_Slot, qhm, sizeof(QH_MESSAGE), &written, NULL);
 }
@@ -111,6 +118,10 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         }
         SendMsg(qhm);
         break;
+
+    default:
+        SendMsg(qhm);
+        break;
     }
 }
 
@@ -134,6 +145,32 @@ LRESULT CALLBACK CallWndProc(
     qhm.WindowHandle = (UINT64) cwp->hwnd;
     qhm.wParam = cwp->wParam;
     qhm.lParam = cwp->lParam;
+
+    ProcessMessage(&qhm);
+
+    return CallNextHookEx(NULL, code, wParam, lParam);
+}
+
+LRESULT CALLBACK CallWndRetProc(
+    int code,
+    WPARAM wParam,
+    LPARAM lParam
+    )
+{
+    CWPRETSTRUCT *cwpr = (CWPRETSTRUCT *) lParam;
+    QH_MESSAGE qhm = { 0 };
+
+    if (code < 0)
+    {
+        OutputDebugString(L"[!] CWPR: <0\n");
+        return CallNextHookEx(NULL, code, wParam, lParam);
+    }
+
+    qhm.HookId = WH_CALLWNDPROCRET;
+    qhm.Message = cwpr->message;
+    qhm.WindowHandle = (UINT64) cwpr->hwnd;
+    qhm.wParam = cwpr->wParam;
+    qhm.lParam = cwpr->lParam;
 
     ProcessMessage(&qhm);
 
