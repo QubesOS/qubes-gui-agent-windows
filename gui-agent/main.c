@@ -1028,9 +1028,9 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
 
     // Create IPC object for hook DLLs.
-    hookIpc = CreateMailslot(HOOK_IPC_NAME, 0, MAILSLOT_WAIT_FOREVER, NULL);
+    hookIpc = CreateNamedMailslot(HOOK_IPC_NAME);
     if (!hookIpc)
-        return perror("CreateMailslot");
+        return perror("CreateNamedMailslot");
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
