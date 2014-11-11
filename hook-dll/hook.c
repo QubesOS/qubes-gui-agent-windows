@@ -36,7 +36,7 @@ static void SendMsg(IN OUT QH_MESSAGE *qhm)
 #else
     qhm->Is64bit = FALSE;
 #endif
-    if (g_Slot != INVALID_HANDLE_VALUE)
+    if (g_Slot)
         WriteFile(g_Slot, qhm, sizeof(QH_MESSAGE), &written, NULL);
 }
 
@@ -81,8 +81,8 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         if (qhm->lParam)
         {
             StringCbCopy(qhm->Caption, sizeof(qhm->Caption), (WCHAR *) qhm->lParam);
+            SendMsg(qhm);
         }
-        SendMsg(qhm);
         break;
 
     case WM_PAINT:
@@ -118,10 +118,11 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         }
         SendMsg(qhm);
         break;
-
+        /* debug only - capture ALL messages
     default:
         SendMsg(qhm);
         break;
+        */
     }
 }
 
