@@ -30,15 +30,15 @@
 #define MessageHint      128  // (this bit is obsolete)
 #define UrgencyHint      256  // urgency
 
-ULONG SendWindowMfns(IN const WATCHED_DC *watchedDC);
-ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC);
+ULONG SendWindowMfns(IN const WINDOW_DATA *watchedDC);
+ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC);
 ULONG SendWindowDestroy(IN HWND window);
 ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset);
 ULONG SendWindowHints(IN HWND window, IN uint32_t flags);
 ULONG SendScreenHints(void);
 ULONG SendWindowUnmap(IN HWND window);
-ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
+ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
+ULONG SendWindowConfigure(IN const WINDOW_DATA *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
 ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height);
 ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
 ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL);

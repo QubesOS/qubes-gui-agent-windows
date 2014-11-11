@@ -17,7 +17,7 @@ extern HWND g_DesktopWindow;
 extern char g_DomainName[256];
 extern CRITICAL_SECTION g_csWatchedWindows;
 
-typedef struct _WATCHED_DC
+typedef struct _WINDOW_DATA
 {
     HWND WindowHandle;
 
@@ -37,7 +37,7 @@ typedef struct _WATCHED_DC
     LONG MaxWidth;
     LONG MaxHeight;
     PFN_ARRAY *PfnArray;
-} WATCHED_DC;
+} WINDOW_DATA;
 
 typedef struct _BANNED_WINDOWS
 {
@@ -96,7 +96,7 @@ typedef struct _MODAL_SEARCH_PARAMS
 }
 
 ULONG CheckWatchedWindowUpdates(
-    IN OUT WATCHED_DC *watchedDC,
+    IN OUT WINDOW_DATA *watchedDC,
     IN const WINDOWINFO *windowInfo,
     IN BOOL damageDetected,
     IN const RECT *damageArea
@@ -107,17 +107,17 @@ BOOL ShouldAcceptWindow(
     IN const WINDOWINFO *pwi OPTIONAL
     );
 
-WATCHED_DC *FindWindowByHandle(
+WINDOW_DATA *FindWindowByHandle(
     HWND hWnd
     );
 
 ULONG AddWindowWithInfo(
     IN HWND hWnd,
     IN const WINDOWINFO *windowInfo,
-    OUT WATCHED_DC **windowEntry
+    OUT WINDOW_DATA **windowEntry
     );
 
-ULONG RemoveWindow(WATCHED_DC *pWatchedDC);
+ULONG RemoveWindow(WINDOW_DATA *pWatchedDC);
 
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(

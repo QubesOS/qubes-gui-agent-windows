@@ -55,9 +55,9 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
 // watched windows critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULl if ignored).
 // Other errors mean fatal conditions.
-ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WATCHED_DC **windowEntry)
+ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry)
 {
-    WATCHED_DC *entry = NULL;
+    WINDOW_DATA *entry = NULL;
     ULONG status;
 
     if (!windowInfo || !windowEntry)
@@ -82,14 +82,14 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WAT
         return ERROR_SUCCESS;
     }
 
-    entry = (WATCHED_DC *) malloc(sizeof(WATCHED_DC));
+    entry = (WINDOW_DATA *) malloc(sizeof(WINDOW_DATA));
     if (!entry)
     {
         LogError("Failed to malloc WATCHED_DC");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
-    ZeroMemory(entry, sizeof(WATCHED_DC));
+    ZeroMemory(entry, sizeof(WINDOW_DATA));
 
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
@@ -167,7 +167,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WAT
     return ERROR_SUCCESS;
 }
 
-ULONG RemoveWindow(IN OUT WATCHED_DC *watchedDC)
+ULONG RemoveWindow(IN OUT WINDOW_DATA *watchedDC)
 {
     ULONG status;
 
@@ -362,8 +362,8 @@ static ULONG AddAllWindows(void)
 // NOTE: this function doesn't close/reopen qvideo's screen section
 static ULONG ResetWatch(BOOL seamlessMode)
 {
-    WATCHED_DC *watchedDC;
-    WATCHED_DC *nextWatchedDC;
+    WINDOW_DATA *watchedDC;
+    WINDOW_DATA *nextWatchedDC;
     ULONG status;
 
     LogVerbose("start");
@@ -376,11 +376,11 @@ static ULONG ResetWatch(BOOL seamlessMode)
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
-    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    watchedDC = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
-        nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
+        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
+        nextWatchedDC = (WINDOW_DATA *) watchedDC->ListEntry.Flink;
 
         RemoveEntryList(&watchedDC->ListEntry);
         status = RemoveWindow(watchedDC);
@@ -466,20 +466,20 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
     return ERROR_SUCCESS;
 }
 
-WATCHED_DC *FindWindowByHandle(IN HWND window)
+WINDOW_DATA *FindWindowByHandle(IN HWND window)
 {
-    WATCHED_DC *watchedDC;
+    WINDOW_DATA *watchedDC;
 
     LogVerbose("%x", window);
-    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    watchedDC = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
+        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
 
         if (window == watchedDC->WindowHandle)
             return watchedDC;
 
-        watchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
+        watchedDC = (WINDOW_DATA *) watchedDC->ListEntry.Flink;
     }
 
     return NULL;
@@ -507,7 +507,7 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
 
 // TODO: remove all this polling, handle changes in hook events
 ULONG CheckWatchedWindowUpdates(
-    IN OUT WATCHED_DC *watchedDC,
+    IN OUT WINDOW_DATA *watchedDC,
     IN const WINDOWINFO *windowInfo,
     IN BOOL damageDetected,
     IN const RECT *damageArea
@@ -593,7 +593,7 @@ ULONG CheckWatchedWindowUpdates(
         LogDebug("result: 0x%x", modalParams.ModalWindow);
         if (modalParams.ModalWindow) // found a modal "child"
         {
-            WATCHED_DC *modalDc = FindWindowByHandle(modalParams.ModalWindow);
+            WINDOW_DATA *modalDc = FindWindowByHandle(modalParams.ModalWindow);
             if (modalDc && !modalDc->ModalParent)
             {
                 modalDc->ModalParent = watchedDC->WindowHandle;
@@ -719,8 +719,8 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
 // TODO: remove this, handle changes in hook events (what about fullscreen?)
 static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 {
-    WATCHED_DC *watchedDC;
-    WATCHED_DC *nextWatchedDC;
+    WINDOW_DATA *watchedDC;
+    WINDOW_DATA *nextWatchedDC;
     static BANNED_WINDOWS bannedWindows = { 0 };
     BOOL recheckWindows = FALSE;
     HWND oldDesktopWindow = g_DesktopWindow;
@@ -817,11 +817,11 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    watchedDC = (WATCHED_DC *) g_WatchedWindowsList.Flink;
-    while (watchedDC != (WATCHED_DC *) &g_WatchedWindowsList)
+    watchedDC = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+    while (watchedDC != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WATCHED_DC, ListEntry);
-        nextWatchedDC = (WATCHED_DC *) watchedDC->ListEntry.Flink;
+        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
+        nextWatchedDC = (WINDOW_DATA *) watchedDC->ListEntry.Flink;
 
         if (!IsWindow(watchedDC->WindowHandle) || !ShouldAcceptWindow(watchedDC->WindowHandle, NULL))
         {
@@ -881,7 +881,7 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
 
 static ULONG HookDestroyWindow(IN const QH_MESSAGE *qhm)
 {
-    WATCHED_DC *windowEntry;
+    WINDOW_DATA *windowEntry;
     ULONG status;
 
     LogVerbose("%x", qhm->WindowHandle);

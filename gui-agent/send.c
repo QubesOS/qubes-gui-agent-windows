@@ -14,7 +14,7 @@
 
 // Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
 // if watchedDC == NULL, get PFNs for the whole screen
-static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct shm_cmd **shmCmd)
+static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct shm_cmd **shmCmd)
 {
     QV_GET_SURFACE_DATA_RESPONSE surfaceData;
     ULONG status;
@@ -97,7 +97,7 @@ static ULONG PrepareShmCmd(IN const WATCHED_DC *watchedDC OPTIONAL, OUT struct s
     return ERROR_SUCCESS;
 }
 
-ULONG SendWindowMfns(IN const WATCHED_DC *watchedDC)
+ULONG SendWindowMfns(IN const WINDOW_DATA *watchedDC)
 {
     ULONG status;
     struct shm_cmd *shmCmd = NULL;
@@ -143,7 +143,7 @@ ULONG SendWindowMfns(IN const WATCHED_DC *watchedDC)
     return ERROR_SUCCESS;
 }
 
-ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC)
+ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
 {
     WINDOWINFO wi;
     struct msg_hdr header;
@@ -314,7 +314,7 @@ ULONG SendWindowUnmap(IN HWND window)
 }
 
 // if watchedDC == 0, use the whole screen
-ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
+ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_map_info mapMsg;
@@ -376,7 +376,7 @@ ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL)
 }
 
 // if watchedDC == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL)
+ULONG SendWindowConfigure(IN const WINDOW_DATA *watchedDC OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_configure configureMsg;
