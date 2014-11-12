@@ -170,31 +170,32 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     return ERROR_SUCCESS;
 }
 
-ULONG RemoveWindow(IN OUT WINDOW_DATA *watchedDC)
+// Remove window from the list and free memory.
+ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
 {
     ULONG status;
 
-    if (!watchedDC)
+    if (!entry)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("window 0x%x", watchedDC->WindowHandle);
-    free(watchedDC->PfnArray);
+    LogDebug("window 0x%x", entry->WindowHandle);
+    free(entry->PfnArray);
 
     if (g_VchanClientConnected)
     {
-        status = SendWindowUnmap(watchedDC->WindowHandle);
+        status = SendWindowUnmap(entry->WindowHandle);
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowUnmap");
 
-        if (watchedDC->WindowHandle) // never destroy screen "window"
+        if (entry->WindowHandle) // never destroy screen "window"
         {
-            status = SendWindowDestroy(watchedDC->WindowHandle);
+            status = SendWindowDestroy(entry->WindowHandle);
             if (ERROR_SUCCESS != status)
                 return perror2(status, "SendWindowDestroy");
         }
     }
 
-    free(watchedDC);
+    free(entry);
 
     return ERROR_SUCCESS;
 }
@@ -274,6 +275,7 @@ static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
     return ERROR_SUCCESS;
 }
 
+// EnumWindows callback for adding all top-level windows to the list.
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
     WINDOWINFO wi = { 0 };
@@ -365,8 +367,8 @@ static ULONG AddAllWindows(void)
 // NOTE: this function doesn't close/reopen qvideo's screen section
 static ULONG ResetWatch(BOOL seamlessMode)
 {
-    WINDOW_DATA *watchedDC;
-    WINDOW_DATA *nextWatchedDC;
+    WINDOW_DATA *entry;
+    WINDOW_DATA *nextEntry;
     ULONG status;
 
     LogVerbose("start");
@@ -379,21 +381,21 @@ static ULONG ResetWatch(BOOL seamlessMode)
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
 
-    watchedDC = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
-    while (watchedDC != (WINDOW_DATA *) &g_WatchedWindowsList)
+    entry = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+    while (entry != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
-        nextWatchedDC = (WINDOW_DATA *) watchedDC->ListEntry.Flink;
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
+        nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        RemoveEntryList(&watchedDC->ListEntry);
-        status = RemoveWindow(watchedDC);
+        RemoveEntryList(&entry->ListEntry);
+        status = RemoveWindow(entry);
         if (ERROR_SUCCESS != status)
         {
             LeaveCriticalSection(&g_csWatchedWindows);
             return perror2(status, "RemoveWindow");
         }
 
-        watchedDC = nextWatchedDC;
+        entry = nextEntry;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
@@ -403,7 +405,6 @@ static ULONG ResetWatch(BOOL seamlessMode)
     status = ERROR_SUCCESS;
 
     // Only start hooks if we're in seamless mode.
-    // FIXME: this means we rely on qvideo's damage notifications in fullscreen
     // WatchForEvents will map the whole screen as one window.
     if (seamlessMode)
     {
@@ -510,8 +511,8 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
 
 // TODO: remove all this polling, handle changes in hook events
 ULONG CheckWatchedWindowUpdates(
-    IN OUT WINDOW_DATA *watchedDC,
-    IN const WINDOWINFO *windowInfo,
+    IN OUT WINDOW_DATA *entry,
+    IN const WINDOWINFO *windowInfo OPTIONAL,
     IN BOOL damageDetected,
     IN const RECT *damageArea
     )
@@ -524,49 +525,49 @@ ULONG CheckWatchedWindowUpdates(
     MODAL_SEARCH_PARAMS modalParams;
     ULONG status;
 
-    if (!watchedDC)
+    if (!entry)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("window 0x%x", watchedDC->WindowHandle);
+    LogDebug("window 0x%x", entry->WindowHandle);
 
     if (!windowInfo)
     {
         wi.cbSize = sizeof(wi);
-        if (!GetWindowInfo(watchedDC->WindowHandle, &wi))
+        if (!GetWindowInfo(entry->WindowHandle, &wi))
             return perror("GetWindowInfo");
     }
     else
         memcpy(&wi, windowInfo, sizeof(wi));
 
-    currentlyVisible = IsWindowVisible(watchedDC->WindowHandle);
+    currentlyVisible = IsWindowVisible(entry->WindowHandle);
     if (g_VchanClientConnected)
     {
         // visibility change
-        if (currentlyVisible && !watchedDC->IsVisible)
+        if (currentlyVisible && !entry->IsVisible)
         {
-            status = SendWindowMap(watchedDC);
+            status = SendWindowMap(entry);
             if (ERROR_SUCCESS != status)
                 return perror2(status, "SendWindowMap");
         }
 
-        if (!currentlyVisible && watchedDC->IsVisible)
+        if (!currentlyVisible && entry->IsVisible)
         {
-            status = SendWindowUnmap(watchedDC->WindowHandle);
+            status = SendWindowUnmap(entry->WindowHandle);
             if (ERROR_SUCCESS != status)
                 return perror2(status, "SendWindowUnmap");
         }
     }
 
-    if (!watchedDC->IsStyleChecked && (GetTickCount() >= watchedDC->TimeAdded + 500))
+    if (!entry->IsStyleChecked && (GetTickCount() >= entry->TimeAdded + 500))
     {
-        watchedDC->IsStyleChecked = TRUE;
+        entry->IsStyleChecked = TRUE;
 
         updateStyle = FALSE;
         if (wi.dwStyle & WS_MINIMIZEBOX)
         {
             wi.dwStyle &= ~WS_MINIMIZEBOX;
             updateStyle = TRUE;
-            DeleteMenu(GetSystemMenu(watchedDC->WindowHandle, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
+            DeleteMenu(GetSystemMenu(entry->WindowHandle, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
         }
 
         if (wi.dwStyle & WS_SIZEBOX)
@@ -577,17 +578,17 @@ ULONG CheckWatchedWindowUpdates(
 
         if (updateStyle)
         {
-            SetWindowLong(watchedDC->WindowHandle, GWL_STYLE, wi.dwStyle);
-            DrawMenuBar(watchedDC->WindowHandle);
+            SetWindowLong(entry->WindowHandle, GWL_STYLE, wi.dwStyle);
+            DrawMenuBar(entry->WindowHandle);
         }
     }
 
-    if ((wi.dwStyle & WS_DISABLED) && watchedDC->IsVisible && (GetTickCount() > watchedDC->TimeModalChecked + 500))
+    if ((wi.dwStyle & WS_DISABLED) && entry->IsVisible && (GetTickCount() > entry->TimeModalChecked + 500))
     {
         // possibly showing a modal window
-        watchedDC->TimeModalChecked = GetTickCount();
-        LogDebug("0x%x is WS_DISABLED, searching for modal window", watchedDC->WindowHandle);
-        modalParams.ParentWindow = watchedDC->WindowHandle;
+        entry->TimeModalChecked = GetTickCount();
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", entry->WindowHandle);
+        modalParams.ParentWindow = entry->WindowHandle;
         modalParams.ModalWindow = NULL;
 
         if (!EnumWindows(FindModalChildProc, (LPARAM) &modalParams))
@@ -599,7 +600,7 @@ ULONG CheckWatchedWindowUpdates(
             WINDOW_DATA *modalDc = FindWindowByHandle(modalParams.ModalWindow);
             if (modalDc && !modalDc->ModalParent)
             {
-                modalDc->ModalParent = watchedDC->WindowHandle;
+                modalDc->ModalParent = entry->WindowHandle;
                 status = SendWindowUnmap(modalDc->WindowHandle);
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowUnmap");
@@ -611,39 +612,39 @@ ULONG CheckWatchedWindowUpdates(
         }
     }
 
-    watchedDC->IsVisible = currentlyVisible;
+    entry->IsVisible = currentlyVisible;
 
-    if (IsIconic(watchedDC->WindowHandle))
+    if (IsIconic(entry->WindowHandle))
     {
-        if (!watchedDC->IsIconic)
+        if (!entry->IsIconic)
         {
-            LogDebug("0x%x IsIconic: minimizing", watchedDC->WindowHandle);
-            status = SendWindowFlags(watchedDC->WindowHandle, WINDOW_FLAG_MINIMIZE, 0);
+            LogDebug("0x%x IsIconic: minimizing", entry->WindowHandle);
+            status = SendWindowFlags(entry->WindowHandle, WINDOW_FLAG_MINIMIZE, 0);
             if (ERROR_SUCCESS != status)
                 return perror2(status, "SendWindowFlags");
-            watchedDC->IsIconic = TRUE;
+            entry->IsIconic = TRUE;
         }
         return ERROR_SUCCESS; // window is minimized, ignore everything else
     }
     else
     {
-        LogVerbose("0x%x not iconic", watchedDC->WindowHandle);
-        watchedDC->IsIconic = FALSE;
+        LogVerbose("0x%x not iconic", entry->WindowHandle);
+        entry->IsIconic = FALSE;
     }
 
-    moveDetected = wi.rcWindow.left != watchedDC->WindowRect.left ||
-        wi.rcWindow.top != watchedDC->WindowRect.top ||
-        wi.rcWindow.right != watchedDC->WindowRect.right ||
-        wi.rcWindow.bottom != watchedDC->WindowRect.bottom;
+    moveDetected = wi.rcWindow.left != entry->WindowRect.left ||
+        wi.rcWindow.top != entry->WindowRect.top ||
+        wi.rcWindow.right != entry->WindowRect.right ||
+        wi.rcWindow.bottom != entry->WindowRect.bottom;
 
     damageDetected |= moveDetected;
 
-    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != watchedDC->WindowRect.right - watchedDC->WindowRect.left) ||
-        (wi.rcWindow.bottom - wi.rcWindow.top != watchedDC->WindowRect.bottom - watchedDC->WindowRect.top);
+    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != entry->WindowRect.right - entry->WindowRect.left) ||
+        (wi.rcWindow.bottom - wi.rcWindow.top != entry->WindowRect.bottom - entry->WindowRect.top);
 
     if (damageDetected || resizeDetected)
     {
-        watchedDC->WindowRect = wi.rcWindow;
+        entry->WindowRect = wi.rcWindow;
 
         if (g_VchanClientConnected)
         {
@@ -651,30 +652,30 @@ ULONG CheckWatchedWindowUpdates(
 
             if (moveDetected || resizeDetected)
             {
-                status = SendWindowConfigure(watchedDC);
+                status = SendWindowConfigure(entry);
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowConfigure");
             }
 
             if (damageArea == NULL)
             { // assume the whole area changed
-                status = SendWindowDamageEvent(watchedDC->WindowHandle,
+                status = SendWindowDamageEvent(entry->WindowHandle,
                     0,
                     0,
-                    watchedDC->WindowRect.right - watchedDC->WindowRect.left,
-                    watchedDC->WindowRect.bottom - watchedDC->WindowRect.top);
+                    entry->WindowRect.right - entry->WindowRect.left,
+                    entry->WindowRect.bottom - entry->WindowRect.top);
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowDamageEvent");
             }
             else
             {
                 // send only intersection of damage area and window area
-                IntersectRect(&intersection, damageArea, &watchedDC->WindowRect);
-                status = SendWindowDamageEvent(watchedDC->WindowHandle,
-                    intersection.left - watchedDC->WindowRect.left,
-                    intersection.top - watchedDC->WindowRect.top,
-                    intersection.right - watchedDC->WindowRect.left,
-                    intersection.bottom - watchedDC->WindowRect.top);
+                IntersectRect(&intersection, damageArea, &entry->WindowRect);
+                status = SendWindowDamageEvent(entry->WindowHandle,
+                    intersection.left - entry->WindowRect.left,
+                    intersection.top - entry->WindowRect.top,
+                    intersection.right - entry->WindowRect.left,
+                    intersection.bottom - entry->WindowRect.top);
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowDamageEvent");
             }
@@ -722,8 +723,8 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
 // TODO: remove this, handle changes in hook events (what about fullscreen?)
 static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 {
-    WINDOW_DATA *watchedDC;
-    WINDOW_DATA *nextWatchedDC;
+    WINDOW_DATA *entry;
+    WINDOW_DATA *nextEntry;
     static BANNED_WINDOWS bannedWindows = { 0 };
     BOOL recheckWindows = FALSE;
     HWND oldDesktopWindow = g_DesktopWindow;
@@ -820,31 +821,31 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    watchedDC = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
-    while (watchedDC != (WINDOW_DATA *) &g_WatchedWindowsList)
+    entry = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+    while (entry != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
-        nextWatchedDC = (WINDOW_DATA *) watchedDC->ListEntry.Flink;
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
+        nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        if (!IsWindow(watchedDC->WindowHandle) || !ShouldAcceptWindow(watchedDC->WindowHandle, NULL))
+        if (!IsWindow(entry->WindowHandle) || !ShouldAcceptWindow(entry->WindowHandle, NULL))
         {
-            RemoveEntryList(&watchedDC->ListEntry);
-            RemoveWindow(watchedDC);
-            watchedDC = NULL;
+            RemoveEntryList(&entry->ListEntry);
+            RemoveWindow(entry);
+            entry = NULL;
         }
         else
         {
             if (g_UseDirtyBits)
             {
-                if (IntersectRect(&currentArea, &dirtyArea, &watchedDC->WindowRect))
+                if (IntersectRect(&currentArea, &dirtyArea, &entry->WindowRect))
                     // skip windows that aren't in the changed area
-                    CheckWatchedWindowUpdates(watchedDC, NULL, updateEverything, &dirtyArea);
+                    CheckWatchedWindowUpdates(entry, NULL, updateEverything, &dirtyArea);
             }
             else
-                CheckWatchedWindowUpdates(watchedDC, NULL, updateEverything, NULL);
+                CheckWatchedWindowUpdates(entry, NULL, updateEverything, NULL);
         }
 
-        watchedDC = nextWatchedDC;
+        entry = nextEntry;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
@@ -873,6 +874,7 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
+    // this sends notifications about current window state to gui daemon
     status = AddWindowWithInfo((HWND) qhm->WindowHandle, &wi, NULL);
     if (ERROR_SUCCESS != status)
         perror2(status, "AddWindowWithInfo");

@@ -97,7 +97,7 @@ typedef struct _MODAL_SEARCH_PARAMS
 
 ULONG CheckWatchedWindowUpdates(
     IN OUT WINDOW_DATA *watchedDC,
-    IN const WINDOWINFO *windowInfo,
+    IN const WINDOWINFO *windowInfo OPTIONAL,
     IN BOOL damageDetected,
     IN const RECT *damageArea
     );

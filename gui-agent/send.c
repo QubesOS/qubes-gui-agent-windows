@@ -13,8 +13,8 @@
 #include <strsafe.h>
 
 // Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
-// if watchedDC == NULL, get PFNs for the whole screen
-static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct shm_cmd **shmCmd)
+// if windowData == NULL, get PFNs for the whole screen
+static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct shm_cmd **shmCmd)
 {
     QV_GET_SURFACE_DATA_RESPONSE surfaceData;
     ULONG status;
@@ -32,7 +32,7 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct 
     *shmCmd = NULL;
     //debugf("start");
 
-    if (!watchedDC) // whole screen
+    if (!windowData) // whole screen
     {
         LogDebug("fullcreen capture");
 
@@ -54,18 +54,18 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct 
     }
     else
     {
-        width = watchedDC->WindowRect.right - watchedDC->WindowRect.left;
-        height = watchedDC->WindowRect.bottom - watchedDC->WindowRect.top;
+        width = windowData->WindowRect.right - windowData->WindowRect.left;
+        height = windowData->WindowRect.bottom - windowData->WindowRect.top;
         bpp = 32;
 
         isScreen = FALSE;
 
-        pfnArray = watchedDC->PfnArray;
+        pfnArray = windowData->PfnArray;
     }
 
     LogDebug("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", width, height, bpp,
-        watchedDC ? watchedDC->WindowRect.left : 0,
-        watchedDC ? watchedDC->WindowRect.top : 0, isScreen);
+        windowData ? windowData->WindowRect.left : 0,
+        windowData ? windowData->WindowRect.top : 0, isScreen);
 
     LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->NumberOf4kPages,
         pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
@@ -75,7 +75,7 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct 
     *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
     if (*shmCmd == NULL)
     {
-        LogError("Failed to allocate %d bytes for shm_cmd for window 0x%x\n", shmCmdSize, watchedDC ? watchedDC->WindowHandle : NULL);
+        LogError("Failed to allocate %d bytes for shm_cmd for window 0x%x\n", shmCmdSize, windowData ? windowData->WindowHandle : NULL);
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
@@ -90,14 +90,14 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *watchedDC OPTIONAL, OUT struct 
     for (i = 0; i < pfnArray->NumberOf4kPages; i++)
         (*shmCmd)->mfns[i] = (uint32_t) pfnArray->Pfn[i];
 
-    if (!watchedDC)
+    if (!windowData)
         free(pfnArray);
 
     //debugf("success");
     return ERROR_SUCCESS;
 }
 
-ULONG SendWindowMfns(IN const WINDOW_DATA *watchedDC)
+ULONG SendWindowMfns(IN const WINDOW_DATA *windowData)
 {
     ULONG status;
     struct shm_cmd *shmCmd = NULL;
@@ -106,10 +106,10 @@ ULONG SendWindowMfns(IN const WINDOW_DATA *watchedDC)
     HWND window = NULL;
 
     LogVerbose("start");
-    if (watchedDC)
-        window = watchedDC->WindowHandle;
+    if (windowData)
+        window = windowData->WindowHandle;
 
-    status = PrepareShmCmd(watchedDC, &shmCmd);
+    status = PrepareShmCmd(windowData, &shmCmd);
     if (ERROR_SUCCESS != status)
         return perror2(status, "PrepareShmCmd");
 
@@ -143,7 +143,7 @@ ULONG SendWindowMfns(IN const WINDOW_DATA *watchedDC)
     return ERROR_SUCCESS;
 }
 
-ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
+ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 {
     WINDOWINFO wi;
     struct msg_hdr header;
@@ -153,7 +153,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
 
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
-    if (watchedDC == NULL)
+    if (windowData == NULL)
     {
         QV_GET_SURFACE_DATA_RESPONSE surfaceData;
 
@@ -178,13 +178,13 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
     }
     else
     {
-        LogDebug("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", watchedDC->WindowHandle,
-            watchedDC->WindowRect.left, watchedDC->WindowRect.top,
-            watchedDC->WindowRect.right, watchedDC->WindowRect.bottom,
-            watchedDC->IsOverrideRedirect);
+        LogDebug("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", windowData->WindowHandle,
+            windowData->WindowRect.left, windowData->WindowRect.top,
+            windowData->WindowRect.right, windowData->WindowRect.bottom,
+            windowData->IsOverrideRedirect);
 
-        header.window = (uint32_t) watchedDC->WindowHandle;
-        wi.rcWindow = watchedDC->WindowRect;
+        header.window = (uint32_t) windowData->WindowHandle;
+        wi.rcWindow = windowData->WindowRect;
     }
 
     header.type = MSG_CREATE;
@@ -194,7 +194,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
     createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
     createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
     createMsg.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-    createMsg.override_redirect = watchedDC ? watchedDC->IsOverrideRedirect : FALSE;
+    createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
 
     EnterCriticalSection(&g_VchanCriticalSection);
     if (!VCHAN_SEND_MSG(header, createMsg))
@@ -204,16 +204,16 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *watchedDC)
     }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    if (watchedDC && watchedDC->IsVisible && !watchedDC->IsIconic)
+    if (windowData && windowData->IsVisible && !windowData->IsIconic)
     {
-        status = SendWindowMap(watchedDC);
+        status = SendWindowMap(windowData);
         if (ERROR_SUCCESS != status)
             return status;
     }
 
-    if (watchedDC)
+    if (windowData)
     {
-        status = SendWindowHints(watchedDC->WindowHandle, PPosition); // program-specified position
+        status = SendWindowHints(windowData->WindowHandle, PPosition); // program-specified position
         if (ERROR_SUCCESS != status)
             return status;
     }
@@ -313,32 +313,32 @@ ULONG SendWindowUnmap(IN HWND window)
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
 }
 
-// if watchedDC == 0, use the whole screen
-ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL)
+// if windowData == 0, use the whole screen
+ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_map_info mapMsg;
     ULONG status;
 
-    if (watchedDC)
-        LogInfo("Mapping window 0x%x\n", watchedDC->WindowHandle);
+    if (windowData)
+        LogInfo("Mapping window 0x%x\n", windowData->WindowHandle);
     else
         LogInfo("Mapping desktop window\n");
 
     header.type = MSG_MAP;
-    if (watchedDC)
-        header.window = (uint32_t) watchedDC->WindowHandle;
+    if (windowData)
+        header.window = (uint32_t) windowData->WindowHandle;
     else
         header.window = 0;
     header.untrusted_len = 0;
 
-    if (watchedDC && watchedDC->ModalParent)
-        mapMsg.transient_for = (uint32_t) watchedDC->ModalParent;
+    if (windowData && windowData->ModalParent)
+        mapMsg.transient_for = (uint32_t) windowData->ModalParent;
     else
         mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
 
-    if (watchedDC)
-        mapMsg.override_redirect = watchedDC->IsOverrideRedirect;
+    if (windowData)
+        mapMsg.override_redirect = windowData->IsOverrideRedirect;
     else
         mapMsg.override_redirect = 0;
 
@@ -351,9 +351,9 @@ ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL)
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
-    if (!watchedDC ||
-        (watchedDC->WindowRect.right - watchedDC->WindowRect.left == g_ScreenWidth &&
-        watchedDC->WindowRect.bottom - watchedDC->WindowRect.top == g_ScreenHeight))
+    if (!windowData ||
+        (windowData->WindowRect.right - windowData->WindowRect.left == g_ScreenWidth &&
+        windowData->WindowRect.bottom - windowData->WindowRect.top == g_ScreenHeight))
     {
         status = SendScreenHints(); // min/max screen size
         if (ERROR_SUCCESS != status)
@@ -366,7 +366,7 @@ ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL)
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             LogDebug("fullscreen window");
-            status = SendWindowFlags(watchedDC ? watchedDC->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+            status = SendWindowFlags(windowData ? windowData->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
             if (ERROR_SUCCESS != status)
                 return status;
         }
@@ -375,25 +375,25 @@ ULONG SendWindowMap(IN const WINDOW_DATA *watchedDC OPTIONAL)
     return ERROR_SUCCESS;
 }
 
-// if watchedDC == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WINDOW_DATA *watchedDC OPTIONAL)
+// if windowData == 0, use the whole screen
+ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 {
     struct msg_hdr header;
     struct msg_configure configureMsg;
     struct msg_map_info mapMsg;
     BOOL status;
 
-    if (watchedDC)
+    if (windowData)
     {
-        LogDebug("0x%x", watchedDC->WindowHandle);
-        header.window = (uint32_t) watchedDC->WindowHandle;
+        LogDebug("0x%x", windowData->WindowHandle);
+        header.window = (uint32_t) windowData->WindowHandle;
 
         header.type = MSG_CONFIGURE;
 
-        configureMsg.x = watchedDC->WindowRect.left;
-        configureMsg.y = watchedDC->WindowRect.top;
-        configureMsg.width = watchedDC->WindowRect.right - watchedDC->WindowRect.left;
-        configureMsg.height = watchedDC->WindowRect.bottom - watchedDC->WindowRect.top;
+        configureMsg.x = windowData->WindowRect.left;
+        configureMsg.y = windowData->WindowRect.top;
+        configureMsg.width = windowData->WindowRect.right - windowData->WindowRect.left;
+        configureMsg.height = windowData->WindowRect.bottom - windowData->WindowRect.top;
         configureMsg.override_redirect = 0;
     }
     else // whole screen
@@ -421,10 +421,10 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *watchedDC OPTIONAL)
             goto cleanup;
     }
 
-    if (watchedDC && watchedDC->IsVisible)
+    if (windowData && windowData->IsVisible)
     {
         mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
-        mapMsg.override_redirect = watchedDC->IsOverrideRedirect;
+        mapMsg.override_redirect = windowData->IsOverrideRedirect;
 
         header.type = MSG_MAP;
         status = VCHAN_SEND_MSG(header, mapMsg);
