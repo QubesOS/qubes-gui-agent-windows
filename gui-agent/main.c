@@ -91,8 +91,11 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
 
     ZeroMemory(entry, sizeof(WINDOW_DATA));
 
+    entry->WindowHandle = window;
+    entry->WindowRect = windowInfo->rcWindow;
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
+    GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption));
 
     entry->TimeModalChecked = GetTickCount();
 
@@ -136,9 +139,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
             g_ScreenWidth, g_ScreenHeight);
     }
 
-    entry->WindowHandle = window;
-    entry->WindowRect = windowInfo->rcWindow;
-
     entry->PfnArray = (PFN_ARRAY *) malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
     if (!entry->PfnArray)
     {
@@ -158,7 +158,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowCreate");
 
-        status = SendWindowName(window, NULL);
+        status = SendWindowName(window, entry->Caption);
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowName");
     }
@@ -849,7 +849,7 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
     return ERROR_SUCCESS;
 }
 
-// Hook event: window created. Add it to the window list.
+// Hook event: window created. Add it to the window list and send notification to gui daemon.
 static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
 {
     WINDOWINFO wi = { 0 };
@@ -879,6 +879,7 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
     return status;
 }
 
+// Hook event: window destroyed. Remove it from the window list and send notification to gui daemon.
 static ULONG HookDestroyWindow(IN const QH_MESSAGE *qhm)
 {
     WINDOW_DATA *windowEntry;

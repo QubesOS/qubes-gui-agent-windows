@@ -20,19 +20,19 @@ extern CRITICAL_SECTION g_csWatchedWindows;
 typedef struct _WINDOW_DATA
 {
     HWND WindowHandle;
-
     RECT WindowRect;
+    BOOL IsIconic;
+    BOOL IsVisible;
+    WCHAR Caption[256];
+
     LIST_ENTRY ListEntry;
 
-    BOOL IsVisible;
     BOOL IsOverrideRedirect;
     HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
     ULONG TimeModalChecked; // time of last check for modal window
 
     BOOL IsStyleChecked;
     ULONG TimeAdded;
-
-    BOOL IsIconic;
 
     LONG MaxWidth;
     LONG MaxHeight;
