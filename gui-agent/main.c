@@ -55,12 +55,12 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
 // watched windows critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULl if ignored).
 // Other errors mean fatal conditions.
-ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry)
+ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry OPTIONAL)
 {
     WINDOW_DATA *entry = NULL;
     ULONG status;
 
-    if (!windowInfo || !windowEntry)
+    if (!windowInfo)
         return ERROR_INVALID_PARAMETER;
 
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
@@ -70,7 +70,8 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry = FindWindowByHandle(window);
     if (entry) // already in list
     {
-        *windowEntry = entry;
+        if (windowEntry)
+            *windowEntry = entry;
         return ERROR_SUCCESS;
     }
 
@@ -78,7 +79,8 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if ((windowInfo->rcWindow.top - windowInfo->rcWindow.bottom == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
     {
         LogDebug("window rectangle is empty");
-        *windowEntry = NULL;
+        if (windowEntry)
+            *windowEntry = NULL;
         return ERROR_SUCCESS;
     }
 
@@ -163,7 +165,8 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
             return perror2(status, "SendWindowName");
     }
 
-    *windowEntry = entry;
+    if (windowEntry)
+        *windowEntry = entry;
     return ERROR_SUCCESS;
 }
 

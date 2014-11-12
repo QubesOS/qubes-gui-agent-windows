@@ -114,7 +114,7 @@ WINDOW_DATA *FindWindowByHandle(
 ULONG AddWindowWithInfo(
     IN HWND hWnd,
     IN const WINDOWINFO *windowInfo,
-    OUT WINDOW_DATA **windowEntry
+    OUT WINDOW_DATA **windowEntry OPTIONAL
     );
 
 ULONG RemoveWindow(WINDOW_DATA *pWatchedDC);
