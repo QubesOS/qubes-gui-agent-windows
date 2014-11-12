@@ -931,9 +931,26 @@ static ULONG HookActivateWindow(IN const QH_MESSAGE *qhm)
 // window text changed
 static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
 {
-    LogVerbose("%x '%s'", qhm->WindowHandle, qhm->Caption);
+    WINDOW_DATA *entry;
 
-    return SendWindowName((HWND) qhm->WindowHandle, qhm->Caption);
+    LogVerbose("0x%x '%s'", qhm->WindowHandle, qhm->Caption);
+
+    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
+    if (!entry)
+    {
+        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
+        return ERROR_SUCCESS;
+    }
+
+    if (0 == wcscmp(entry->Caption, qhm->Caption))
+    {
+        // caption not changed
+        return ERROR_SUCCESS;
+    }
+
+    StringCchCopy(entry->Caption, RTL_NUMBER_OF(entry->Caption), qhm->Caption);
+
+    return SendWindowName((HWND) qhm->WindowHandle, entry->Caption);
 }
 
 // Process events from hooks.
