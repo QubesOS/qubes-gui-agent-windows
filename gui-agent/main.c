@@ -94,7 +94,10 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     ZeroMemory(entry, sizeof(WINDOW_DATA));
 
     entry->WindowHandle = window;
-    entry->WindowRect = windowInfo->rcWindow;
+    entry->X = windowInfo->rcWindow.left;
+    entry->Y = windowInfo->rcWindow.top;
+    entry->Width = windowInfo->rcWindow.right - windowInfo->rcWindow.left;
+    entry->Height = windowInfo->rcWindow.bottom - windowInfo->rcWindow.top;
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
     GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption));
@@ -105,13 +108,10 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
 
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
-    if (windowInfo->rcWindow.right - windowInfo->rcWindow.left == g_ScreenWidth
-        && windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == g_ScreenHeight)
+    if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
     {
         LogDebug("popup too large: %dx%d, screen %dx%d",
-            windowInfo->rcWindow.right - windowInfo->rcWindow.left,
-            windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
-            g_ScreenWidth, g_ScreenHeight);
+            entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
         entry->IsOverrideRedirect = FALSE;
     }
     else
@@ -632,23 +632,26 @@ ULONG CheckWatchedWindowUpdates(
         entry->IsIconic = FALSE;
     }
 
-    moveDetected = wi.rcWindow.left != entry->WindowRect.left ||
-        wi.rcWindow.top != entry->WindowRect.top ||
-        wi.rcWindow.right != entry->WindowRect.right ||
-        wi.rcWindow.bottom != entry->WindowRect.bottom;
+    moveDetected = wi.rcWindow.left != entry->X ||
+        wi.rcWindow.top != entry->Y ||
+        wi.rcWindow.right != entry->X + entry->Width ||
+        wi.rcWindow.bottom != entry->Y + entry->Height;
 
     damageDetected |= moveDetected;
 
-    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != entry->WindowRect.right - entry->WindowRect.left) ||
-        (wi.rcWindow.bottom - wi.rcWindow.top != entry->WindowRect.bottom - entry->WindowRect.top);
+    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != entry->Width) ||
+        (wi.rcWindow.bottom - wi.rcWindow.top != entry->Height);
 
     if (damageDetected || resizeDetected)
     {
-        entry->WindowRect = wi.rcWindow;
+        entry->X = wi.rcWindow.left;
+        entry->Y = wi.rcWindow.top;
+        entry->Width = wi.rcWindow.right - wi.rcWindow.left;
+        entry->Height = wi.rcWindow.bottom - wi.rcWindow.top;
 
         if (g_VchanClientConnected)
         {
-            RECT intersection;
+            RECT intersection, entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
 
             if (moveDetected || resizeDetected)
             {
@@ -660,22 +663,20 @@ ULONG CheckWatchedWindowUpdates(
             if (damageArea == NULL)
             { // assume the whole area changed
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                    0,
-                    0,
-                    entry->WindowRect.right - entry->WindowRect.left,
-                    entry->WindowRect.bottom - entry->WindowRect.top);
+                    0, 0, entry->Width, entry->Height);
+
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowDamageEvent");
             }
             else
             {
                 // send only intersection of damage area and window area
-                IntersectRect(&intersection, damageArea, &entry->WindowRect);
+                IntersectRect(&intersection, damageArea, &entryRect);
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                    intersection.left - entry->WindowRect.left,
-                    intersection.top - entry->WindowRect.top,
-                    intersection.right - entry->WindowRect.left,
-                    intersection.bottom - entry->WindowRect.top);
+                    intersection.left - entry->X,
+                    intersection.top - entry->Y,
+                    intersection.right - entry->X,
+                    intersection.bottom - entry->Y);
                 if (ERROR_SUCCESS != status)
                     return perror2(status, "SendWindowDamageEvent");
             }
@@ -837,7 +838,9 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         {
             if (g_UseDirtyBits)
             {
-                if (IntersectRect(&currentArea, &dirtyArea, &entry->WindowRect))
+                RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+
+                if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
                     // skip windows that aren't in the changed area
                     CheckWatchedWindowUpdates(entry, NULL, updateEverything, &dirtyArea);
             }
@@ -953,6 +956,79 @@ static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
     return SendWindowName((HWND) qhm->WindowHandle, entry->Caption);
 }
 
+// window shown/hidden
+static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
+{
+    WINDOW_DATA *entry;
+    BOOL updateNeeded = FALSE;
+    ULONG status;
+
+    LogVerbose("0x%x (%d,%d) %dx%d, flags 0x%x", qhm->WindowHandle, qhm->X, qhm->Y, qhm->Width, qhm->Height, qhm->Flags);
+
+    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
+    if (!entry)
+    {
+        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
+        return ERROR_SUCCESS;
+    }
+
+    // TODO: test various flag combinations, I've seen messages with both SWP_HIDEWINDOW and SWP_SHOWWINDOW...
+    if (qhm->Flags & SWP_HIDEWINDOW) // hides the window
+    {
+        if (!entry->IsVisible) // already hidden
+        {
+            LogVerbose("window 0x%x already hidden", qhm->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsVisible = FALSE;
+        return SendWindowUnmap((HWND) qhm->WindowHandle);
+    }
+
+    if (qhm->Flags & SWP_SHOWWINDOW) // shows the window
+    {
+        if (entry->IsVisible) // already visible
+        {
+            LogVerbose("window 0x%x already visible", qhm->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsVisible = TRUE;
+        return SendWindowMap(entry);
+    }
+
+    if (!(qhm->Flags & SWP_NOMOVE)) // window moved
+    {
+        if (qhm->X == entry->X && qhm->Y == entry->Y) // same position
+        {
+            LogVerbose("window 0x%x position not changed (%d,%d)", qhm->WindowHandle, qhm->X, qhm->Y);
+            return ERROR_SUCCESS;
+        }
+
+        entry->X = qhm->X;
+        entry->Y = qhm->Y;
+        updateNeeded = TRUE;
+    }
+
+    if (!(qhm->Flags & SWP_NOSIZE)) // window resized
+    {
+        if (qhm->Width == entry->Width && qhm->Height == entry->Height) // same size
+        {
+            LogVerbose("window 0x%x size not changed (%dx%d)", qhm->WindowHandle, qhm->Width, qhm->Height);
+            return ERROR_SUCCESS;
+        }
+
+        entry->Width = qhm->Width;
+        entry->Height = qhm->Height;
+        updateNeeded = TRUE;
+    }
+
+    if (updateNeeded)
+        return SendWindowConfigure(entry);
+
+    return ERROR_SUCCESS;
+}
+
 // Process events from hooks.
 // Updates watched windows state.
 static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
@@ -994,6 +1070,10 @@ static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncStat
 
     case WM_SETTEXT:
         status = HookSetWindowText(qhm);
+        break;
+
+    case WM_SHOWWINDOW:
+        status = HookShowWindow(qhm);
         break;
 
     default:

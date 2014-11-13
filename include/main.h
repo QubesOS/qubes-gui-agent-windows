@@ -20,10 +20,13 @@ extern CRITICAL_SECTION g_csWatchedWindows;
 typedef struct _WINDOW_DATA
 {
     HWND WindowHandle;
-    RECT WindowRect;
     BOOL IsIconic;
     BOOL IsVisible;
     WCHAR Caption[256];
+    int X;
+    int Y;
+    int Width;
+    int Height;
 
     LIST_ENTRY ListEntry;
 

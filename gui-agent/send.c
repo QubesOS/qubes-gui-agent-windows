@@ -54,8 +54,8 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     }
     else
     {
-        width = windowData->WindowRect.right - windowData->WindowRect.left;
-        height = windowData->WindowRect.bottom - windowData->WindowRect.top;
+        width = windowData->Width;
+        height = windowData->Height;
         bpp = 32;
 
         isScreen = FALSE;
@@ -64,8 +64,8 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     }
 
     LogDebug("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", width, height, bpp,
-        windowData ? windowData->WindowRect.left : 0,
-        windowData ? windowData->WindowRect.top : 0, isScreen);
+        windowData ? windowData->X : 0,
+        windowData ? windowData->Y : 0, isScreen);
 
     LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->NumberOf4kPages,
         pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
@@ -178,13 +178,15 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     }
     else
     {
-        LogDebug("hwnd=0x%x, (%d,%d)-(%d,%d), override=%d", windowData->WindowHandle,
-            windowData->WindowRect.left, windowData->WindowRect.top,
-            windowData->WindowRect.right, windowData->WindowRect.bottom,
+        LogDebug("hwnd=0x%x, (%d,%d) %dx%d, override=%d", windowData->WindowHandle,
+            windowData->X, windowData->Y, windowData->Width, windowData->Height,
             windowData->IsOverrideRedirect);
 
         header.window = (uint32_t) windowData->WindowHandle;
-        wi.rcWindow = windowData->WindowRect;
+        wi.rcWindow.left = windowData->X;
+        wi.rcWindow.top = windowData->Y;
+        wi.rcWindow.right = windowData->X + windowData->Width;
+        wi.rcWindow.bottom = windowData->Y + windowData->Height;
     }
 
     header.type = MSG_CREATE;
@@ -351,9 +353,7 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     // if the window takes the whole screen (like logon window), try to make it fullscreen in dom0
-    if (!windowData ||
-        (windowData->WindowRect.right - windowData->WindowRect.left == g_ScreenWidth &&
-        windowData->WindowRect.bottom - windowData->WindowRect.top == g_ScreenHeight))
+    if (!windowData || (windowData->Width == g_ScreenWidth && windowData->Height == g_ScreenHeight))
     {
         status = SendScreenHints(); // min/max screen size
         if (ERROR_SUCCESS != status)
@@ -390,10 +390,10 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 
         header.type = MSG_CONFIGURE;
 
-        configureMsg.x = windowData->WindowRect.left;
-        configureMsg.y = windowData->WindowRect.top;
-        configureMsg.width = windowData->WindowRect.right - windowData->WindowRect.left;
-        configureMsg.height = windowData->WindowRect.bottom - windowData->WindowRect.top;
+        configureMsg.x = windowData->X;
+        configureMsg.y = windowData->Y;
+        configureMsg.width = windowData->Width;
+        configureMsg.height = windowData->Height;
         configureMsg.override_redirect = 0;
     }
     else // whole screen
