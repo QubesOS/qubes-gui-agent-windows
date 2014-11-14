@@ -105,6 +105,11 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         SendMsg(qhm);
         break;
 
+    case WM_SIZE:
+        // wParam is SIZE_MAXIMIZED/SIZE_MINIMIZED/SIZE_RESTORED
+        SendMsg(qhm);
+        break;
+
     case WM_STYLECHANGED:
         // gui agent's handler will still need to check wParam...
         if (qhm->wParam == GWL_STYLE)

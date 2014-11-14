@@ -956,12 +956,11 @@ static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
     return SendWindowName((HWND) qhm->WindowHandle, entry->Caption);
 }
 
-// window shown/hidden
+// window shown/hidden/moved/resized
 static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
 {
     WINDOW_DATA *entry;
     BOOL updateNeeded = FALSE;
-    ULONG status;
 
     LogVerbose("0x%x (%d,%d) %dx%d, flags 0x%x", qhm->WindowHandle, qhm->X, qhm->Y, qhm->Width, qhm->Height, qhm->Flags);
 
@@ -1029,6 +1028,53 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
     return ERROR_SUCCESS;
 }
 
+// window minimized/maximized/restored
+static ULONG HookSizeWindow(IN const QH_MESSAGE *qhm)
+{
+    WINDOW_DATA *entry;
+    BOOL updateNeeded = FALSE;
+
+    LogVerbose("0x%x, flag 0x%x", qhm->WindowHandle, qhm->wParam);
+
+    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
+    if (!entry)
+    {
+        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
+        return ERROR_SUCCESS;
+    }
+
+    // we only care about minimized state here, resizing is handled by WM_SHOWWINDOW
+    switch (qhm->wParam)
+    {
+    case SIZE_MINIMIZED:
+        if (entry->IsIconic) // already minimized
+        {
+            LogVerbose("window 0x%x already iconic", entry->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsIconic = TRUE;
+
+        LogDebug("minimizing 0x%x", entry->WindowHandle);
+        return SendWindowFlags(entry->WindowHandle, WINDOW_FLAG_MINIMIZE, 0);
+
+    case SIZE_MAXIMIZED:
+    case SIZE_RESTORED:
+        if (!entry->IsIconic) // already not minimized
+        {
+            LogVerbose("window 0x%x not iconic", qhm->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsIconic = FALSE;
+
+        LogDebug("restoring 0x%x", entry->WindowHandle);
+        return SendWindowFlags(entry->WindowHandle, 0, WINDOW_FLAG_MINIMIZE);
+    }
+
+    return ERROR_SUCCESS;
+}
+
 // Process events from hooks.
 // Updates watched windows state.
 static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
@@ -1075,6 +1121,9 @@ static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncStat
     case WM_SHOWWINDOW:
         status = HookShowWindow(qhm);
         break;
+
+    case WM_SIZE:
+        status = HookSizeWindow(qhm);
 
     default:
         break;
