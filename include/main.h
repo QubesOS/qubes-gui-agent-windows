@@ -37,8 +37,6 @@ typedef struct _WINDOW_DATA
     BOOL IsStyleChecked;
     ULONG TimeAdded;
 
-    LONG MaxWidth;
-    LONG MaxHeight;
     PFN_ARRAY *PfnArray;
 } WINDOW_DATA;
 

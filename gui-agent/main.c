@@ -100,7 +100,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry->Height = windowInfo->rcWindow.bottom - windowInfo->rcWindow.top;
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
-    GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption));
+    GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
 
     entry->TimeModalChecked = GetTickCount();
 
@@ -147,9 +147,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
         LogError("Failed to malloc PFN array");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
-
-    entry->MaxWidth = g_ScreenWidth;
-    entry->MaxHeight = g_ScreenHeight;
 
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
 
