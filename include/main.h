@@ -97,7 +97,7 @@ typedef struct _MODAL_SEARCH_PARAMS
 }
 
 ULONG CheckWatchedWindowUpdates(
-    IN OUT WINDOW_DATA *watchedDC,
+    IN OUT WINDOW_DATA *entry,
     IN const WINDOWINFO *windowInfo OPTIONAL,
     IN BOOL damageDetected,
     IN const RECT *damageArea
@@ -109,16 +109,16 @@ BOOL ShouldAcceptWindow(
     );
 
 WINDOW_DATA *FindWindowByHandle(
-    HWND hWnd
+    HWND window
     );
 
 ULONG AddWindowWithInfo(
-    IN HWND hWnd,
+    IN HWND window,
     IN const WINDOWINFO *windowInfo,
     OUT WINDOW_DATA **windowEntry OPTIONAL
     );
 
-ULONG RemoveWindow(WINDOW_DATA *pWatchedDC);
+ULONG RemoveWindow(WINDOW_DATA *entry);
 
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(
