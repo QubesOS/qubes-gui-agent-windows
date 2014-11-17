@@ -52,7 +52,7 @@ HANDLE g_ShutdownEvent = NULL;
 
 static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
 
-// watched windows critical section must be entered
+// watched windows list critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULl if ignored).
 // Other errors mean fatal conditions.
 ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry OPTIONAL)
@@ -168,6 +168,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
 }
 
 // Remove window from the list and free memory.
+// Watched windows list critical section must be entered.
 ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
 {
     ULONG status;
@@ -176,6 +177,9 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
         return ERROR_INVALID_PARAMETER;
 
     LogDebug("window 0x%x", entry->WindowHandle);
+
+    RemoveEntryList(&entry->ListEntry);
+
     free(entry->PfnArray);
 
     if (g_VchanClientConnected)
@@ -384,7 +388,6 @@ static ULONG ResetWatch(BOOL seamlessMode)
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        RemoveEntryList(&entry->ListEntry);
         status = RemoveWindow(entry);
         if (ERROR_SUCCESS != status)
         {
@@ -827,7 +830,6 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 
         if (!IsWindow(entry->WindowHandle) || !ShouldAcceptWindow(entry->WindowHandle, NULL))
         {
-            RemoveEntryList(&entry->ListEntry);
             RemoveWindow(entry);
             entry = NULL;
         }
