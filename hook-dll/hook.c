@@ -111,11 +111,11 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         break;
 
     case WM_STYLECHANGED:
-        // gui agent's handler will still need to check wParam...
+        qhm->Style = ss->styleNew;
         if (qhm->wParam == GWL_STYLE)
-            qhm->Style = ss->styleNew;
+            qhm->ExStyle = FALSE;
         else if (qhm->wParam == GWL_EXSTYLE)
-            qhm->ExStyle = ss->styleNew;
+            qhm->ExStyle = TRUE;
         else
         {
             OutputDebugString(L"QHook: WM_STYLECHANGED unknown wParam");

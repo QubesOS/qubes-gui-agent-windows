@@ -26,7 +26,7 @@ typedef struct _QH_MESSAGE
     int Width;
     int Height;
     UINT32 Style;
-    UINT32 ExStyle;
+    BOOL ExStyle; // if true, Style field contains an extended window style
     UINT64 ParentWindowHandle;
     WCHAR Caption[256];
 } QH_MESSAGE;

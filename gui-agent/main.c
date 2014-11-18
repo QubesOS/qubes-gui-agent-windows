@@ -647,7 +647,6 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
                     perror2(status, "SendWindowDamageEvent");
                     goto cleanup;
                 }
-
             }
         }
 
@@ -879,6 +878,60 @@ static ULONG HookSizeWindow(IN const QH_MESSAGE *qhm)
     return ERROR_SUCCESS;
 }
 
+// window style changed
+static ULONG HookStyleChanged(IN const QH_MESSAGE *qhm)
+{
+    WINDOW_DATA *entry;
+    MODAL_SEARCH_PARAMS modalParams = { 0 };
+    ULONG status;
+
+    LogVerbose("0x%x: %s 0x%x", qhm->WindowHandle, qhm->ExStyle ? L"ExStyle" : L"Style", qhm->Style);
+
+    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
+    if (!entry)
+    {
+        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
+        return ERROR_SUCCESS;
+    }
+
+    if (!entry->IsVisible)
+        return ERROR_SUCCESS;
+
+    if (!qhm->ExStyle && (qhm->Style & WS_DISABLED))
+    {
+        // possibly showing a modal window
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", entry->WindowHandle);
+        modalParams.ParentWindow = entry->WindowHandle;
+        modalParams.ModalWindow = NULL;
+
+        if (!EnumWindows(FindModalChildProc, (LPARAM) &modalParams))
+            return perror("EnumWindows");
+
+        LogDebug("result: 0x%x", modalParams.ModalWindow);
+        if (modalParams.ModalWindow) // found a modal "child"
+        {
+            WINDOW_DATA *modalWindow = FindWindowByHandle(modalParams.ModalWindow);
+            if (modalWindow && !modalWindow->ModalParent)
+            {
+                // need to toggle map since this is the only way to change modal status for gui daemon
+                modalWindow->ModalParent = entry->WindowHandle;
+                status = SendWindowUnmap(modalWindow->WindowHandle);
+                if (ERROR_SUCCESS != status)
+                    return perror2(status, "SendWindowUnmap");
+
+                status = SendWindowMap(modalWindow);
+                if (ERROR_SUCCESS != status)
+                    return perror2(status, "SendWindowMap");
+            }
+        }
+    }
+
+    // FIXME: handle the opposite case?
+    // In theory it shouldn't happen, window is modal until it's destroyed...
+
+    return ERROR_SUCCESS;
+}
+
 // Process events from hooks.
 // Updates watched windows state.
 static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
@@ -928,12 +981,15 @@ static ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncStat
 
     case WM_SIZE:
         status = HookSizeWindow(qhm);
+        break;
+
+    case WM_STYLECHANGED:
+        status = HookStyleChanged(qhm);
+        break;
 
     default:
         break;
     }
-
-    // TODO
 
     return status;
 }
