@@ -151,6 +151,9 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     PFN_ARRAY *pfnArray = NULL;
     ULONG status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     wi.cbSize = sizeof(wi);
     /* special case for full screen */
     if (windowData == NULL)
@@ -228,6 +231,9 @@ ULONG SendWindowDestroy(IN HWND window)
     struct msg_hdr header;
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     LogDebug("0x%x", window);
     header.type = MSG_DESTROY;
     header.window = (uint32_t) window;
@@ -244,6 +250,9 @@ ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsT
     struct msg_hdr header;
     struct msg_window_flags flags;
     BOOL status;
+
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
 
     LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsToSet, flagsToUnset);
     header.type = MSG_WINDOW_FLAGS;
@@ -264,6 +273,9 @@ ULONG SendWindowHints(IN HWND window, IN uint32_t flags)
     struct msg_window_hints hintsMsg = { 0 };
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     hintsMsg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
 
@@ -282,6 +294,9 @@ ULONG SendScreenHints(void)
     struct msg_hdr header;
     struct msg_window_hints hintsMsg = { 0 };
     BOOL status;
+
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
 
     hintsMsg.flags = PMinSize; // minimum size
     hintsMsg.min_width = MIN_RESOLUTION_WIDTH;
@@ -303,6 +318,9 @@ ULONG SendWindowUnmap(IN HWND window)
     struct msg_hdr header;
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     LogInfo("Unmapping window 0x%x\n", window);
 
     header.type = MSG_UNMAP;
@@ -321,6 +339,9 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
     struct msg_hdr header;
     struct msg_map_info mapMsg;
     ULONG status;
+
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
 
     if (windowData)
         LogInfo("Mapping window 0x%x\n", windowData->WindowHandle);
@@ -383,6 +404,9 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
     struct msg_map_info mapMsg;
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     if (windowData)
     {
         LogDebug("0x%x", windowData->WindowHandle);
@@ -442,6 +466,9 @@ ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 h
     struct msg_configure configMsg;
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     LogDebug("(%d,%d) %dx%d", x, y, width, height);
     header.window = 0; // 0 = screen
 
@@ -466,6 +493,9 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
     struct msg_hdr header;
     BOOL status;
 
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
+
     LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
     header.type = MSG_SHMIMAGE;
     header.window = (uint32_t) window;
@@ -485,6 +515,9 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
     struct msg_hdr header;
     struct msg_wmname nameMsg;
     BOOL status;
+
+    if (!g_VchanClientConnected)
+        return ERROR_SUCCESS;
 
     if (window)
     {
