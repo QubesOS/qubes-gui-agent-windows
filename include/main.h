@@ -96,13 +96,6 @@ typedef struct _MODAL_SEARCH_PARAMS
     _EX_ListHead->Blink = (Entry); \
 }
 
-ULONG CheckWatchedWindowUpdates(
-    IN OUT WINDOW_DATA *entry,
-    IN const WINDOWINFO *windowInfo OPTIONAL,
-    IN BOOL damageDetected,
-    IN const RECT *damageArea
-    );
-
 BOOL ShouldAcceptWindow(
     IN HWND window,
     IN const WINDOWINFO *pwi OPTIONAL

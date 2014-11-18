@@ -496,186 +496,8 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
         return TRUE;
 
     msp->ModalWindow = hwnd;
-    LogVerbose("0x%x: seems OK", hwnd);
+    LogVerbose("0x%x: seems OK for 0x%x", hwnd, msp->ParentWindow);
     return FALSE; // stop enumeration
-}
-
-// TODO: remove all this polling, handle changes in hook events
-ULONG CheckWatchedWindowUpdates(
-    IN OUT WINDOW_DATA *entry,
-    IN const WINDOWINFO *windowInfo OPTIONAL,
-    IN BOOL damageDetected,
-    IN const RECT *damageArea
-    )
-{
-    WINDOWINFO wi;
-    BOOL resizeDetected;
-    BOOL moveDetected;
-    BOOL currentlyVisible;
-    BOOL updateStyle;
-    MODAL_SEARCH_PARAMS modalParams;
-    ULONG status;
-
-    if (!entry)
-        return ERROR_INVALID_PARAMETER;
-
-    LogDebug("window 0x%x", entry->WindowHandle);
-
-    if (!windowInfo)
-    {
-        wi.cbSize = sizeof(wi);
-        if (!GetWindowInfo(entry->WindowHandle, &wi))
-            return perror("GetWindowInfo");
-    }
-    else
-        memcpy(&wi, windowInfo, sizeof(wi));
-
-    currentlyVisible = IsWindowVisible(entry->WindowHandle);
-    if (g_VchanClientConnected)
-    {
-        // visibility change
-        if (currentlyVisible && !entry->IsVisible)
-        {
-            status = SendWindowMap(entry);
-            if (ERROR_SUCCESS != status)
-                return perror2(status, "SendWindowMap");
-        }
-
-        if (!currentlyVisible && entry->IsVisible)
-        {
-            status = SendWindowUnmap(entry->WindowHandle);
-            if (ERROR_SUCCESS != status)
-                return perror2(status, "SendWindowUnmap");
-        }
-    }
-
-    if (!entry->IsStyleChecked && (GetTickCount() >= entry->TimeAdded + 500))
-    {
-        entry->IsStyleChecked = TRUE;
-
-        updateStyle = FALSE;
-        if (wi.dwStyle & WS_MINIMIZEBOX)
-        {
-            wi.dwStyle &= ~WS_MINIMIZEBOX;
-            updateStyle = TRUE;
-            DeleteMenu(GetSystemMenu(entry->WindowHandle, FALSE), SC_MINIMIZE, MF_BYCOMMAND);
-        }
-
-        if (wi.dwStyle & WS_SIZEBOX)
-        {
-            wi.dwStyle &= ~WS_SIZEBOX;
-            updateStyle = TRUE;
-        }
-
-        if (updateStyle)
-        {
-            SetWindowLong(entry->WindowHandle, GWL_STYLE, wi.dwStyle);
-            DrawMenuBar(entry->WindowHandle);
-        }
-    }
-
-    if ((wi.dwStyle & WS_DISABLED) && entry->IsVisible && (GetTickCount() > entry->TimeModalChecked + 500))
-    {
-        // possibly showing a modal window
-        entry->TimeModalChecked = GetTickCount();
-        LogDebug("0x%x is WS_DISABLED, searching for modal window", entry->WindowHandle);
-        modalParams.ParentWindow = entry->WindowHandle;
-        modalParams.ModalWindow = NULL;
-
-        if (!EnumWindows(FindModalChildProc, (LPARAM) &modalParams))
-            return perror("EnumWindows");
-
-        LogDebug("result: 0x%x", modalParams.ModalWindow);
-        if (modalParams.ModalWindow) // found a modal "child"
-        {
-            WINDOW_DATA *modalDc = FindWindowByHandle(modalParams.ModalWindow);
-            if (modalDc && !modalDc->ModalParent)
-            {
-                modalDc->ModalParent = entry->WindowHandle;
-                status = SendWindowUnmap(modalDc->WindowHandle);
-                if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowUnmap");
-
-                status = SendWindowMap(modalDc);
-                if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowMap");
-            }
-        }
-    }
-
-    entry->IsVisible = currentlyVisible;
-
-    if (IsIconic(entry->WindowHandle))
-    {
-        if (!entry->IsIconic)
-        {
-            LogDebug("0x%x IsIconic: minimizing", entry->WindowHandle);
-            status = SendWindowFlags(entry->WindowHandle, WINDOW_FLAG_MINIMIZE, 0);
-            if (ERROR_SUCCESS != status)
-                return perror2(status, "SendWindowFlags");
-            entry->IsIconic = TRUE;
-        }
-        return ERROR_SUCCESS; // window is minimized, ignore everything else
-    }
-    else
-    {
-        LogVerbose("0x%x not iconic", entry->WindowHandle);
-        entry->IsIconic = FALSE;
-    }
-
-    moveDetected = wi.rcWindow.left != entry->X ||
-        wi.rcWindow.top != entry->Y ||
-        wi.rcWindow.right != entry->X + entry->Width ||
-        wi.rcWindow.bottom != entry->Y + entry->Height;
-
-    damageDetected |= moveDetected;
-
-    resizeDetected = (wi.rcWindow.right - wi.rcWindow.left != entry->Width) ||
-        (wi.rcWindow.bottom - wi.rcWindow.top != entry->Height);
-
-    if (damageDetected || resizeDetected)
-    {
-        entry->X = wi.rcWindow.left;
-        entry->Y = wi.rcWindow.top;
-        entry->Width = wi.rcWindow.right - wi.rcWindow.left;
-        entry->Height = wi.rcWindow.bottom - wi.rcWindow.top;
-
-        if (g_VchanClientConnected)
-        {
-            RECT intersection, entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
-
-            if (moveDetected || resizeDetected)
-            {
-                status = SendWindowConfigure(entry);
-                if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowConfigure");
-            }
-
-            if (damageArea == NULL)
-            { // assume the whole area changed
-                status = SendWindowDamageEvent(entry->WindowHandle,
-                    0, 0, entry->Width, entry->Height);
-
-                if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowDamageEvent");
-            }
-            else
-            {
-                // send only intersection of damage area and window area
-                IntersectRect(&intersection, damageArea, &entryRect);
-                status = SendWindowDamageEvent(entry->WindowHandle,
-                    intersection.left - entry->X,
-                    intersection.top - entry->Y,
-                    intersection.right - entry->X,
-                    intersection.bottom - entry->Y);
-                if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowDamageEvent");
-            }
-        }
-    }
-
-    //debugf("success");
-    return ERROR_SUCCESS;
 }
 
 BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL)
@@ -717,12 +539,12 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
-    static BANNED_WINDOWS bannedWindows = { 0 };
     BOOL recheckWindows = FALSE;
     HWND oldDesktopWindow = g_DesktopWindow;
     ULONG totalPages, page, dirtyPages = 0;
     RECT dirtyArea, currentArea;
     BOOL first = TRUE;
+    ULONG status = ERROR_SUCCESS;
 
     if (g_UseDirtyBits)
     {
@@ -764,38 +586,6 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         DisableEffects();
     }
 
-    if (!bannedWindows.Explorer || recheckWindows || !IsWindow(bannedWindows.Explorer))
-        bannedWindows.Explorer = FindWindow(NULL, L"Program Manager");
-
-    if (!bannedWindows.Taskbar || recheckWindows || !IsWindow(bannedWindows.Taskbar))
-    {
-        bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
-
-        if (bannedWindows.Taskbar)
-        {
-            if (g_SeamlessMode)
-                ShowWindow(bannedWindows.Taskbar, SW_HIDE);
-            else
-                ShowWindow(bannedWindows.Taskbar, SW_SHOW);
-        }
-    }
-
-    if (!bannedWindows.Start || recheckWindows || !IsWindow(bannedWindows.Start))
-    {
-        bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
-
-        if (bannedWindows.Start)
-        {
-            if (g_SeamlessMode)
-                ShowWindow(bannedWindows.Start, SW_HIDE);
-            else
-                ShowWindow(bannedWindows.Start, SW_SHOW);
-        }
-    }
-
-    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-        g_DesktopWindow, bannedWindows.Explorer, bannedWindows.Taskbar, bannedWindows.Start);
-
     if (!g_SeamlessMode)
     {
         // just send damage event with the dirty area
@@ -830,20 +620,44 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
             {
                 RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
 
+                // skip windows that aren't in the changed area
                 if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
-                    // skip windows that aren't in the changed area
-                    CheckWatchedWindowUpdates(entry, NULL, updateEverything, &dirtyArea);
+                {
+                    status = SendWindowDamageEvent(entry->WindowHandle,
+                        currentArea.left - entry->X, // TODO: verify
+                        currentArea.top - entry->Y,
+                        currentArea.right - entry->X,
+                        currentArea.bottom - entry->Y);
+
+                    if (ERROR_SUCCESS != status)
+                    {
+                        perror2(status, "SendWindowDamageEvent");
+                        goto cleanup;
+                    }
+                }
             }
             else
-                CheckWatchedWindowUpdates(entry, NULL, updateEverything, NULL);
+            {
+                // assume the whole window area changed
+                status = SendWindowDamageEvent(entry->WindowHandle,
+                    0, 0, entry->Width, entry->Height);
+
+                if (ERROR_SUCCESS != status)
+                {
+                    perror2(status, "SendWindowDamageEvent");
+                    goto cleanup;
+                }
+
+            }
         }
 
         entry = nextEntry;
     }
 
+cleanup:
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    return ERROR_SUCCESS;
+    return status;
 }
 
 // Hook event: window created. Add it to the window list and send notification to gui daemon.
