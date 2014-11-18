@@ -320,38 +320,29 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 // watched windows critical section must be entered
 static ULONG AddAllWindows(void)
 {
-    static BANNED_WINDOWS bannedWindows = { 0 };
+    BANNED_WINDOWS bannedWindows = { 0 };
 
     LogVerbose("start");
 
     // First, check for special windows that should be ignored.
-    if (!bannedWindows.Explorer || !IsWindow(bannedWindows.Explorer))
-        bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
+    bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
 
-    if (!bannedWindows.Taskbar || !IsWindow(bannedWindows.Taskbar))
+    bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
+    if (bannedWindows.Taskbar)
     {
-        bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
-
-        if (bannedWindows.Taskbar)
-        {
-            if (g_SeamlessMode)
-                ShowWindow(bannedWindows.Taskbar, SW_HIDE);
-            else
-                ShowWindow(bannedWindows.Taskbar, SW_SHOW);
-        }
+        if (g_SeamlessMode)
+            ShowWindow(bannedWindows.Taskbar, SW_HIDE);
+        else
+            ShowWindow(bannedWindows.Taskbar, SW_SHOW);
     }
 
-    if (!bannedWindows.Start || !IsWindow(bannedWindows.Start))
+    bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
+    if (bannedWindows.Start)
     {
-        bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
-
-        if (bannedWindows.Start)
-        {
-            if (g_SeamlessMode)
-                ShowWindow(bannedWindows.Start, SW_HIDE);
-            else
-                ShowWindow(bannedWindows.Start, SW_SHOW);
-        }
+        if (g_SeamlessMode)
+            ShowWindow(bannedWindows.Start, SW_HIDE);
+        else
+            ShowWindow(bannedWindows.Start, SW_SHOW);
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
