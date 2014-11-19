@@ -18,7 +18,7 @@ INCLUDES = $(INCLUDES); \
     ..\..\core\win\include; \
     ..\gui-common\include;
 
-SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c register-hooks.c wga.rc
+SOURCES = main.c vchan-handlers.c hook-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c register-hooks.c wga.rc
 
 TARGETLIBS = \
     $(SDK_LIB_PATH)\kernel32.lib \

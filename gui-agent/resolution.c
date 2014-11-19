@@ -3,7 +3,6 @@
 #include "resolution.h"
 #include "main.h"
 #include "qvcontrol.h"
-#include "shell_events.h"
 #include "send.h"
 #include "util.h"
 
