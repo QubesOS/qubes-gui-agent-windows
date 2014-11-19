@@ -10,7 +10,7 @@
 #include "resolution.h"
 #include "shell_events.h"
 #include "send.h"
-#include "handlers.h"
+#include "vchan-handlers.h"
 #include "util.h"
 #include "hook-messages.h"
 #include "register-hooks.h"
