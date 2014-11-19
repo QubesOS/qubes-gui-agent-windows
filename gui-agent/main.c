@@ -8,7 +8,6 @@
 #include "vchan.h"
 #include "qvcontrol.h"
 #include "resolution.h"
-#include "shell_events.h"
 #include "send.h"
 #include "vchan-handlers.h"
 #include "util.h"
