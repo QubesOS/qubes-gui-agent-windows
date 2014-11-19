@@ -50,7 +50,7 @@ HWND g_DesktopWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
-static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC);
+ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
 // watched windows list critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULl if ignored).
@@ -512,14 +512,11 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     return TRUE;
 }
 
-// Main function that scans for window updates.
-// Called after receiving damage event from qvideo.
-// TODO: remove this, handle changes in hook events (what about fullscreen?)
-static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
+// Called after receiving screen damage event from qvideo.
+static ULONG ProcessUpdatedWindows(IN HDC screenDC)
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
-    BOOL recheckWindows = FALSE;
     HWND oldDesktopWindow = g_DesktopWindow;
     ULONG totalPages, page, dirtyPages = 0;
     RECT dirtyArea, currentArea;
@@ -560,7 +557,6 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
     AttachToInputDesktop();
     if (oldDesktopWindow != g_DesktopWindow)
     {
-        recheckWindows = TRUE;
         LogDebug("desktop changed (old 0x%x), refreshing all windows", oldDesktopWindow);
         HideCursors();
         DisableEffects();
@@ -589,44 +585,36 @@ static ULONG ProcessUpdatedWindows(IN BOOL updateEverything, IN HDC screenDC)
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        if (!IsWindow(entry->WindowHandle) || !ShouldAcceptWindow(entry->WindowHandle, NULL))
+        if (g_UseDirtyBits)
         {
-            RemoveWindow(entry);
-            entry = NULL;
-        }
-        else
-        {
-            if (g_UseDirtyBits)
-            {
-                RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+            RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
 
-                // skip windows that aren't in the changed area
-                if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
-                {
-                    status = SendWindowDamageEvent(entry->WindowHandle,
-                        currentArea.left - entry->X, // TODO: verify
-                        currentArea.top - entry->Y,
-                        currentArea.right - entry->X,
-                        currentArea.bottom - entry->Y);
-
-                    if (ERROR_SUCCESS != status)
-                    {
-                        perror2(status, "SendWindowDamageEvent");
-                        goto cleanup;
-                    }
-                }
-            }
-            else
+            // skip windows that aren't in the changed area
+            if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
             {
-                // assume the whole window area changed
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                    0, 0, entry->Width, entry->Height);
+                    currentArea.left - entry->X, // TODO: verify
+                    currentArea.top - entry->Y,
+                    currentArea.right - entry->X,
+                    currentArea.bottom - entry->Y);
 
                 if (ERROR_SUCCESS != status)
                 {
                     perror2(status, "SendWindowDamageEvent");
                     goto cleanup;
                 }
+            }
+        }
+        else
+        {
+            // assume the whole window area changed
+            status = SendWindowDamageEvent(entry->WindowHandle,
+                0, 0, entry->Width, entry->Height);
+
+            if (ERROR_SUCCESS != status)
+            {
+                perror2(status, "SendWindowDamageEvent");
+                goto cleanup;
             }
         }
 
@@ -638,7 +626,6 @@ cleanup:
 
     return status;
 }
-
 
 // main event loop
 // TODO: refactor into smaller parts
@@ -755,7 +742,7 @@ static ULONG WINAPI WatchForEvents(void)
 
             if (g_VchanClientConnected)
             {
-                ProcessUpdatedWindows(TRUE, screenDC);
+                ProcessUpdatedWindows(screenDC);
             }
             break;
 
