@@ -1,23 +1,32 @@
 #include <windows.h>
 #include "libvchan.h"
+#include "log.h"
 
 CRITICAL_SECTION g_VchanCriticalSection;
 
-static struct libvchan *g_Vchan;
+static struct libvchan *g_Vchan = NULL;
 
 BOOL VchanSendBuffer(IN const void *buffer, IN int size)
 {
     int written = 0;
     int status;
 
+    LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+
     if (!g_Vchan)
+    {
+        LogError("vchan not connected");
         return FALSE;
+    }
 
     while (written < size)
     {
-        status = libvchan_write(g_Vchan, (char *) buffer + written, size - written);
-        if (status <= 0)
+        status = libvchan_write(g_Vchan, (char *)buffer + written, size - written);
+        if (status < 0)
+        {
+            LogError("libvchan_write failed: %d", status);
             return FALSE;
+        }
 
         written += status;
     }
@@ -30,11 +39,13 @@ BOOL VchanSendMessage(IN const void *header, IN int headerSize, IN const void *d
     int status;
 
     status = VchanSendBuffer(header, headerSize);
-    if (status <= 0)
+    if (status < 0)
         return FALSE;
+
     status = VchanSendBuffer(data, dataSize);
-    if (status <= 0)
+    if (status < 0)
         return FALSE;
+
     return TRUE;
 }
 
@@ -43,11 +54,16 @@ BOOL VchanReceiveBuffer(OUT void *buffer, IN int size)
     int written = 0;
     int status;
 
+    LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+
     while (written < size)
     {
-        status = libvchan_read(g_Vchan, (char *) buffer + written, size - written);
-        if (status <= 0)
+        status = libvchan_read(g_Vchan, (char *)buffer + written, size - written);
+        if (status < 0)
+        {
+            LogError("libvchan_read failed: %d", status);
             return FALSE;
+        }
 
         written += status;
     }
@@ -68,7 +84,10 @@ BOOL VchanInitServer(IN int port)
 {
     g_Vchan = libvchan_server_init(port);
     if (!g_Vchan)
+    {
+        LogError("vchan not connected");
         return FALSE;
+    }
 
     return TRUE;
 }
@@ -113,6 +132,7 @@ ULONG CheckForXenInterface(void)
     xc = xc_evtchn_open();
     if (INVALID_HANDLE_VALUE == xc)
         return ERROR_NOT_SUPPORTED;
+
     xc_evtchn_close(xc);
     return ERROR_SUCCESS;
 }
