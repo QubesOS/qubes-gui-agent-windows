@@ -356,6 +356,7 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         break;
 
     default:
+        status = ERROR_SUCCESS;
         break;
     }
 
