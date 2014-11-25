@@ -808,6 +808,10 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
+                // needs to be set before enumerating windows so maps get sent
+                // (and before sending anything really)
+                g_VchanClientConnected = TRUE;
+
                 if (ERROR_SUCCESS != SendProtocolVersion())
                 {
                     LogError("SendProtocolVersion failed");
@@ -848,8 +852,6 @@ static ULONG WINAPI WatchForEvents(void)
                     exitLoop = TRUE;
                     break;
                 }
-
-                g_VchanClientConnected = TRUE; // needs to be set before enumerating windows so maps get sent
 
                 // This initializes watched windows, hooks etc.
                 status = SetSeamlessMode(g_SeamlessMode, TRUE);
