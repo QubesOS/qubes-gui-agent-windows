@@ -1,5 +1,6 @@
 #include <windows.h>
 #include "libvchan.h"
+#include "qubes-gui-protocol.h"
 #include "log.h"
 
 CRITICAL_SECTION g_VchanCriticalSection;
@@ -34,10 +35,11 @@ BOOL VchanSendBuffer(IN const void *buffer, IN int size)
     return TRUE;
 }
 
-BOOL VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int dataSize)
+BOOL VchanSendMessage(IN const struct msg_hdr *header, IN int headerSize, IN const void *data, IN int dataSize)
 {
     int status;
 
+    LogVerbose("msg 0x%x for window 0x%x, size %d", header->type, header->window, header->untrusted_len);
     status = VchanSendBuffer(header, headerSize);
     if (status < 0)
         return FALSE;
