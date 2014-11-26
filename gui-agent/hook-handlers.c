@@ -329,39 +329,55 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         qhm->Message,
         qhm->wParam, qhm->lParam);
 
-    switch (qhm->Message)
+    if (qhm->HookId != WH_CBT)
     {
-    case WM_CREATE:
-        status = HookCreateWindow(qhm);
-        break;
+        switch (qhm->Message)
+        {
+        case WM_CREATE:
+            status = HookCreateWindow(qhm);
+            break;
 
-    case WM_DESTROY:
-        status = HookDestroyWindow(qhm);
-        break;
+        case WM_DESTROY:
+            status = HookDestroyWindow(qhm);
+            break;
 
-    case WM_ACTIVATE:
-        status = HookActivateWindow(qhm);
-        break;
+        case WM_ACTIVATE:
+            status = HookActivateWindow(qhm);
+            break;
 
-    case WM_SETTEXT:
-        status = HookSetWindowText(qhm);
-        break;
+        case WM_SETTEXT:
+            status = HookSetWindowText(qhm);
+            break;
 
-    case WM_SHOWWINDOW:
-        status = HookShowWindow(qhm);
-        break;
+        case WM_SHOWWINDOW:
+            status = HookShowWindow(qhm);
+            break;
 
-    case WM_SIZE:
-        status = HookSizeWindow(qhm);
-        break;
+        case WM_SIZE:
+            status = HookSizeWindow(qhm);
+            break;
 
-    case WM_STYLECHANGED:
-        status = HookStyleChanged(qhm);
-        break;
+        case WM_STYLECHANGED:
+            status = HookStyleChanged(qhm);
+            break;
 
-    default:
-        status = ERROR_SUCCESS;
-        break;
+        default:
+            status = ERROR_SUCCESS;
+            break;
+        }
+    }
+    else // CBT messages
+    {
+        switch (qhm->Message)
+        {
+        case HCBT_DESTROYWND:
+            status = HookDestroyWindow(qhm);
+            break;
+
+        default:
+            status = ERROR_SUCCESS;
+            break;
+        }
     }
 
     return status;
