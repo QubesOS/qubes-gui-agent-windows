@@ -53,7 +53,7 @@ HANDLE g_ShutdownEvent = NULL;
 ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
 // watched windows list critical section must be entered
-// Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULl if ignored).
+// Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULL if ignored).
 // Other errors mean fatal conditions.
 ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry OPTIONAL)
 {
@@ -558,6 +558,9 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
     if (oldDesktopWindow != g_DesktopWindow)
     {
         LogDebug("desktop changed (old 0x%x), refreshing all windows", oldDesktopWindow);
+        oldDesktopWindow = g_DesktopWindow; // remember current desktop, ResetWatch clears it
+        ResetWatch(g_SeamlessMode); // need to reinitialize hooks since they are confined to a desktop
+        g_DesktopWindow = oldDesktopWindow;
         HideCursors();
         DisableEffects();
     }
