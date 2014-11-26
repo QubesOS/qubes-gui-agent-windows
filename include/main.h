@@ -111,7 +111,7 @@ ULONG AddWindowWithInfo(
     OUT WINDOW_DATA **windowEntry OPTIONAL
     );
 
-ULONG RemoveWindow(WINDOW_DATA *entry);
+ULONG RemoveWindow(IN OUT WINDOW_DATA *entry);
 
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(
