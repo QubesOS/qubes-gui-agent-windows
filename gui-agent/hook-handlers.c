@@ -4,6 +4,7 @@
 #include "main.h"
 #include "hook-messages.h"
 #include "send.h"
+#include "wm.h"
 
 #include "log.h"
 
@@ -44,7 +45,10 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
     wi.rcWindow.bottom = qhm->Y + qhm->Height;
 
     if (!ShouldAcceptWindow((HWND) qhm->WindowHandle, &wi))
+    {
+        LogVerbose("ignored");
         return ERROR_SUCCESS; // ignore
+    }
 
     EnterCriticalSection(&g_csWatchedWindows);
 
@@ -319,10 +323,10 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         return ERROR_SUCCESS;
     }
 
-    LogDebug("%8x: %4x %8x %8x\n",
+    LogDebug("%8x: %20S (%4x) %8x %8x\n",
         qhm->WindowHandle,
+        qhm->HookId == WH_CBT ? CBTNameFromId(qhm->Message) : MsgNameFromId(qhm->Message),
         qhm->Message,
-        //qhm.HookId == WH_CBT ? CBTNameFromId(qhm.Message) : MsgNameFromId(qhm.Message),
         qhm->wParam, qhm->lParam);
 
     switch (qhm->Message)
