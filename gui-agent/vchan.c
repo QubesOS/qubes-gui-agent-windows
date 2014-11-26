@@ -3,6 +3,8 @@
 #include "qubes-gui-protocol.h"
 #include "log.h"
 
+// define LOG_VCHAN_VERBOSE to log every send/receive
+
 CRITICAL_SECTION g_VchanCriticalSection;
 
 static struct libvchan *g_Vchan = NULL;
@@ -12,7 +14,9 @@ BOOL VchanSendBuffer(IN const void *buffer, IN int size)
     int written = 0;
     int status;
 
+#ifdef LOG_VCHAN_VERBOSE
     LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+#endif
 
     if (!g_Vchan)
     {
@@ -56,7 +60,9 @@ BOOL VchanReceiveBuffer(OUT void *buffer, IN int size)
     int written = 0;
     int status;
 
+#ifdef LOG_VCHAN_VERBOSE
     LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+#endif
 
     while (written < size)
     {
