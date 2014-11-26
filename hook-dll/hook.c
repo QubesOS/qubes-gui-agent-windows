@@ -227,19 +227,17 @@ LRESULT CALLBACK CBTProc(
     qhm.HookId = WH_CBT;
     qhm.WindowHandle = (UINT64) wParam;
     qhm.lParam = lParam;
+    qhm.Message = code;
 
     switch (code)
     {
     case HCBT_ACTIVATE:
-        qhm.Message = HCBT_ACTIVATE;
         break;
 
     case HCBT_CREATEWND:
-        qhm.Message = HCBT_CREATEWND;
         break;
 
     case HCBT_DESTROYWND:
-        qhm.Message = HCBT_DESTROYWND;
         break;
 
     case HCBT_MINMAX:
@@ -256,11 +254,9 @@ LRESULT CALLBACK CBTProc(
         break;
 
     case HCBT_SETFOCUS:
-        qhm.Message = HCBT_SETFOCUS;
         break;
 
     case HCBT_SYSCOMMAND:
-        qhm.Message = HCBT_SYSCOMMAND;
         break;
     }
 
