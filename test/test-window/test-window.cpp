@@ -181,12 +181,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         HDC hdc = BeginPaint(hWnd, &ps);
         GetClientRect(hWnd, &clientRect);
         GetWindowRect(hWnd, &windowRect);
-        StringCbPrintf(text, sizeof(text), L"window: (%d,%d) %dx%d\r\nclient: (%d,%d) %dx%d",
+        StringCbPrintf(text, sizeof(text), L"window: (%d,%d) %dx%d\r\nclient: (%d,%d) %dx%d\r\nF2 = toggle menu",
             windowRect.left, windowRect.top, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top,
             clientRect.left, clientRect.top, clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
         DrawText(hdc, text, -1, &clientRect, DT_LEFT | DT_TOP);
         // TODO: Add any drawing code here...
         EndPaint(hWnd, &ps);
+        break;
+    }
+
+    case WM_KEYUP:
+    {
+        if (wParam == VK_F2)
+        {
+            HMENU menu = GetMenu(hWnd);
+            if (!menu)
+            {
+                menu = LoadMenu(hInst, MAKEINTRESOURCE(IDC_TESTWINDOW));
+                SetMenu(hWnd, menu);
+            }
+            else
+            {
+                SetMenu(hWnd, NULL);
+                DestroyMenu(menu);
+            }
+        }
         break;
     }
 
