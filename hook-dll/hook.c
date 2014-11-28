@@ -14,7 +14,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, void *reserved)
         DisableThreadLibraryCalls(module);
         OutputDebugString(L"QHook: +ATTACH\n");
         if (!g_Slot)
-            g_Slot = CreateFile(HOOK_IPC_NAME, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            g_Slot = CreateFile(HOOK_IPC_NAME, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
         break;
 
@@ -67,7 +67,7 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         SendMsg(qhm);
         break;
 
-    // WM_MOVE and WM_SIZE only have coordinatef of client area... useless for us
+        // WM_MOVE and WM_SIZE only have coordinatef of client area... useless for us
 
     case WM_ACTIVATE:
         // wParam is WA_ACTIVE/WA_CLICKACTIVE/WA_INACTIVE
@@ -95,7 +95,7 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         SendMsg(qhm);
         break;
 
-    //case WM_WINDOWPOSCHANGING:
+        //case WM_WINDOWPOSCHANGING:
     case WM_WINDOWPOSCHANGED:
         qhm->Flags = wp->flags;
         qhm->X = wp->x;
@@ -125,9 +125,9 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         break;
         /* debug only - capture ALL messages
     default:
-        SendMsg(qhm);
-        break;
-        */
+    SendMsg(qhm);
+    break;
+    */
     }
 }
 
@@ -215,7 +215,6 @@ LRESULT CALLBACK CBTProc(
     LPARAM lParam
     )
 {
-    MSG *msg = (MSG *) lParam;
     QH_MESSAGE qhm = { 0 };
 
     if (code < 0)
@@ -235,7 +234,22 @@ LRESULT CALLBACK CBTProc(
         break;
 
     case HCBT_CREATEWND:
+    {
+        CBT_CREATEWND *cw = (CBT_CREATEWND *) lParam;
+        CREATESTRUCT *cs = cw->lpcs;
+        qhm.X = cs->x;
+        qhm.Y = cs->y;
+        qhm.Width = cs->cx;
+        qhm.Height = cs->cy;
+        qhm.Style = cs->style;
+        qhm.ExStyle = cs->dwExStyle;
+        qhm.ParentWindowHandle = (UINT64) cs->hwndParent;
+        if (cs->lpszName)
+        {
+            StringCbCopy(qhm.Caption, sizeof(qhm.Caption), cs->lpszName);
+        }
         break;
+    }
 
     case HCBT_DESTROYWND:
         break;

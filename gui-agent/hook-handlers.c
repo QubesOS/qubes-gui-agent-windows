@@ -28,13 +28,19 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
     return FALSE; // stop enumeration
 }
 
-// Hook event: window created. Add it to the window list and send notification to gui daemon.
-static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
+// Hook event: window created. Add it to the window list and send notification to gui daemon if it's visible.
+static ULONG HookCreateWindow(IN QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
     WINDOWINFO wi = { 0 };
     ULONG status;
 
     LogVerbose("%x", qhm->WindowHandle);
+
+    // sanity check - data from CBT_CREATEWND can have unreliable coordinates
+    if (qhm->Width < 0)
+        qhm->Width = 0;
+    if (qhm->Height)
+        qhm->Height = 0;
 
     wi.cbSize = sizeof(wi);
     wi.dwStyle = qhm->Style;
@@ -52,7 +58,7 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    // this sends notifications about current window state to gui daemon
+    // this sends create/map notifications to gui daemon if the window is visible
     status = AddWindowWithInfo((HWND) qhm->WindowHandle, &wi, NULL);
     if (ERROR_SUCCESS != status)
         perror2(status, "AddWindowWithInfo");
@@ -63,25 +69,14 @@ static ULONG HookCreateWindow(IN const QH_MESSAGE *qhm)
 }
 
 // Hook event: window destroyed. Remove it from the window list and send notification to gui daemon.
-static ULONG HookDestroyWindow(IN const QH_MESSAGE *qhm)
+static ULONG HookDestroyWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    WINDOW_DATA *windowEntry;
     ULONG status;
 
     LogVerbose("%x", qhm->WindowHandle);
 
     EnterCriticalSection(&g_csWatchedWindows);
-    windowEntry = FindWindowByHandle((HWND) qhm->WindowHandle);
-    if (windowEntry)
-    {
-        status = RemoveWindow(windowEntry);
-    }
-    else
-    {
-        LogWarning("window %x not tracked", qhm->WindowHandle);
-        // in theory we should be tracking all windows
-        status = ERROR_SUCCESS;
-    }
+    status = RemoveWindow(entry);
     LeaveCriticalSection(&g_csWatchedWindows);
 
     return status;
@@ -99,26 +94,26 @@ stealing). Ideally gui daemon should set the window's z-order
 so that it's on top of all other windows from the same domain,
 but not above current top-level window if its domain is different.
 */
-static ULONG HookActivateWindow(IN const QH_MESSAGE *qhm)
+static ULONG HookActivateWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    LogVerbose("%x", qhm->WindowHandle);
+    LogVerbose("0x%x", qhm->WindowHandle);
+
+    if (!entry->IsVisible)
+    {
+        if (IsWindowVisible(entry->WindowHandle))
+        {
+            entry->IsVisible = TRUE;
+            SendWindowMap(entry);
+        }
+    }
 
     return SendWindowHints((HWND) qhm->WindowHandle, UrgencyHint);
 }
 
 // window text changed
-static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
+static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    WINDOW_DATA *entry;
-
     LogVerbose("0x%x '%s'", qhm->WindowHandle, qhm->Caption);
-
-    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
-    if (!entry)
-    {
-        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
-        return ERROR_SUCCESS;
-    }
 
     if (0 == wcscmp(entry->Caption, qhm->Caption))
     {
@@ -132,19 +127,11 @@ static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm)
 }
 
 // window shown/hidden/moved/resized
-static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
+static ULONG HookShowWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    WINDOW_DATA *entry;
     BOOL updateNeeded = FALSE;
 
     LogVerbose("0x%x (%d,%d) %dx%d, flags 0x%x", qhm->WindowHandle, qhm->X, qhm->Y, qhm->Width, qhm->Height, qhm->Flags);
-
-    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
-    if (!entry)
-    {
-        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
-        return ERROR_SUCCESS;
-    }
 
     // TODO: test various flag combinations, I've seen messages with both SWP_HIDEWINDOW and SWP_SHOWWINDOW...
     if (qhm->Flags & SWP_HIDEWINDOW) // hides the window
@@ -179,6 +166,7 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
             return ERROR_SUCCESS;
         }
 
+        LogVerbose("window %x position changing (%d,%d) -> (%d,%d)", entry->X, entry->Y, qhm->X, qhm->Y);
         entry->X = qhm->X;
         entry->Y = qhm->Y;
         updateNeeded = TRUE;
@@ -192,6 +180,7 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
             return ERROR_SUCCESS;
         }
 
+        LogVerbose("window %x size changing (%d,%d) -> (%d,%d)", entry->Width, entry->Height, qhm->Width, qhm->Height);
         entry->Width = qhm->Width;
         entry->Height = qhm->Height;
         updateNeeded = TRUE;
@@ -204,19 +193,11 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm)
 }
 
 // window minimized/maximized/restored
-static ULONG HookSizeWindow(IN const QH_MESSAGE *qhm)
+static ULONG HookSizeWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    WINDOW_DATA *entry;
     BOOL updateNeeded = FALSE;
 
     LogVerbose("0x%x, flag 0x%x", qhm->WindowHandle, qhm->wParam);
-
-    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
-    if (!entry)
-    {
-        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
-        return ERROR_SUCCESS;
-    }
 
     // we only care about minimized state here, resizing is handled by WM_SHOWWINDOW
     switch (qhm->wParam)
@@ -251,20 +232,12 @@ static ULONG HookSizeWindow(IN const QH_MESSAGE *qhm)
 }
 
 // window style changed
-static ULONG HookStyleChanged(IN const QH_MESSAGE *qhm)
+static ULONG HookStyleChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
-    WINDOW_DATA *entry;
     MODAL_SEARCH_PARAMS modalParams = { 0 };
     ULONG status;
 
     LogVerbose("0x%x: %s 0x%x", qhm->WindowHandle, qhm->ExStyle ? L"ExStyle" : L"Style", qhm->Style);
-
-    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
-    if (!entry)
-    {
-        LogWarning("window 0x%x not tracked", qhm->WindowHandle);
-        return ERROR_SUCCESS;
-    }
 
     if (!entry->IsVisible)
         return ERROR_SUCCESS;
@@ -309,6 +282,7 @@ static ULONG HookStyleChanged(IN const QH_MESSAGE *qhm)
 ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN QH_MESSAGE *qhm)
 {
     DWORD cbRead;
+    WINDOW_DATA *entry = NULL;
     ULONG status;
 
     if (!GetOverlappedResult(hookIpc, hookAsyncState, &cbRead, FALSE))
@@ -329,36 +303,48 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         qhm->Message,
         qhm->wParam, qhm->lParam);
 
+    entry = FindWindowByHandle((HWND) qhm->WindowHandle);
+    if (!entry)
+    {
+        WINDOWINFO wi = { 0 };
+        wi.cbSize = sizeof(wi);
+        GetWindowInfo((HWND) qhm->WindowHandle, &wi);
+        LogWarning("window 0x%x not tracked, adding", qhm->WindowHandle);
+        AddWindowWithInfo((HWND) qhm->WindowHandle, &wi, &entry);
+        if (!entry)
+            return ERROR_SUCCESS; // ignored
+    }
+
     if (qhm->HookId != WH_CBT)
     {
         switch (qhm->Message)
         {
         case WM_CREATE:
-            status = HookCreateWindow(qhm);
+            status = HookCreateWindow(qhm, entry);
             break;
 
         case WM_DESTROY:
-            status = HookDestroyWindow(qhm);
+            status = HookDestroyWindow(qhm, entry);
             break;
 
         case WM_ACTIVATE:
-            status = HookActivateWindow(qhm);
+            status = HookActivateWindow(qhm, entry);
             break;
 
         case WM_SETTEXT:
-            status = HookSetWindowText(qhm);
+            status = HookSetWindowText(qhm, entry);
             break;
 
         case WM_SHOWWINDOW:
-            status = HookShowWindow(qhm);
+            status = HookShowWindow(qhm, entry);
             break;
 
         case WM_SIZE:
-            status = HookSizeWindow(qhm);
+            status = HookSizeWindow(qhm, entry);
             break;
 
         case WM_STYLECHANGED:
-            status = HookStyleChanged(qhm);
+            status = HookStyleChanged(qhm, entry);
             break;
 
         default:
@@ -370,8 +356,16 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
     {
         switch (qhm->Message)
         {
+        case HCBT_CREATEWND:
+            status = HookCreateWindow(qhm, entry);
+            break;
+
         case HCBT_DESTROYWND:
-            status = HookDestroyWindow(qhm);
+            status = HookDestroyWindow(qhm, entry);
+            break;
+
+        case HCBT_ACTIVATE:
+            status = HookActivateWindow(qhm, entry);
             break;
 
         default:

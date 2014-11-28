@@ -187,13 +187,6 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    if (windowData && windowData->IsVisible && !windowData->IsIconic)
-    {
-        status = SendWindowMap(windowData);
-        if (ERROR_SUCCESS != status)
-            return status;
-    }
-
     if (windowData)
     {
         status = SendWindowHints(windowData->WindowHandle, PPosition); // program-specified position
@@ -396,7 +389,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
         configureMsg.y = windowData->Y;
         configureMsg.width = windowData->Width;
         configureMsg.height = windowData->Height;
-        configureMsg.override_redirect = 0;
+        configureMsg.override_redirect = windowData->IsOverrideRedirect;
     }
     else // whole screen
     {
@@ -412,8 +405,9 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
         configureMsg.override_redirect = 0;
     }
 
-    status = ERROR_SUCCESS;
+    status = TRUE;
     EnterCriticalSection(&g_VchanCriticalSection);
+
     // don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP will follow
     if (configureMsg.width > 0 && configureMsg.height > 0)
     {

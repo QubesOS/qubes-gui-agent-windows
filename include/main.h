@@ -32,7 +32,6 @@ typedef struct _WINDOW_DATA
 
     BOOL IsOverrideRedirect;
     HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
-    ULONG TimeModalChecked; // time of last check for modal window
 
     BOOL IsStyleChecked;
     ULONG TimeAdded;

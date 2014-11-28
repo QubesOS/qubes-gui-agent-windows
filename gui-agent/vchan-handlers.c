@@ -297,7 +297,15 @@ static DWORD HandleConfigure(IN HWND window)
     LogDebug("0x%x (%d,%d) %dx%d", window, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
 
     if (window != 0) // 0 is full screen
+    {
+        WINDOW_DATA *wd = FindWindowByHandle(window);
         SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, 0);
+        wd->X = configureMsg.x;
+        wd->Y = configureMsg.y;
+        wd->Width = configureMsg.width;
+        wd->Height = configureMsg.height;
+        SendWindowConfigure(wd);
+    }
     else
     {
         // gui daemon requests screen resize: possible resolution change

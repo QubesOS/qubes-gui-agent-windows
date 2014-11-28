@@ -45,6 +45,7 @@ char g_DomainName[256] = "<unknown>";
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
+BANNED_WINDOWS g_bannedWindows = { 0 };
 
 HWND g_DesktopWindow = NULL;
 
@@ -63,6 +64,9 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if (!windowInfo)
         return ERROR_INVALID_PARAMETER;
 
+    if (!ShouldAcceptWindow(window, windowInfo))
+        return ERROR_SUCCESS;
+
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
         window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom,
         windowInfo->dwStyle, windowInfo->dwExStyle, IsWindowVisible(window));
@@ -75,8 +79,8 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
         return ERROR_SUCCESS;
     }
 
-    // empty window rectangle? ignore
-    if ((windowInfo->rcWindow.top - windowInfo->rcWindow.bottom == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
+    // empty window rectangle? ignore (guid rejects those)
+    if ((windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
     {
         LogDebug("window rectangle is empty");
         if (windowEntry)
@@ -101,8 +105,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
     GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
-
-    entry->TimeModalChecked = GetTickCount();
 
     LogDebug("0x%x: visible=%d, iconic=%d", entry->WindowHandle, entry->IsVisible, entry->IsIconic);
 
@@ -143,12 +145,20 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
 
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
 
-    // send window info to gui daemon
+    // send window creation info to gui daemon
     if (g_VchanClientConnected)
     {
-        status = SendWindowCreate(entry); // also maps (shows) the window if it's visible and not minimized
+        status = SendWindowCreate(entry);
         if (ERROR_SUCCESS != status)
             return perror2(status, "SendWindowCreate");
+
+        // map (show) the window if it's visible and not minimized
+        if (entry->IsVisible && !entry->IsIconic)
+        {
+            status = SendWindowMap(entry);
+            if (ERROR_SUCCESS != status)
+                return perror2(status, "SendWindowMap");
+        }
 
         status = SendWindowName(window, entry->Caption);
         if (ERROR_SUCCESS != status)
@@ -169,7 +179,7 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
     if (!entry)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("window 0x%x", entry->WindowHandle);
+    LogDebug("0x%x", entry->WindowHandle);
 
     RemoveEntryList(&entry->ListEntry);
 
@@ -271,7 +281,6 @@ static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
     WINDOWINFO wi = { 0 };
-    BANNED_WINDOWS *bannedWindows = (BANNED_WINDOWS *) lParam;
     ULONG status;
 
     LogVerbose("window %x", window);
@@ -287,16 +296,6 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
     if (!ShouldAcceptWindow(window, &wi))
         return TRUE; // skip
 
-    if (bannedWindows)
-    {
-        if (bannedWindows->Explorer == window ||
-            bannedWindows->Desktop == window ||
-            bannedWindows->Start == window ||
-            bannedWindows->Taskbar == window
-            )
-            return TRUE; // skip
-    }
-
     status = AddWindowWithInfo(window, &wi, NULL);
     if (ERROR_SUCCESS != status)
     {
@@ -311,36 +310,34 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 // watched windows critical section must be entered
 static ULONG AddAllWindows(void)
 {
-    BANNED_WINDOWS bannedWindows = { 0 };
-
     LogVerbose("start");
 
     // First, check for special windows that should be ignored.
-    bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
+    g_bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
 
-    bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
-    if (bannedWindows.Taskbar)
+    g_bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
+    if (g_bannedWindows.Taskbar)
     {
         if (g_SeamlessMode)
-            ShowWindow(bannedWindows.Taskbar, SW_HIDE);
+            ShowWindow(g_bannedWindows.Taskbar, SW_HIDE);
         else
-            ShowWindow(bannedWindows.Taskbar, SW_SHOW);
+            ShowWindow(g_bannedWindows.Taskbar, SW_SHOW);
     }
 
-    bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
-    if (bannedWindows.Start)
+    g_bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
+    if (g_bannedWindows.Start)
     {
         if (g_SeamlessMode)
-            ShowWindow(bannedWindows.Start, SW_HIDE);
+            ShowWindow(g_bannedWindows.Start, SW_HIDE);
         else
-            ShowWindow(bannedWindows.Start, SW_SHOW);
+            ShowWindow(g_bannedWindows.Start, SW_SHOW);
     }
 
     LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-        g_DesktopWindow, bannedWindows.Explorer, bannedWindows.Taskbar, bannedWindows.Start);
+        g_DesktopWindow, g_bannedWindows.Explorer, g_bannedWindows.Taskbar, g_bannedWindows.Start);
 
     // Enum top-level windows and add all that are not filtered.
-    if (!EnumWindows(AddWindowsProc, (LPARAM) &bannedWindows))
+    if (!EnumWindows(AddWindowsProc, 0))
         return perror("EnumWindows");
 
     return ERROR_SUCCESS;
@@ -485,12 +482,14 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
         windowInfo = &wi;
     }
 
+    if (g_bannedWindows.Explorer == window ||
+        g_bannedWindows.Desktop == window ||
+        g_bannedWindows.Start == window ||
+        g_bannedWindows.Taskbar == window
+        )
+        return FALSE;
+
     // Don't skip invisible windows. We keep all windows in the list and map them when/if they become visible.
-    //if (!IsWindowVisible(window))
-    //{
-    //    LogVerbose("%x is invisible", window);
-    //    return FALSE;
-    //}
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (windowInfo->dwStyle & WS_CHILD)
@@ -581,36 +580,39 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        if (g_UseDirtyBits)
+        if (entry->IsVisible)
         {
-            RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
-
-            // skip windows that aren't in the changed area
-            if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
+            if (g_UseDirtyBits)
             {
+                RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+
+                // skip windows that aren't in the changed area
+                if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
+                {
+                    status = SendWindowDamageEvent(entry->WindowHandle,
+                        currentArea.left - entry->X, // TODO: verify
+                        currentArea.top - entry->Y,
+                        currentArea.right - entry->X,
+                        currentArea.bottom - entry->Y);
+
+                    if (ERROR_SUCCESS != status)
+                    {
+                        perror2(status, "SendWindowDamageEvent");
+                        goto cleanup;
+                    }
+                }
+            }
+            else
+            {
+                // assume the whole window area changed
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                    currentArea.left - entry->X, // TODO: verify
-                    currentArea.top - entry->Y,
-                    currentArea.right - entry->X,
-                    currentArea.bottom - entry->Y);
+                    0, 0, entry->Width, entry->Height);
 
                 if (ERROR_SUCCESS != status)
                 {
                     perror2(status, "SendWindowDamageEvent");
                     goto cleanup;
                 }
-            }
-        }
-        else
-        {
-            // assume the whole window area changed
-            status = SendWindowDamageEvent(entry->WindowHandle,
-                0, 0, entry->Width, entry->Height);
-
-            if (ERROR_SUCCESS != status)
-            {
-                perror2(status, "SendWindowDamageEvent");
-                goto cleanup;
             }
         }
 
