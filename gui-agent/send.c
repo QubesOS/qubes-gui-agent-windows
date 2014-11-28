@@ -12,9 +12,8 @@
 
 #include <strsafe.h>
 
-// Get PFNs of hWnd Window from QVideo driver and prepare relevant shm_cmd struct.
-// if windowData == NULL, get PFNs for the whole screen
-static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct shm_cmd **shmCmd)
+// Get PFNs of the screen from QVideo driver and prepare relevant shm_cmd struct.
+static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
 {
     QV_GET_SURFACE_DATA_RESPONSE surfaceData;
     ULONG status;
@@ -23,7 +22,6 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     ULONG width;
     ULONG height;
     ULONG bpp;
-    BOOL isScreen;
     ULONG i;
 
     if (!shmCmd)
@@ -32,40 +30,23 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     *shmCmd = NULL;
     //debugf("start");
 
-    if (!windowData) // whole screen
+    LogDebug("fullcreen capture");
+
+    pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
+    pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
+
+    status = GetWindowData(NULL, &surfaceData, pfnArray);
+    if (ERROR_SUCCESS != status)
     {
-        LogDebug("fullcreen capture");
-
-        pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
-
-        status = GetWindowData(NULL, &surfaceData, pfnArray);
-        if (ERROR_SUCCESS != status)
-        {
-            LogError("GetWindowData() failed with error %d\n", status);
-            return status;
-        }
-
-        width = surfaceData.Width;
-        height = surfaceData.Height;
-        bpp = surfaceData.Bpp;
-
-        isScreen = TRUE;
-    }
-    else
-    {
-        width = windowData->Width;
-        height = windowData->Height;
-        bpp = 32;
-
-        isScreen = FALSE;
-
-        pfnArray = windowData->PfnArray;
+        LogError("GetWindowData() failed with error %d\n", status);
+        return status;
     }
 
-    LogDebug("Window %dx%d %d bpp at (%d,%d), fullscreen: %d\n", width, height, bpp,
-        windowData ? windowData->X : 0,
-        windowData ? windowData->Y : 0, isScreen);
+    width = surfaceData.Width;
+    height = surfaceData.Height;
+    bpp = surfaceData.Bpp;
+
+    LogDebug("screen %dx%d @ %d bpp", width, height, bpp);
 
     LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->NumberOf4kPages,
         pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
@@ -75,7 +56,7 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
     if (*shmCmd == NULL)
     {
-        LogError("Failed to allocate %d bytes for shm_cmd for window 0x%x\n", shmCmdSize, windowData ? windowData->WindowHandle : NULL);
+        LogError("Failed to allocate %d bytes for shm_cmd", shmCmdSize);
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
@@ -90,32 +71,28 @@ static ULONG PrepareShmCmd(IN const WINDOW_DATA *windowData OPTIONAL, OUT struct
     for (i = 0; i < pfnArray->NumberOf4kPages; i++)
         (*shmCmd)->mfns[i] = (uint32_t) pfnArray->Pfn[i];
 
-    if (!windowData)
-        free(pfnArray);
+    free(pfnArray);
 
     //debugf("success");
     return ERROR_SUCCESS;
 }
 
-ULONG SendWindowMfns(IN const WINDOW_DATA *windowData)
+ULONG SendScreenMfns(void)
 {
     ULONG status;
     struct shm_cmd *shmCmd = NULL;
     struct msg_hdr header;
     UINT32 size;
-    HWND window = NULL;
 
     LogVerbose("start");
-    if (windowData)
-        window = windowData->WindowHandle;
 
-    status = PrepareShmCmd(windowData, &shmCmd);
+    status = PrepareShmCmd(&shmCmd);
     if (ERROR_SUCCESS != status)
         return perror2(status, "PrepareShmCmd");
 
     if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
     {
-        LogError("too large num_mfn=%lu for window 0x%x", shmCmd->num_mfn, window);
+        LogError("too large num_mfn=%lu", shmCmd->num_mfn);
         free(shmCmd);
         return ERROR_INSUFFICIENT_BUFFER;
     }
@@ -123,7 +100,7 @@ ULONG SendWindowMfns(IN const WINDOW_DATA *windowData)
     size = shmCmd->num_mfn * sizeof(uint32_t);
 
     header.type = MSG_MFNDUMP;
-    header.window = (uint32_t) window;
+    header.window = 0; // screen
     header.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -200,6 +177,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
     createMsg.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
+    LogDebug("(%d,%d) %dx%d", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 
     EnterCriticalSection(&g_VchanCriticalSection);
     if (!VCHAN_SEND_MSG(header, createMsg))
@@ -436,8 +414,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 
     status = ERROR_SUCCESS;
     EnterCriticalSection(&g_VchanCriticalSection);
-    /* don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP
-    * will follow */
+    // don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP will follow
     if (configureMsg.width > 0 && configureMsg.height > 0)
     {
         status = VCHAN_SEND_MSG(header, configureMsg);
@@ -447,12 +424,13 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 
     if (windowData && windowData->IsVisible)
     {
-        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
+        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; // TODO?
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
 
         header.type = MSG_MAP;
         status = VCHAN_SEND_MSG(header, mapMsg);
     }
+
 cleanup:
     LeaveCriticalSection(&g_VchanCriticalSection);
 

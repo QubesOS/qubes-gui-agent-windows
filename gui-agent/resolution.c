@@ -153,7 +153,7 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
     if (ERROR_SUCCESS != (status = RegisterWatchedDC(*screenDC, damageEvent)))
         return status;
 
-    status = SendWindowMfns(NULL); // update screen framebuffer
+    status = SendScreenMfns(); // update screen framebuffer
     if (ERROR_SUCCESS != status)
         return status;
 

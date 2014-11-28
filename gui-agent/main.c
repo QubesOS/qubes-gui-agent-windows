@@ -63,9 +63,9 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if (!windowInfo)
         return ERROR_INVALID_PARAMETER;
 
-    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x",
+    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
         window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom,
-        windowInfo->dwStyle, windowInfo->dwExStyle);
+        windowInfo->dwStyle, windowInfo->dwExStyle, IsWindowVisible(window));
 
     entry = FindWindowByHandle(window);
     if (entry) // already in list
@@ -141,13 +141,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
             g_ScreenWidth, g_ScreenHeight);
     }
 
-    entry->PfnArray = (PFN_ARRAY *) malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-    if (!entry->PfnArray)
-    {
-        LogError("Failed to malloc PFN array");
-        return ERROR_NOT_ENOUGH_MEMORY;
-    }
-
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
 
     // send window info to gui daemon
@@ -179,8 +172,6 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
     LogDebug("window 0x%x", entry->WindowHandle);
 
     RemoveEntryList(&entry->ListEntry);
-
-    free(entry->PfnArray);
 
     if (g_VchanClientConnected)
     {
@@ -496,7 +487,10 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
 
     // Don't skip invisible windows. We keep all windows in the list and map them when/if they become visible.
     //if (!IsWindowVisible(window))
+    //{
+    //    LogVerbose("%x is invisible", window);
     //    return FALSE;
+    //}
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (windowInfo->dwStyle & WS_CHILD)
@@ -526,7 +520,6 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
     if (g_UseDirtyBits)
     {
         totalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
-        //debugf("update all? %d", bUpdateEverything);
         // create a damage rectangle from changed pages
         for (page = 0; page < totalPages; page++)
         {
@@ -742,7 +735,6 @@ static ULONG WINAPI WatchForEvents(void)
         case 1: // damage event
 
             LogVerbose("Damage %d\n", damageNumber++);
-
             if (g_VchanClientConnected)
             {
                 ProcessUpdatedWindows(screenDC);
@@ -848,7 +840,7 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
-                status = SendWindowMfns(NULL);
+                status = SendScreenMfns();
                 if (ERROR_SUCCESS != status)
                 {
                     perror2(status, "SendWindowMfns(NULL)");

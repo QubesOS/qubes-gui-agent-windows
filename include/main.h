@@ -36,8 +36,6 @@ typedef struct _WINDOW_DATA
 
     BOOL IsStyleChecked;
     ULONG TimeAdded;
-
-    PFN_ARRAY *PfnArray;
 } WINDOW_DATA;
 
 typedef struct _BANNED_WINDOWS
