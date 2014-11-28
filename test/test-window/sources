@@ -1,0 +1,20 @@
+TARGETNAME = test-window
+TARGETTYPE = PROGRAM
+TARGETPATH = bin
+
+UMTYPE = windows
+USE_MSVCRT = 1
+
+UMENTRY = wwinmain
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
+
+INCLUDES = $(INCLUDES); \
+    $(SDK_INC_PATH)\..\ddk; \
+    ..\include; \
+    $(QUBES_INCLUDES);
+
+SOURCES = test-window.cpp test-window.rc
+
+TARGETLIBS = \
+    $(SDK_LIB_PATH)\kernel32.lib \
+    $(SDK_LIB_PATH)\user32.lib \
