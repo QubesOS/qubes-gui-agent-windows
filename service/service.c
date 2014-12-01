@@ -59,15 +59,6 @@ BOOL IsProcessRunning(IN const WCHAR *exeName, OUT DWORD *processId OPTIONAL, OU
     HANDLE shutdownEvent = NULL;
     BOOL found = FALSE;
 
-    // check if the shutdown event is present first
-    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
-    if (!shutdownEvent)
-    {
-        LogVerbose("Shutdown event not found");
-        return FALSE;
-    }
-    CloseHandle(shutdownEvent);
-
     if (!WTSEnumerateProcesses(WTS_CURRENT_SERVER, 0, 1, &processInfo, &count))
     {
         perror("WTSEnumerateProcesses");
