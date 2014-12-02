@@ -91,7 +91,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry = (WINDOW_DATA *) malloc(sizeof(WINDOW_DATA));
     if (!entry)
     {
-        LogError("Failed to malloc WATCHED_DC");
+        LogError("Failed to malloc entry");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 

@@ -107,7 +107,7 @@ static ULONG HookActivateWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
         }
     }
 
-    return SendWindowHints((HWND) qhm->WindowHandle, UrgencyHint);
+    return SendWindowHints(entry->WindowHandle, UrgencyHint);
 }
 
 // window text changed
@@ -123,15 +123,18 @@ static ULONG HookSetWindowText(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 
     StringCchCopy(entry->Caption, RTL_NUMBER_OF(entry->Caption), qhm->Caption);
 
-    return SendWindowName((HWND) qhm->WindowHandle, entry->Caption);
+    return SendWindowName(entry->WindowHandle, entry->Caption);
 }
 
 // window shown/hidden/moved/resized
-static ULONG HookShowWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
+static ULONG HookWindowPosChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 {
     BOOL updateNeeded = FALSE;
 
     LogVerbose("0x%x (%d,%d) %dx%d, flags 0x%x", qhm->WindowHandle, qhm->X, qhm->Y, qhm->Width, qhm->Height, qhm->Flags);
+
+    if ((qhm->Flags & SWP_HIDEWINDOW) && (qhm->Flags & SWP_SHOWWINDOW))
+        LogWarning("%x: SWP_HIDEWINDOW | SWP_SHOWWINDOW", entry->WindowHandle);
 
     // TODO: test various flag combinations, I've seen messages with both SWP_HIDEWINDOW and SWP_SHOWWINDOW...
     if (qhm->Flags & SWP_HIDEWINDOW) // hides the window
@@ -143,7 +146,7 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
         }
 
         entry->IsVisible = FALSE;
-        return SendWindowUnmap((HWND) qhm->WindowHandle);
+        return SendWindowUnmap(entry->WindowHandle);
     }
 
     if (qhm->Flags & SWP_SHOWWINDOW) // shows the window
@@ -190,6 +193,34 @@ static ULONG HookShowWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
         return SendWindowConfigure(entry);
 
     return ERROR_SUCCESS;
+}
+
+// window shown/hidden
+static ULONG HookShowWindow(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
+{
+    LogVerbose("0x%x %x", qhm->WindowHandle, qhm->wParam);
+
+    if (qhm->wParam) // shows the window
+    {
+        if (entry->IsVisible) // already visible
+        {
+            LogVerbose("window 0x%x already visible", qhm->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsVisible = TRUE;
+        return SendWindowMap(entry);
+    }
+
+    // window being hidden
+    if (!entry->IsVisible) // already hidden
+    {
+        LogVerbose("window 0x%x already hidden", qhm->WindowHandle);
+        return ERROR_SUCCESS;
+    }
+
+    entry->IsVisible = FALSE;
+    return SendWindowUnmap(entry->WindowHandle);
 }
 
 // window minimized/maximized/restored
@@ -338,6 +369,9 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         case WM_SHOWWINDOW:
             status = HookShowWindow(qhm, entry);
             break;
+
+        case WM_WINDOWPOSCHANGED:
+            status = HookWindowPosChanged(qhm, entry);
 
         case WM_SIZE:
             status = HookSizeWindow(qhm, entry);
