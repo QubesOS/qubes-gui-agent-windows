@@ -372,6 +372,7 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
 
         case WM_WINDOWPOSCHANGED:
             status = HookWindowPosChanged(qhm, entry);
+            break;
 
         case WM_SIZE:
             status = HookSizeWindow(qhm, entry);
