@@ -213,7 +213,7 @@ static ULONG StartHooks(IN OUT HOOK_DATA *hookData)
     {
         hookData->ShutdownEvent32 = CreateNamedEvent(HOOK32_SHUTDOWN_EVENT_NAME);
         if (!hookData->ShutdownEvent32)
-            return ERROR_UNIDENTIFIED_ERROR;
+            return GetLastError();
     }
 
     // Start 64-bit hooks.
@@ -242,7 +242,7 @@ static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
     if (!SetEvent(hookData->ShutdownEvent32))
         return perror("SetEvent");
 
-    if (WAIT_OBJECT_0 != WaitForSingleObject(hookData->ShutdownEvent32, 1000))
+    if (WAIT_OBJECT_0 != WaitForSingleObject(hookData->ServerProcess32, 1000))
     {
         LogWarning("32bit hook server didn't exit in time, killing it");
         TerminateProcess(hookData->ServerProcess32, 0);
@@ -819,6 +819,7 @@ static ULONG WINAPI WatchForEvents(void)
                 // This will probably change the current video mode.
                 if (ERROR_SUCCESS != HandleXconf())
                 {
+                    LogError("HandleXconf failed");
                     exitLoop = TRUE;
                     break;
                 }
@@ -900,7 +901,9 @@ static ULONG WINAPI WatchForEvents(void)
 
             if (VchanIsEof())
             {
+                LogError("vchan disconnected");
                 exitLoop = TRUE;
+                LeaveCriticalSection(&g_VchanCriticalSection);
                 break;
             }
 
@@ -910,7 +913,7 @@ static ULONG WINAPI WatchForEvents(void)
                 if (ERROR_SUCCESS != status)
                 {
                     exitLoop = TRUE;
-                    LogError("handle_server_data() failed: 0x%x", status);
+                    LogError("HandleServerData failed: 0x%x", status);
                     break;
                 }
             }
@@ -931,6 +934,7 @@ static ULONG WINAPI WatchForEvents(void)
         {
             // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
             // OVERLAPPED structure.
+            LogDebug("Waiting for vchan operations to finish");
             WaitForSingleObject(vchanAsyncState.hEvent, INFINITE);
         }
     }
@@ -938,6 +942,7 @@ static ULONG WINAPI WatchForEvents(void)
     if (!g_VchanClientConnected)
     {
         // Remove the xenstore device/vchan/N entry.
+        LogDebug("cleaning up");
         VchanIsServerConnected();
     }
 

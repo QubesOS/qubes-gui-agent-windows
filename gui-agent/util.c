@@ -166,6 +166,9 @@ ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
         return perror("CreateProcess");
     CloseHandle(pi.hThread);
     *processHandle = pi.hProcess;
+
+    LogDebug("PID: %lu", pi.dwProcessId);
+
     return ERROR_SUCCESS;
 }
 
