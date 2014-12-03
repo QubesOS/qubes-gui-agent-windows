@@ -53,6 +53,30 @@ HANDLE g_ShutdownEvent = NULL;
 
 ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
+#ifdef DEBUG
+// diagnostic: dump all watched windows
+void DumpWindows(void)
+{
+    WINDOW_DATA *entry;
+
+    EnterCriticalSection(&g_csWatchedWindows);
+    entry = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
+
+    while (entry != (WINDOW_DATA *) &g_WatchedWindowsList)
+    {
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
+
+        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d '%s'",
+            entry->WindowHandle, entry->X, entry->Y, entry->Width, entry->Height,
+            entry->IsVisible, entry->IsIconic, entry->IsOverrideRedirect, entry->Caption);
+
+        entry = (WINDOW_DATA *) entry->ListEntry.Flink;
+    }
+
+    LeaveCriticalSection(&g_csWatchedWindows);
+}
+#endif
+
 // watched windows list critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULL if ignored).
 // Other errors mean fatal conditions.
@@ -643,6 +667,9 @@ static ULONG WINAPI WatchForEvents(void)
     ULONG damageNumber = 0;
     struct shm_cmd *shmCmd = NULL;
     QH_MESSAGE qhm;
+#ifdef DEBUG
+    DWORD dumpLastTime = GetTickCount();
+#endif
 
     LogDebug("start");
     windowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -722,6 +749,15 @@ static ULONG WINAPI WatchForEvents(void)
             status = perror("WaitForMultipleObjects");
             break;
         }
+
+#ifdef DEBUG
+        // dump watched windows every second
+        if (GetTickCount() - dumpLastTime > 1000)
+        {
+            DumpWindows();
+            dumpLastTime = GetTickCount();
+        }
+#endif
 
         if (0 == signaledEvent)
         {
