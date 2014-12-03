@@ -66,9 +66,10 @@ void DumpWindows(void)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
 
-        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d '%s'",
+        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d [%s] '%s'",
             entry->WindowHandle, entry->X, entry->Y, entry->Width, entry->Height,
-            entry->IsVisible, entry->IsIconic, entry->IsOverrideRedirect, entry->Caption);
+            entry->IsVisible, entry->IsIconic, entry->IsOverrideRedirect,
+            entry->Class, entry->Caption);
 
         entry = (WINDOW_DATA *) entry->ListEntry.Flink;
     }
@@ -129,6 +130,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
     GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
+    GetClassName(window, entry->Class, RTL_NUMBER_OF(entry->Class));
 
     LogDebug("0x%x: visible=%d, iconic=%d", entry->WindowHandle, entry->IsVisible, entry->IsIconic);
 

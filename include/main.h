@@ -23,6 +23,7 @@ typedef struct _WINDOW_DATA
     BOOL IsIconic;
     BOOL IsVisible;
     WCHAR Caption[256];
+    WCHAR Class[256];
     int X;
     int Y;
     int Width;
