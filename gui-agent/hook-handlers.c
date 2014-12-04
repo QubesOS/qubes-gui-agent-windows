@@ -346,6 +346,21 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
             return ERROR_SUCCESS; // ignored
     }
 
+    // Failsafes because apparently window messages aren't as reliable as expected.
+    // It's possible that a window is destroyed WITHOUT receiving WM_DESTROY (mostly menus).
+    if (!IsWindow(entry->WindowHandle))
+    {
+        LogDebug("window %x disappeared, removing", entry->WindowHandle);
+        return RemoveWindow(entry);
+    }
+
+    if (entry->IsVisible && !IsWindowVisible(entry->WindowHandle))
+    {
+        LogDebug("window %x turned invisible?!", entry->WindowHandle);
+        entry->IsVisible = FALSE;
+        SendWindowUnmap(entry->WindowHandle);
+    }
+
     if (qhm->HookId != WH_CBT)
     {
         switch (qhm->Message)

@@ -111,7 +111,11 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
         return ERROR_INVALID_PARAMETER;
 
     if (!ShouldAcceptWindow(window, windowInfo))
+    {
+        if (windowEntry)
+            *windowEntry = NULL; // ignored
         return ERROR_SUCCESS;
+    }
 
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
         window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom,
@@ -626,6 +630,23 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
+
+        // Failsafes because apparently window messages aren't as reliable as expected.
+        // It's possible that a window is destroyed WITHOUT receiving WM_DESTROY (mostly menus).
+        if (!IsWindow(entry->WindowHandle))
+        {
+            LogDebug("window %x disappeared?!, removing", entry->WindowHandle);
+            RemoveWindow(entry);
+            entry = nextEntry;
+            continue;
+        }
+
+        if (entry->IsVisible && !IsWindowVisible(entry->WindowHandle))
+        {
+            LogDebug("window %x turned invisible?!", entry->WindowHandle);
+            entry->IsVisible = FALSE;
+            SendWindowUnmap(entry->WindowHandle);
+        }
 
         if (entry->IsVisible)
         {
