@@ -123,11 +123,12 @@ void ProcessMessage(IN OUT QH_MESSAGE *qhm)
         }
         SendMsg(qhm);
         break;
-        /* debug only - capture ALL messages
+#ifdef DEBUG
+        /* debug only - capture ALL messages */
     default:
-    SendMsg(qhm);
-    break;
-    */
+        SendMsg(qhm);
+        break;
+#endif
     }
 }
 
@@ -230,9 +231,6 @@ LRESULT CALLBACK CBTProc(
 
     switch (code)
     {
-    case HCBT_ACTIVATE:
-        break;
-
     case HCBT_CREATEWND:
     {
         CBT_CREATEWND *cw = (CBT_CREATEWND *) lParam;
@@ -251,26 +249,15 @@ LRESULT CALLBACK CBTProc(
         break;
     }
 
-    case HCBT_DESTROYWND:
-        break;
-
     case HCBT_MINMAX:
-        qhm.Message = HCBT_MINMAX;
         qhm.Flags = LOWORD(lParam);
         break;
 
     case HCBT_MOVESIZE:
-        qhm.Message = HCBT_MOVESIZE;
         qhm.X = ((RECT*) lParam)->left;
         qhm.Y = ((RECT*) lParam)->top;
         qhm.Width = ((RECT*) lParam)->right - ((RECT*) lParam)->left;
         qhm.Height = ((RECT*) lParam)->bottom - ((RECT*) lParam)->top;
-        break;
-
-    case HCBT_SETFOCUS:
-        break;
-
-    case HCBT_SYSCOMMAND:
         break;
     }
 
