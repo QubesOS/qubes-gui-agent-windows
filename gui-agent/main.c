@@ -53,11 +53,20 @@ HANDLE g_ShutdownEvent = NULL;
 
 ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
+DWORD WINAPI GetProcessImageFileNameW(
+    HANDLE Process,
+    WCHAR *ImageFileName,
+    DWORD Size
+    );
+
 #ifdef DEBUG
 // diagnostic: dump all watched windows
 void DumpWindows(void)
 {
     WINDOW_DATA *entry;
+    WCHAR exePath[MAX_PATH];
+    DWORD pid = 0;
+    HANDLE process;
 
     EnterCriticalSection(&g_csWatchedWindows);
     entry = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
@@ -66,10 +75,22 @@ void DumpWindows(void)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
 
-        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d [%s] '%s'",
+        exePath[0] = 0;
+        GetWindowThreadProcessId(entry->WindowHandle, &pid);
+        if (pid)
+        {
+            process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (process)
+            {
+                GetProcessImageFileNameW(process, exePath, RTL_NUMBER_OF(exePath));
+                CloseHandle(process);
+            }
+        }
+
+        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d [%s] '%s' {%s}",
             entry->WindowHandle, entry->X, entry->Y, entry->Width, entry->Height,
             entry->IsVisible, entry->IsIconic, entry->IsOverrideRedirect,
-            entry->Class, entry->Caption);
+            entry->Class, entry->Caption, exePath);
 
         entry = (WINDOW_DATA *) entry->ListEntry.Flink;
     }
