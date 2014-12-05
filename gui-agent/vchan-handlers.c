@@ -299,6 +299,8 @@ static DWORD HandleConfigure(IN HWND window)
     if (window != 0) // 0 is full screen
     {
         WINDOW_DATA *wd = FindWindowByHandle(window);
+        if (!wd) // it's possible that some queued guid events arrive even after we send destroy
+            return ERROR_SUCCESS;
         SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, 0);
         wd->X = configureMsg.x;
         wd->Y = configureMsg.y;
