@@ -133,10 +133,25 @@ static ULONG HookWindowPosChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entr
 
     LogVerbose("0x%x (%d,%d) %dx%d, flags 0x%x", qhm->WindowHandle, qhm->X, qhm->Y, qhm->Width, qhm->Height, qhm->Flags);
 
+    // TODO: test various flag combinations, I've seen messages with both SWP_HIDEWINDOW and SWP_SHOWWINDOW...
     if ((qhm->Flags & SWP_HIDEWINDOW) && (qhm->Flags & SWP_SHOWWINDOW))
         LogWarning("%x: SWP_HIDEWINDOW | SWP_SHOWWINDOW", entry->WindowHandle);
 
-    // TODO: test various flag combinations, I've seen messages with both SWP_HIDEWINDOW and SWP_SHOWWINDOW...
+    // Failsafe: handle minimize here, it's possible that no WM_SIZE is sent for iconic state change...
+    if (qhm->X == -32000 && qhm->Y == -32000) // window minimized
+    {
+        if (entry->IsIconic) // already minimized
+        {
+            LogVerbose("window 0x%x already iconic", entry->WindowHandle);
+            return ERROR_SUCCESS;
+        }
+
+        entry->IsIconic = TRUE;
+
+        LogDebug("minimizing 0x%x", entry->WindowHandle);
+        return SendWindowFlags(entry->WindowHandle, WINDOW_FLAG_MINIMIZE, 0); // no further processing needed
+    }
+
     if (qhm->Flags & SWP_HIDEWINDOW) // hides the window
     {
         if (!entry->IsVisible) // already hidden
