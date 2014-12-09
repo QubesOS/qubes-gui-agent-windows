@@ -184,7 +184,7 @@ static ULONG HookWindowPosChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entr
             return ERROR_SUCCESS;
         }
 
-        LogVerbose("window %x position changing (%d,%d) -> (%d,%d)", entry->X, entry->Y, qhm->X, qhm->Y);
+        LogVerbose("window %x position changing (%d,%d) -> (%d,%d)", qhm->WindowHandle, entry->X, entry->Y, qhm->X, qhm->Y);
         entry->X = qhm->X;
         entry->Y = qhm->Y;
         updateNeeded = TRUE;
@@ -198,7 +198,7 @@ static ULONG HookWindowPosChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entr
             return ERROR_SUCCESS;
         }
 
-        LogVerbose("window %x size changing (%d,%d) -> (%d,%d)", entry->Width, entry->Height, qhm->Width, qhm->Height);
+        LogVerbose("window %x size changing (%d,%d) -> (%d,%d)", qhm->WindowHandle, entry->Width, entry->Height, qhm->Width, qhm->Height);
         entry->Width = qhm->Width;
         entry->Height = qhm->Height;
         updateNeeded = TRUE;
