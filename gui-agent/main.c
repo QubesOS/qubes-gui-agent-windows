@@ -708,11 +708,12 @@ static ULONG WINAPI WatchForEvents(void)
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
     HDC screenDC;
-    ULONG damageNumber = 0;
     struct shm_cmd *shmCmd = NULL;
     QH_MESSAGE qhm;
 #ifdef DEBUG
     DWORD dumpLastTime = GetTickCount();
+    UINT64 msgCount = 0, msgCountOld = 0;
+    UINT64 damageCount = 0, damageCountOld = 0;
 #endif
 
     LogDebug("start");
@@ -800,6 +801,11 @@ static ULONG WINAPI WatchForEvents(void)
         {
             DumpWindows();
             dumpLastTime = GetTickCount();
+
+            // dump performance counters
+            LogDebug("last second damages: %llu, hook events: %llu", damageCount - damageCountOld, msgCount - msgCountOld);
+            damageCountOld = damageCount;
+            msgCountOld = msgCount;
         }
 #endif
 
@@ -811,12 +817,12 @@ static ULONG WINAPI WatchForEvents(void)
             break;
         }
 
-        //debugf("client %d, type %d, signaled: %d, en %d\n", g_HandlesInfo[dwSignaledEvent].uClientNumber, g_HandlesInfo[dwSignaledEvent].bType, dwSignaledEvent, uEventNumber);
         switch (signaledEvent)
         {
         case 1: // damage event
-
-            LogVerbose("Damage %d\n", damageNumber++);
+#ifdef DEBUG
+            LogVerbose("Damage %llu", damageCount++);
+#endif
             if (g_VchanClientConnected)
             {
                 ProcessUpdatedWindows(screenDC);
@@ -852,6 +858,9 @@ static ULONG WINAPI WatchForEvents(void)
             break;
 
         case 5: // mailslot read: message from our gui hook
+#ifdef DEBUG
+            msgCount++;
+#endif
             status = HandleHookEvent(hookIpc, &hookIpcAsyncState, &qhm);
             if (ERROR_SUCCESS != status)
             {
