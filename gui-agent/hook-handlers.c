@@ -285,6 +285,13 @@ static ULONG HookStyleChanged(IN const QH_MESSAGE *qhm, IN WINDOW_DATA *entry)
 
     LogVerbose("0x%x: %s 0x%x", qhm->WindowHandle, qhm->ExStyle ? L"ExStyle" : L"Style", qhm->Style);
 
+    // It's possible that a child window's style doesn't initially contain WS_CHILD, so check for that.
+    if (qhm->Style & WS_CHILD)
+    {
+        LogDebug("removing child window %x", entry->WindowHandle);
+        return HookDestroyWindow(qhm, entry);
+    }
+
     if (!entry->IsVisible)
         return ERROR_SUCCESS;
 
@@ -355,7 +362,7 @@ ULONG HandleHookEvent(IN HANDLE hookIpc, IN OUT OVERLAPPED *hookAsyncState, IN Q
         WINDOWINFO wi = { 0 };
         wi.cbSize = sizeof(wi);
         GetWindowInfo((HWND) qhm->WindowHandle, &wi);
-        LogWarning("window 0x%x not tracked, adding", qhm->WindowHandle);
+        LogVerbose("window %x not tracked, adding", qhm->WindowHandle);
         AddWindowWithInfo((HWND) qhm->WindowHandle, &wi, &entry);
         if (!entry)
             return ERROR_SUCCESS; // ignored
