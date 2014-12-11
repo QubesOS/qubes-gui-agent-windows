@@ -1,1 +1,1 @@
-DIRS=qvideo gui-agent hook-dll misc install-helper service test
+DIRS=qvideo gui-agent misc install-helper service test

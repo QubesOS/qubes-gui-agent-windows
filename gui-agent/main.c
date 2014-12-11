@@ -11,9 +11,6 @@
 #include "send.h"
 #include "vchan-handlers.h"
 #include "util.h"
-#include "hook-messages.h"
-#include "hook-handlers.h"
-#include "register-hooks.h"
 
 // windows-utils
 #include "log.h"
@@ -34,8 +31,6 @@ LONG g_ScreenWidth;
 BOOL g_VchanClientConnected = FALSE;
 BOOL g_SeamlessMode = TRUE;
 
-HOOK_DATA g_HookData = { 0 };
-
 // used to determine whether our window in fullscreen mode should be borderless
 // (when resolution is smaller than host's)
 LONG g_HostScreenWidth = 0;
@@ -53,6 +48,7 @@ HANDLE g_ShutdownEvent = NULL;
 
 ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
+// wdk 7.1 doesn't have psapi.h
 DWORD WINAPI GetProcessImageFileNameW(
     HANDLE Process,
     WCHAR *ImageFileName,
@@ -110,13 +106,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if (!windowInfo)
         return ERROR_INVALID_PARAMETER;
 
-    if (!ShouldAcceptWindow(window, windowInfo))
-    {
-        if (windowEntry)
-            *windowEntry = NULL; // ignored
-        return ERROR_SUCCESS;
-    }
-
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
         window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom,
         windowInfo->dwStyle, windowInfo->dwExStyle, IsWindowVisible(window));
@@ -126,15 +115,6 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     {
         if (windowEntry)
             *windowEntry = entry;
-        return ERROR_SUCCESS;
-    }
-
-    // empty window rectangle? ignore (guid rejects those)
-    if ((windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
-    {
-        LogDebug("window rectangle is empty");
-        if (windowEntry)
-            *windowEntry = NULL;
         return ERROR_SUCCESS;
     }
 
@@ -253,81 +233,6 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
     return ERROR_SUCCESS;
 }
 
-static ULONG StartHooks(IN OUT HOOK_DATA *hookData)
-{
-    ULONG status;
-
-    LogVerbose("start");
-
-    // Event for shutting down 32bit hooks.
-    if (!hookData->ShutdownEvent32)
-    {
-        hookData->ShutdownEvent32 = CreateNamedEvent(HOOK32_SHUTDOWN_EVENT_NAME);
-        if (!hookData->ShutdownEvent32)
-            return GetLastError();
-    }
-
-    // Start 64-bit hooks.
-    status = SetHooks(HOOK_DLL_NAME_64, hookData);
-    if (ERROR_SUCCESS != status)
-        return perror2(status, "SetHooks");
-
-    // Start the 32-bit hook server. It exits when the hookShutdownEvent is signaled.
-    status = StartProcess(HOOK_SERVER_NAME_32, &hookData->ServerProcess32);
-    if (ERROR_SUCCESS != status)
-        return perror2(status, "StartProcess");
-
-    hookData->HooksActive = TRUE;
-
-    return ERROR_SUCCESS;
-}
-
-static ULONG StopHooks(IN OUT HOOK_DATA *hookData)
-{
-    LogVerbose("start");
-
-    if (!hookData->HooksActive)
-        return ERROR_SUCCESS; // nothing to do
-
-    // Shutdown QGuiHookServer32.
-    if (!SetEvent(hookData->ShutdownEvent32))
-        return perror("SetEvent");
-
-    if (WAIT_OBJECT_0 != WaitForSingleObject(hookData->ServerProcess32, 1000))
-    {
-        LogWarning("32bit hook server didn't exit in time, killing it");
-        TerminateProcess(hookData->ServerProcess32, 0);
-        CloseHandle(hookData->ServerProcess32);
-    }
-
-    hookData->ServerProcess32 = NULL;
-
-    // Stop 64bit hooks.
-    if (!UnhookWindowsHookEx(hookData->CbtHook))
-        return perror("UnhookWindowsHookEx(CBTHooh)");
-
-    hookData->CbtHook = NULL;
-
-    if (!UnhookWindowsHookEx(hookData->CallWndHook))
-        return perror("UnhookWindowsHookEx(CallWndHook)");
-
-    hookData->CallWndHook = NULL;
-
-    if (!UnhookWindowsHookEx(hookData->CallWndRetHook))
-        return perror("UnhookWindowsHookEx(CallWndRetHook)");
-
-    hookData->CallWndRetHook = NULL;
-
-    if (!UnhookWindowsHookEx(hookData->GetMsgHook))
-        return perror("UnhookWindowsHookEx(GetMsgHook)");
-
-    hookData->GetMsgHook = NULL;
-
-    hookData->HooksActive = FALSE;
-
-    return ERROR_SUCCESS;
-}
-
 // EnumWindows callback for adding all top-level windows to the list.
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
@@ -404,10 +309,6 @@ static ULONG ResetWatch(BOOL seamlessMode)
 
     LogVerbose("start");
 
-    status = StopHooks(&g_HookData);
-    if (ERROR_SUCCESS != status)
-        return perror2(status, "StopHooks");
-
     LogDebug("removing all windows");
     // clear the watched windows list
     EnterCriticalSection(&g_csWatchedWindows);
@@ -434,14 +335,9 @@ static ULONG ResetWatch(BOOL seamlessMode)
 
     status = ERROR_SUCCESS;
 
-    // Only start hooks if we're in seamless mode.
     // WatchForEvents will map the whole screen as one window.
     if (seamlessMode)
     {
-        status = StartHooks(&g_HookData);
-        if (ERROR_SUCCESS != status)
-            return perror2(status, "StartHooks");
-
         // Add all eligible windows to watch list.
         // Since this is a switch from fullscreen, no windows were watched.
         EnterCriticalSection(&g_csWatchedWindows);
@@ -523,6 +419,9 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
 {
     WINDOWINFO wi;
 
+    if (!IsWindow(window))
+        return FALSE;
+
     if (!windowInfo)
     {
         if (!GetWindowInfo(window, &wi))
@@ -540,10 +439,19 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
         )
         return FALSE;
 
-    // Don't skip invisible windows. We keep all windows in the list and map them when/if they become visible.
+    // empty window rectangle? ignore (guid rejects those)
+    if ((windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
+    {
+        LogVerbose("window rectangle is empty");
+        return ERROR_SUCCESS;
+    }
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (windowInfo->dwStyle & WS_CHILD)
+        return FALSE;
+
+    // Skip invisible windows.
+    if (!IsWindowVisible(window))
         return FALSE;
 
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
@@ -554,6 +462,90 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
         return FALSE;
 
     return TRUE;
+}
+
+// Refresh data about a window, send notifications to guid if needed.
+static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
+{
+    ULONG status;
+    WINDOWINFO wi = { 0 };
+    int x, y, width, height;
+    BOOL updateNeeded;
+    WCHAR caption[256];
+
+    *skip = FALSE;
+
+    // get current window state
+    wi.cbSize = sizeof(wi);
+
+    if (!GetWindowInfo(wd->WindowHandle, &wi) || !ShouldAcceptWindow(wd->WindowHandle, &wi))
+    {
+        LogDebug("window %x disappeared, removing", wd->WindowHandle);
+        status = RemoveWindow(wd);
+        *skip = TRUE;
+        return status;
+    }
+
+    // iconic state
+    if (IsIconic(wd->WindowHandle))
+    {
+        if (!wd->IsIconic)
+        {
+            LogDebug("minimizing %x", wd->WindowHandle);
+            wd->IsIconic = TRUE;
+            *skip = TRUE;
+            return SendWindowFlags(wd->WindowHandle, WINDOW_FLAG_MINIMIZE, 0); // exit
+        }
+        return ERROR_SUCCESS;
+    }
+    else
+    {
+        LogVerbose("%x not iconic", wd->WindowHandle);
+        wd->IsIconic = FALSE;
+    }
+
+    // coords
+    x = wi.rcWindow.left;
+    y = wi.rcWindow.top;
+    width = wi.rcWindow.right - wi.rcWindow.left;
+    height = wi.rcWindow.bottom - wi.rcWindow.top;
+
+    updateNeeded = (x != wd->X || y != wd->Y || width != wd->Width || height != wd->Height);
+
+    wd->X = x;
+    wd->Y = y;
+    wd->Width = width;
+    wd->Height = height;
+    LogVerbose("%x (%d,%d) %dx%d", wd->WindowHandle, x, y, width, height);
+
+    if (updateNeeded)
+        SendWindowConfigure(wd);
+
+    // visibility
+    if (wd->IsVisible && !IsWindowVisible(wd->WindowHandle))
+    {
+        LogDebug("window %x turned invisible", wd->WindowHandle);
+        wd->IsVisible = FALSE;
+        *skip = TRUE;
+        SendWindowUnmap(wd->WindowHandle); // exit
+    }
+    else if (!wd->IsVisible && IsWindowVisible(wd->WindowHandle))
+    {
+        LogDebug("window %x turned visible", wd->WindowHandle);
+        wd->IsVisible = TRUE;
+        SendWindowMap(wd);
+    }
+
+    // caption
+    GetWindowText(wd->WindowHandle, caption, RTL_NUMBER_OF(caption));
+    if (0 != wcscmp(wd->Caption, caption))
+    {
+        // caption changed
+        StringCchCopy(wd->Caption, RTL_NUMBER_OF(wd->Caption), caption);
+        SendWindowName(wd->WindowHandle, wd->Caption);
+    }
+
+    return ERROR_SUCCESS;
 }
 
 // Called after receiving screen damage event from qvideo.
@@ -623,29 +615,25 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
         return ERROR_SUCCESS;
     }
 
+    // Update the window list - check for new/destroyed windows.
+    AddAllWindows();
+
+    // Update all watched windows.
     EnterCriticalSection(&g_csWatchedWindows);
 
     entry = (WINDOW_DATA *) g_WatchedWindowsList.Flink;
     while (entry != (WINDOW_DATA *) &g_WatchedWindowsList)
     {
+        BOOL skip;
+
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *) entry->ListEntry.Flink;
 
-        // Failsafes because apparently window messages aren't as reliable as expected.
-        // It's possible that a window is destroyed WITHOUT receiving WM_DESTROY (mostly menus).
-        if (!IsWindow(entry->WindowHandle))
+        UpdateWindowData(entry, &skip);
+        if (skip)
         {
-            LogDebug("window %x disappeared?!, removing", entry->WindowHandle);
-            RemoveWindow(entry);
             entry = nextEntry;
             continue;
-        }
-
-        if (entry->IsVisible && !IsWindowVisible(entry->WindowHandle))
-        {
-            LogDebug("window %x turned invisible?!", entry->WindowHandle);
-            entry->IsVisible = FALSE;
-            SendWindowUnmap(entry->WindowHandle);
         }
 
         if (entry->IsVisible)
@@ -697,8 +685,8 @@ cleanup:
 // TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents(void)
 {
-    HANDLE vchan, hookIpc;
-    OVERLAPPED vchanAsyncState = { 0 }, hookIpcAsyncState = { 0 };
+    HANDLE vchan;
+    OVERLAPPED vchanAsyncState = { 0 };
     unsigned int firedPort;
     ULONG eventCount;
     DWORD i, signaledEvent;
@@ -708,11 +696,8 @@ static ULONG WINAPI WatchForEvents(void)
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
     HDC screenDC;
-    struct shm_cmd *shmCmd = NULL;
-    QH_MESSAGE qhm;
 #ifdef DEBUG
     DWORD dumpLastTime = GetTickCount();
-    UINT64 msgCount = 0, msgCountOld = 0;
     UINT64 damageCount = 0, damageCountOld = 0;
 #endif
 
@@ -730,8 +715,6 @@ static ULONG WINAPI WatchForEvents(void)
 
     vchanAsyncState.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-    hookIpcAsyncState.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
     fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!fullScreenOnEvent)
         return GetLastError();
@@ -741,11 +724,6 @@ static ULONG WINAPI WatchForEvents(void)
     g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!g_ResolutionChangeEvent)
         return GetLastError();
-
-    // Create IPC object for hook DLLs.
-    hookIpc = CreateNamedMailslot(HOOK_IPC_NAME);
-    if (!hookIpc)
-        return perror("CreateNamedMailslot");
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
@@ -760,7 +738,6 @@ static ULONG WINAPI WatchForEvents(void)
         watchedEvents[2] = fullScreenOnEvent;
         watchedEvents[3] = fullScreenOffEvent;
         watchedEvents[4] = g_ResolutionChangeEvent;
-        watchedEvents[5] = hookIpcAsyncState.hEvent;
 
         status = ERROR_SUCCESS;
 
@@ -781,13 +758,10 @@ static ULONG WINAPI WatchForEvents(void)
 
         vchanIoInProgress = TRUE;
 
-        watchedEvents[6] = vchanAsyncState.hEvent;
-        eventCount = 7;
+        watchedEvents[5] = vchanAsyncState.hEvent;
+        eventCount = 6;
 
-        // Start hook mailslot async read.
-        // Even if there is data available right away, processing is done in the event handler.
-        status = ReadFile(hookIpc, &qhm, sizeof(qhm), NULL, &hookIpcAsyncState);
-
+        // Wait for events.
         signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
         if (signaledEvent >= MAXIMUM_WAIT_OBJECTS)
         {
@@ -803,9 +777,8 @@ static ULONG WINAPI WatchForEvents(void)
             dumpLastTime = GetTickCount();
 
             // dump performance counters
-            LogDebug("last second damages: %llu, hook events: %llu", damageCount - damageCountOld, msgCount - msgCountOld);
+            LogDebug("last second damages: %llu", damageCount - damageCountOld);
             damageCountOld = damageCount;
-            msgCountOld = msgCount;
         }
 #endif
 
@@ -826,7 +799,7 @@ static ULONG WINAPI WatchForEvents(void)
             if (g_VchanClientConnected)
             {
                 ProcessUpdatedWindows(screenDC);
-            }
+        }
             break;
 
         case 2: // seamless off event
@@ -857,19 +830,7 @@ static ULONG WINAPI WatchForEvents(void)
             }
             break;
 
-        case 5: // mailslot read: message from our gui hook
-#ifdef DEBUG
-            msgCount++;
-#endif
-            status = HandleHookEvent(hookIpc, &hookIpcAsyncState, &qhm);
-            if (ERROR_SUCCESS != status)
-            {
-                perror2(status, "HandleHookEvent");
-                exitLoop = TRUE;
-            }
-            break;
-
-        case 6: // vchan receive
+        case 5: // vchan receive
             // the following will never block; we need to do this to
             // clear libvchan_fd pending state
             //
@@ -940,7 +901,7 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
-                // This initializes watched windows, hooks etc.
+                // This initializes watched windows list.
                 status = SetSeamlessMode(g_SeamlessMode, TRUE);
                 if (ERROR_SUCCESS != status)
                 {
@@ -1009,11 +970,11 @@ static ULONG WINAPI WatchForEvents(void)
             LeaveCriticalSection(&g_VchanCriticalSection);
 
             break;
-        }
+    }
 
         if (exitLoop)
             break;
-    }
+}
 
     LogDebug("main loop finished");
 
@@ -1038,7 +999,7 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         VchanClose();
 
-    StopHooks(&g_HookData); // don't care if it fails at this point
+    //StopHooks(&g_HookData); // don't care if it fails at this point
 
     CloseHandle(vchanAsyncState.hEvent);
     CloseHandle(windowDamageEvent);
