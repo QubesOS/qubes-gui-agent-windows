@@ -267,30 +267,6 @@ static ULONG AddAllWindows(void)
 {
     LogVerbose("start");
 
-    // First, check for special windows that should be ignored.
-    g_bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
-
-    g_bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
-    if (g_bannedWindows.Taskbar)
-    {
-        if (g_SeamlessMode)
-            ShowWindow(g_bannedWindows.Taskbar, SW_HIDE);
-        else
-            ShowWindow(g_bannedWindows.Taskbar, SW_SHOW);
-    }
-
-    g_bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
-    if (g_bannedWindows.Start)
-    {
-        if (g_SeamlessMode)
-            ShowWindow(g_bannedWindows.Start, SW_HIDE);
-        else
-            ShowWindow(g_bannedWindows.Start, SW_SHOW);
-    }
-
-    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-        g_DesktopWindow, g_bannedWindows.Explorer, g_bannedWindows.Taskbar, g_bannedWindows.Start);
-
     // Enum top-level windows and add all that are not filtered.
     if (!EnumWindows(AddWindowsProc, 0))
         return perror("EnumWindows");
@@ -330,7 +306,31 @@ static ULONG ResetWatch(BOOL seamlessMode)
 
     LeaveCriticalSection(&g_csWatchedWindows);
 
-    g_DesktopWindow = NULL; // this causes reinitialization of "banned windows"
+    g_DesktopWindow = NULL;
+
+    // Check for special windows that should be ignored/hidden in seamless mode.
+    g_bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
+
+    g_bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
+    if (g_bannedWindows.Taskbar)
+    {
+        if (seamlessMode)
+            ShowWindow(g_bannedWindows.Taskbar, SW_HIDE);
+        else
+            ShowWindow(g_bannedWindows.Taskbar, SW_SHOW);
+    }
+
+    g_bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
+    if (g_bannedWindows.Start)
+    {
+        if (seamlessMode)
+            ShowWindow(g_bannedWindows.Start, SW_HIDE);
+        else
+            ShowWindow(g_bannedWindows.Start, SW_SHOW);
+    }
+
+    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
+        g_DesktopWindow, g_bannedWindows.Explorer, g_bannedWindows.Taskbar, g_bannedWindows.Start);
 
     status = ERROR_SUCCESS;
 
