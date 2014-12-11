@@ -416,7 +416,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
             goto cleanup;
     }
 
-    if (windowData && windowData->IsVisible)
+    if (windowData)
     {
         mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; // TODO?
         mapMsg.override_redirect = windowData->IsOverrideRedirect;

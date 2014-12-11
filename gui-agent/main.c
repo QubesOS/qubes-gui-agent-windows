@@ -83,9 +83,9 @@ void DumpWindows(void)
             }
         }
 
-        LogDebug("%8x: (%6d,%6d) %4dx%4d vis=%d ico=%d ovr=%d [%s] '%s' {%s}",
+        LogDebug("%8x: (%6d,%6d) %4dx%4d ico=%d ovr=%d [%s] '%s' {%s}",
             entry->WindowHandle, entry->X, entry->Y, entry->Width, entry->Height,
-            entry->IsVisible, entry->IsIconic, entry->IsOverrideRedirect,
+            entry->IsIconic, entry->IsOverrideRedirect,
             entry->Class, entry->Caption, exePath);
 
         entry = (WINDOW_DATA *) entry->ListEntry.Flink;
@@ -132,12 +132,11 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     entry->Y = windowInfo->rcWindow.top;
     entry->Width = windowInfo->rcWindow.right - windowInfo->rcWindow.left;
     entry->Height = windowInfo->rcWindow.bottom - windowInfo->rcWindow.top;
-    entry->IsVisible = IsWindowVisible(window);
     entry->IsIconic = IsIconic(window);
     GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
     GetClassName(window, entry->Class, RTL_NUMBER_OF(entry->Class));
 
-    LogDebug("0x%x: visible=%d, iconic=%d", entry->WindowHandle, entry->IsVisible, entry->IsIconic);
+    LogDebug("0x%x: iconic=%d", entry->WindowHandle, entry->IsIconic);
 
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     // this is mainly for the logon window (which is screen-sized without caption)
@@ -184,7 +183,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
             return perror2(status, "SendWindowCreate");
 
         // map (show) the window if it's visible and not minimized
-        if (entry->IsVisible && !entry->IsIconic)
+        if (!entry->IsIconic)
         {
             status = SendWindowMap(entry);
             if (ERROR_SUCCESS != status)
@@ -522,18 +521,12 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
         SendWindowConfigure(wd);
 
     // visibility
-    if (wd->IsVisible && !IsWindowVisible(wd->WindowHandle))
+    if (!IsWindowVisible(wd->WindowHandle))
     {
         LogDebug("window %x turned invisible", wd->WindowHandle);
-        wd->IsVisible = FALSE;
+        status = RemoveWindow(wd);
         *skip = TRUE;
-        SendWindowUnmap(wd->WindowHandle); // exit
-    }
-    else if (!wd->IsVisible && IsWindowVisible(wd->WindowHandle))
-    {
-        LogDebug("window %x turned visible", wd->WindowHandle);
-        wd->IsVisible = TRUE;
-        SendWindowMap(wd);
+        return status;
     }
 
     // caption
@@ -636,39 +629,36 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
             continue;
         }
 
-        if (entry->IsVisible)
+        if (g_UseDirtyBits)
         {
-            if (g_UseDirtyBits)
-            {
-                RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+            RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
 
-                // skip windows that aren't in the changed area
-                if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
-                {
-                    status = SendWindowDamageEvent(entry->WindowHandle,
-                        currentArea.left - entry->X, // TODO: verify
-                        currentArea.top - entry->Y,
-                        currentArea.right - entry->X,
-                        currentArea.bottom - entry->Y);
-
-                    if (ERROR_SUCCESS != status)
-                    {
-                        perror2(status, "SendWindowDamageEvent");
-                        goto cleanup;
-                    }
-                }
-            }
-            else
+            // skip windows that aren't in the changed area
+            if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
             {
-                // assume the whole window area changed
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                    0, 0, entry->Width, entry->Height);
+                    currentArea.left - entry->X, // TODO: verify
+                    currentArea.top - entry->Y,
+                    currentArea.right - entry->X,
+                    currentArea.bottom - entry->Y);
 
                 if (ERROR_SUCCESS != status)
                 {
                     perror2(status, "SendWindowDamageEvent");
                     goto cleanup;
                 }
+            }
+        }
+        else
+        {
+            // assume the whole window area changed
+            status = SendWindowDamageEvent(entry->WindowHandle,
+                0, 0, entry->Width, entry->Height);
+
+            if (ERROR_SUCCESS != status)
+            {
+                perror2(status, "SendWindowDamageEvent");
+                goto cleanup;
             }
         }
 

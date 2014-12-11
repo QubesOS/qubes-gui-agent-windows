@@ -21,7 +21,6 @@ typedef struct _WINDOW_DATA
 {
     HWND WindowHandle;
     BOOL IsIconic;
-    BOOL IsVisible;
     WCHAR Caption[256];
     WCHAR Class[256];
     int X;
