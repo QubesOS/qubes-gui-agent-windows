@@ -298,15 +298,7 @@ static DWORD HandleConfigure(IN HWND window)
 
     if (window != 0) // 0 is full screen
     {
-        WINDOW_DATA *wd = FindWindowByHandle(window);
-        if (!wd) // it's possible that some queued guid events arrive even after we send destroy
-            return ERROR_SUCCESS;
         SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, 0);
-        wd->X = configureMsg.x;
-        wd->Y = configureMsg.y;
-        wd->Width = configureMsg.width;
-        wd->Height = configureMsg.height;
-        SendWindowConfigure(wd);
     }
     else
     {
@@ -339,17 +331,20 @@ static DWORD HandleFocus(IN HWND window)
 {
     struct msg_focus focusMsg;
 
-    LogVerbose("0x%x", window);
     if (!VchanReceiveBuffer(&focusMsg, sizeof(focusMsg)))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
     }
+    LogVerbose("0x%x: type %x, mode %x, detail %x", window, focusMsg.type, focusMsg.mode, focusMsg.detail);
 
-    BringWindowToTop(window);
-    SetForegroundWindow(window);
-    SetActiveWindow(window);
-    SetFocus(window);
+    if (focusMsg.type == 9) // focus gain
+    {
+        BringWindowToTop(window);
+        SetForegroundWindow(window);
+        SetActiveWindow(window);
+        SetFocus(window);
+    }
 
     return ERROR_SUCCESS;
 }
