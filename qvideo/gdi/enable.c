@@ -316,7 +316,6 @@ ULONG AllocateSection(
     pSurfaceDescriptor->DirtySectionObject = pQvminiAllocateSectionResponse->DirtySectionObject;
     pSurfaceDescriptor->DirtySection = pQvminiAllocateSectionResponse->DirtySection;
     pSurfaceDescriptor->DirtyPages = pQvminiAllocateSectionResponse->DirtyPages;
-    pSurfaceDescriptor->LastCheck.QuadPart = 0;
 
     pSurfaceDescriptor->pPfnArray = pQvminiAllocateSectionResponse->PfnArray;
 
@@ -915,8 +914,7 @@ VOID APIENTRY DrvSynchronizeSurface(
 
     // UpdateDirtyBits returns 0 also if the check was too early after a previous one.
     // This just returns 1 if using dirty bits is disabled.
-    uDirty = UpdateDirtyBits(pSurfaceDescriptor->SurfaceData, uSize, pSurfaceDescriptor->DirtyPages,
-        &pSurfaceDescriptor->LastCheck);
+    uDirty = UpdateDirtyBits(pSurfaceDescriptor->SurfaceData, uSize, pSurfaceDescriptor->DirtyPages);
 
     if (uDirty > 0) // only signal the event if something changed
         EngSetEvent(pSurfaceDescriptor->DamageNotificationEvent);

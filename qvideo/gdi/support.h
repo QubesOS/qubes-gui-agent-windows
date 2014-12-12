@@ -24,8 +24,7 @@ VOID ReadRegistryConfig(VOID);
 ULONG UpdateDirtyBits(
     void *va,
     ULONG size,
-    QV_DIRTY_PAGES *pDirtyPages,
-    IN OUT LARGE_INTEGER *pTimestamp
+    QV_DIRTY_PAGES *pDirtyPages
     );
 
 extern BOOLEAN g_bUseDirtyBits;

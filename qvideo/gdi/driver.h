@@ -68,7 +68,6 @@ typedef struct _SURFACE_DESCRIPTOR
     void *DirtySectionObject;
     HANDLE DirtySection;
     QV_DIRTY_PAGES *DirtyPages;
-    LARGE_INTEGER LastCheck; // timestamp of the last dirty pages check, to limit events per second
 
     //  BITMAP_HEADER BitmapHeader;
 } SURFACE_DESCRIPTOR;
