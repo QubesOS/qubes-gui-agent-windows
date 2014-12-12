@@ -463,6 +463,26 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     return TRUE;
 }
 
+// Enumerate top-level windows, searching for one that is modal
+// in relation to a parent one (passed in lParam).
+static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
+{
+    MODAL_SEARCH_PARAMS *msp = (MODAL_SEARCH_PARAMS *) lParam;
+    LONG wantedStyle = WS_POPUP | WS_VISIBLE;
+    HWND owner = GetWindow(hwnd, GW_OWNER);
+
+    // Modal windows are not child windows but owned windows.
+    if (owner != msp->ParentWindow)
+        return TRUE;
+
+    if ((GetWindowLong(hwnd, GWL_STYLE) & wantedStyle) != wantedStyle)
+        return TRUE;
+
+    msp->ModalWindow = hwnd;
+    LogVerbose("0x%x: seems OK for 0x%x", hwnd, msp->ParentWindow);
+    return FALSE; // stop enumeration
+}
+
 // Refresh data about a window, send notifications to guid if needed.
 static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
 {
@@ -471,6 +491,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
     int x, y, width, height;
     BOOL updateNeeded;
     WCHAR caption[256];
+    MODAL_SEARCH_PARAMS modalParams = { 0 };
 
     *skip = FALSE;
 
@@ -536,6 +557,36 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
         // caption changed
         StringCchCopy(wd->Caption, RTL_NUMBER_OF(wd->Caption), caption);
         SendWindowName(wd->WindowHandle, wd->Caption);
+    }
+
+    // style
+    if (wi.dwStyle & WS_DISABLED)
+    {
+        // possibly showing a modal window
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", wd->WindowHandle);
+        modalParams.ParentWindow = wd->WindowHandle;
+        modalParams.ModalWindow = NULL;
+
+        // No checking for success, EnumWindows returns FALSE if the callback function returns FALSE.
+        EnumWindows(FindModalChildProc, (LPARAM) &modalParams);
+
+        LogDebug("result: 0x%x", modalParams.ModalWindow);
+        if (modalParams.ModalWindow) // found a modal "child"
+        {
+            WINDOW_DATA *modalWindow = FindWindowByHandle(modalParams.ModalWindow);
+            if (modalWindow && !modalWindow->ModalParent)
+            {
+                // need to toggle map since this is the only way to change modal status for gui daemon
+                modalWindow->ModalParent = wd->WindowHandle;
+                status = SendWindowUnmap(modalWindow->WindowHandle);
+                if (ERROR_SUCCESS != status)
+                    return perror2(status, "SendWindowUnmap");
+
+                status = SendWindowMap(modalWindow);
+                if (ERROR_SUCCESS != status)
+                    return perror2(status, "SendWindowMap");
+            }
+        }
     }
 
     return ERROR_SUCCESS;
