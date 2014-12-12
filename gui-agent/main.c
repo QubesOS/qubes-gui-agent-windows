@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <winsock2.h>
+#include <mmsystem.h>
 #include <stdlib.h>
 
 #include <xenstore.h>
@@ -24,6 +25,7 @@
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
 BOOL g_UseDirtyBits;
+DWORD g_MaxFps; // max refresh event batches per second that are sent to guid
 
 LONG g_ScreenHeight;
 LONG g_ScreenWidth;
@@ -737,6 +739,8 @@ static ULONG WINAPI WatchForEvents(void)
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
     HDC screenDC;
+    LARGE_INTEGER maxInterval, time1, time2;
+    BOOL updatePending = FALSE;
 #ifdef DEBUG
     DWORD dumpLastTime = GetTickCount();
     UINT64 damageCount = 0, damageCountOld = 0;
@@ -766,11 +770,18 @@ static ULONG WINAPI WatchForEvents(void)
     if (!g_ResolutionChangeEvent)
         return GetLastError();
 
+    QueryPerformanceFrequency(&maxInterval);
+    LogDebug("frequency: %llu", maxInterval.QuadPart);
+    maxInterval.QuadPart /= g_MaxFps;
+    LogDebug("MaxFps: %lu, maxInterval: %llu", g_MaxFps, maxInterval.QuadPart);
+
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
     exitLoop = FALSE;
 
     LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
+
+    QueryPerformanceCounter(&time1);
 
     while (TRUE)
     {
@@ -800,7 +811,8 @@ static ULONG WINAPI WatchForEvents(void)
         vchanIoInProgress = TRUE;
 
         watchedEvents[5] = vchanAsyncState.hEvent;
-        eventCount = 6;
+        watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
+        eventCount = 7;
 
         // Wait for events.
         signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
@@ -833,14 +845,34 @@ static ULONG WINAPI WatchForEvents(void)
 
         switch (signaledEvent)
         {
+        case 6:
+            LogVerbose("forced update");
+            goto force_update;
+            break;
+
         case 1: // damage event
-#ifdef DEBUG
-            LogVerbose("Damage %llu", damageCount++);
-#endif
             if (g_VchanClientConnected)
             {
+                QueryPerformanceCounter(&time2);
+                if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
+                {
+                    if (!updatePending)
+                    {
+                        updatePending = TRUE;
+                        // fire a delayed damage event to ensure we won't miss anything in case no damages follow
+                        if (!timeSetEvent(1000 / g_MaxFps, 0, (LPTIMECALLBACK) watchedEvents[6], 0, TIME_ONESHOT | TIME_CALLBACK_EVENT_SET))
+                            perror("timeSetEvent");
+                    }
+                    continue;
+                }
+force_update:
+                time1 = time2;
+                updatePending = FALSE;
+#ifdef DEBUG
+                LogVerbose("Damage %llu", damageCount++);
+#endif
                 ProcessUpdatedWindows(screenDC);
-        }
+            }
             break;
 
         case 2: // seamless off event
@@ -1127,6 +1159,14 @@ static ULONG Init(void)
         LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_SEAMLESS_VALUE);
         g_SeamlessMode = TRUE;
     }
+
+    status = CfgReadDword(moduleName, REG_CONFIG_FPS_VALUE, &g_MaxFps, NULL);
+    if (ERROR_SUCCESS != status)
+    {
+        LogWarning("Failed to read '%s' config value, using default (30)", REG_CONFIG_FPS_VALUE);
+        g_MaxFps = 30;
+    }
+    LogInfo("MaxFps: %lu", g_MaxFps);
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
