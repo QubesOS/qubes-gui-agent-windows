@@ -25,7 +25,7 @@
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
 BOOL g_UseDirtyBits;
-DWORD g_MaxFps; // max refresh event batches per second that are sent to guid
+DWORD g_MaxFps = 0; // max refresh event batches per second that are sent to guid (0 = disabled)
 
 LONG g_ScreenHeight;
 LONG g_ScreenWidth;
@@ -770,18 +770,20 @@ static ULONG WINAPI WatchForEvents(void)
     if (!g_ResolutionChangeEvent)
         return GetLastError();
 
-    QueryPerformanceFrequency(&maxInterval);
-    LogDebug("frequency: %llu", maxInterval.QuadPart);
-    maxInterval.QuadPart /= g_MaxFps;
-    LogDebug("MaxFps: %lu, maxInterval: %llu", g_MaxFps, maxInterval.QuadPart);
+    if (g_MaxFps > 0)
+    {
+        QueryPerformanceFrequency(&maxInterval);
+        LogDebug("frequency: %llu", maxInterval.QuadPart);
+        maxInterval.QuadPart /= g_MaxFps;
+        LogDebug("MaxFps: %lu, maxInterval: %llu", g_MaxFps, maxInterval.QuadPart);
+        QueryPerformanceCounter(&time1);
+    }
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
     exitLoop = FALSE;
 
     LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
-
-    QueryPerformanceCounter(&time1);
 
     while (TRUE)
     {
@@ -847,27 +849,31 @@ static ULONG WINAPI WatchForEvents(void)
         {
         case 6:
             LogVerbose("forced update");
+            QueryPerformanceCounter(&time2);
             goto force_update;
             break;
 
         case 1: // damage event
             if (g_VchanClientConnected)
             {
-                QueryPerformanceCounter(&time2);
-                if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
+                if (g_MaxFps > 0)
                 {
-                    if (!updatePending)
+                    QueryPerformanceCounter(&time2);
+                    if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
                     {
-                        updatePending = TRUE;
-                        // fire a delayed damage event to ensure we won't miss anything in case no damages follow
-                        if (!timeSetEvent(1000 / g_MaxFps, 0, (LPTIMECALLBACK) watchedEvents[6], 0, TIME_ONESHOT | TIME_CALLBACK_EVENT_SET))
-                            perror("timeSetEvent");
+                        if (!updatePending)
+                        {
+                            updatePending = TRUE;
+                            // fire a delayed damage event to ensure we won't miss anything in case no damages follow
+                            if (!timeSetEvent(1000 / g_MaxFps, 0, (LPTIMECALLBACK) watchedEvents[6], 0, TIME_ONESHOT | TIME_CALLBACK_EVENT_SET))
+                                perror("timeSetEvent");
+                        }
+                        continue;
                     }
-                    continue;
+                force_update:
+                    time1 = time2;
+                    updatePending = FALSE;
                 }
-force_update:
-                time1 = time2;
-                updatePending = FALSE;
 #ifdef DEBUG
                 LogVerbose("Damage %llu", damageCount++);
 #endif
@@ -1163,8 +1169,8 @@ static ULONG Init(void)
     status = CfgReadDword(moduleName, REG_CONFIG_FPS_VALUE, &g_MaxFps, NULL);
     if (ERROR_SUCCESS != status)
     {
-        LogWarning("Failed to read '%s' config value, using default (30)", REG_CONFIG_FPS_VALUE);
-        g_MaxFps = 30;
+        LogWarning("Failed to read '%s' config value, using default (0)", REG_CONFIG_FPS_VALUE);
+        g_MaxFps = 0;
     }
     LogInfo("MaxFps: %lu", g_MaxFps);
 
