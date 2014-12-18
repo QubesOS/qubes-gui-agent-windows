@@ -307,7 +307,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             StringCbPrintf(text, sizeof(text), L"window: (%d,%d) %dx%d\r\nclient: (%d,%d) %dx%d\r\n"
                 L"F2 = toggle menu\r\n"
                 L"F3 = toggle position test\r\n"
-                L"F4 = toggle size test\r\n",
+                L"F4 = toggle size test\r\n"
+                L"F5 = flash window\r\n",
                 windowRect.left, windowRect.top, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top,
                 clientRect.left, clientRect.top, clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
             DrawText(hdc, text, -1, &clientRect, DT_LEFT | DT_TOP);
@@ -367,6 +368,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     {
                         sizeThread = CreateThread(NULL, 0, SizeTestThread, &ws, 0, NULL);
                     }
+                    break;
+                }
+
+                case VK_F5:
+                {
+                    FLASHWINFO fi = { 0 };
+                    fi.cbSize = sizeof(fi);
+                    fi.hwnd = hWnd;
+                    fi.dwFlags = FLASHW_ALL;
+                    fi.uCount = 10;
+                    fi.dwTimeout = 200;
+                    if (!FlashWindowEx(&fi))
+                        DebugBreak();
                     break;
                 }
             }
