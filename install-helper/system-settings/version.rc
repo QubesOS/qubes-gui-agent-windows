@@ -1,0 +1,3 @@
+	#define QTW_FILEDESCRIPTION_STR "Qubes install helper (global visual settings)"
+#include "..\..\version.h"
+#include "..\..\version_common.rc"

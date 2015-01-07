@@ -12,7 +12,7 @@ INCLUDES=$(INCLUDES); \
                     ..\include; \
                     $(QUBES_INCLUDES); \
 
-SOURCES=service.c
+SOURCES=service.c version.rc
 
 TARGETLIBS=\
         $(SDK_LIB_PATH)\kernel32.lib \
