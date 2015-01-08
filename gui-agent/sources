@@ -21,13 +21,8 @@ INCLUDES = $(INCLUDES); \
 SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c register-hooks.c wm.h wga.rc
 
 TARGETLIBS = \
-    $(SDK_LIB_PATH)\kernel32.lib \
     $(SDK_LIB_PATH)\user32.lib \
-    $(SDK_LIB_PATH)\gdi32.lib \
     $(SDK_LIB_PATH)\setupapi.lib \
-    $(SDK_LIB_PATH)\shlwapi.lib \
-    $(SDK_LIB_PATH)\shell32.lib \
-    $(SDK_LIB_PATH)\wtsapi32.lib \
     $(SDK_LIB_PATH)\ws2_32.lib \
     $(SDK_LIB_PATH)\psapi.lib \
     $(SDK_LIB_PATH)\winmm.lib \

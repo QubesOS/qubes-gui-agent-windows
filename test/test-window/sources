@@ -16,5 +16,4 @@ INCLUDES = $(INCLUDES); \
 SOURCES = test-window.cpp test-window.rc
 
 TARGETLIBS = \
-    $(SDK_LIB_PATH)\kernel32.lib \
     $(SDK_LIB_PATH)\user32.lib \

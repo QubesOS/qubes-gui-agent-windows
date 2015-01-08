@@ -1,23 +1,20 @@
-TARGETNAME=QTWHelper
-TARGETTYPE=PROGRAM
-TARGETPATH=bin
+TARGETNAME = QTWHelper
+TARGETTYPE = PROGRAM
+TARGETPATH = bin
 
-UMTYPE=windows
-USE_MSVCRT=1
+UMTYPE = windows
+USE_MSVCRT = 1
 
 UMENTRY = wmain
 C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
 
-INCLUDES=$(INCLUDES); \
-                    ..\include; \
-                    $(QUBES_INCLUDES); \
+INCLUDES = $(INCLUDES); \
+    ..\include; \
+    $(QUBES_INCLUDES); \
 
-SOURCES=service.c version.rc
+SOURCES = service.c version.rc
 
-TARGETLIBS=\
-        $(SDK_LIB_PATH)\kernel32.lib \
-        $(SDK_LIB_PATH)\user32.lib \
-        $(SDK_LIB_PATH)\shlwapi.lib \
-        $(SDK_LIB_PATH)\shell32.lib \
-        $(SDK_LIB_PATH)\wtsapi32.lib \
-        $(QUBES_LIBS)\windows-utils.lib \
+TARGETLIBS = \
+    $(SDK_LIB_PATH)\shlwapi.lib \
+    $(SDK_LIB_PATH)\wtsapi32.lib \
+    $(QUBES_LIBS)\windows-utils.lib
