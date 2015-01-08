@@ -1,14 +1,5 @@
-#include "..\qvideo\inc\qubes_common.rc"
-
-#define VER_FILETYPE                VFT_APP
-#define VER_FILESUBTYPE             VFT2_UNKNOWN
-#define VER_FILEDESCRIPTION_STR     "Qubes Windows GUI Agent"
-
-#define VER_INTERNALNAME_STR        "wga.exe"
-#define VER_ORIGINALFILENAME_STR    "wga.exe"
-
-#include "..\qvideo\inc\common.rc"
-
 #include "..\include\resource.h"
 
 IDC_BLANK               CURSOR  DISCARDABLE     "blank.cur"
+
+#include "version.rc"

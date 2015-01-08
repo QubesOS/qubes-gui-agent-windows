@@ -3,9 +3,6 @@
 #include "support.h"
 #include "mi.h"
 
-LARGE_INTEGER g_PCFrequency;
-LARGE_INTEGER g_RefreshInterval;
-ULONG g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
 BOOLEAN g_bUseDirtyBits = TRUE;
 
 ULONG CfgReadDword(IN WCHAR *valueName, OUT ULONG *value)
@@ -91,39 +88,13 @@ cleanup:
     return status;
 }
 
-VOID ReadRegistryConfig()
+void ReadRegistryConfig(void)
 {
     static BOOLEAN bInitialized = FALSE;
     ULONG ulUseDirtyBits = g_bUseDirtyBits;
 
     if (bInitialized)
         return;
-
-    // frequency doesn't change, query it once
-    KeQueryPerformanceCounter(&g_PCFrequency);
-
-    // read maximum refresh FPS
-    if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_FPS_VALUE, &g_MaxFps)))
-    {
-        g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
-        WARNINGF("failed to read '%S' config value, using %lu", REG_CONFIG_FPS_VALUE, g_MaxFps);
-    }
-
-    if (g_MaxFps > MAX_REFRESH_FPS)
-    {
-        WARNINGF("invalid refresh FPS: %lu, reverting to default %lu", g_MaxFps, DEFAULT_MAX_REFRESH_FPS);
-        g_MaxFps = DEFAULT_MAX_REFRESH_FPS;
-    }
-
-    if (g_MaxFps != 0)
-    {
-        g_RefreshInterval.QuadPart = g_PCFrequency.QuadPart / g_MaxFps;
-        DEBUGF("FPS: %lu, freq: %I64d, interval: %I64d", g_MaxFps, g_PCFrequency.QuadPart, g_RefreshInterval.QuadPart);
-    }
-    else
-    {
-        DEBUGF("FPS limit disabled");
-    }
 
     // dirty bits
     if (!NT_SUCCESS(CfgReadDword(REG_CONFIG_DIRTY_VALUE, &ulUseDirtyBits)))
@@ -140,7 +111,7 @@ VOID ReadRegistryConfig()
 }
 
 // debug
-VOID DumpPte(void *va, MMPTE *pte)
+void DumpPte(void *va, MMPTE *pte)
 {
     UNREFERENCED_PARAMETER(va);
     UNREFERENCED_PARAMETER(pte);
@@ -166,11 +137,9 @@ VOID DumpPte(void *va, MMPTE *pte)
 ULONG UpdateDirtyBits(
     void *va,
     ULONG size,
-    QV_DIRTY_PAGES *pDirtyPages,
-    IN OUT LARGE_INTEGER *pTimestamp
+    QV_DIRTY_PAGES *pDirtyPages
     )
 {
-    LARGE_INTEGER timestamp;
     ULONG pages, pageNumber, dirty = 0;
     UCHAR *ptr;
     MMPTE *pte;
@@ -179,16 +148,6 @@ ULONG UpdateDirtyBits(
     LARGE_INTEGER stime, ltime;
     TIME_FIELDS tf;
 #endif
-
-    if (g_MaxFps != 0) // FPS limiter enabled
-    {
-        timestamp = KeQueryPerformanceCounter(NULL);
-        //DEBUGF("ts: %I64d", timestamp.QuadPart);
-        if (timestamp.QuadPart < pTimestamp->QuadPart + g_RefreshInterval.QuadPart)
-            return 0; // too soon
-
-        *pTimestamp = timestamp;
-    }
 
     if (!g_bUseDirtyBits)
         return 1; // just signal the refresh event

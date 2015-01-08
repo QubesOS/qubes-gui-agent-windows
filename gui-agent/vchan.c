@@ -1,57 +1,81 @@
 #include <windows.h>
 #include "libvchan.h"
+#include "qubes-gui-protocol.h"
+#include "log.h"
+
+// define LOG_VCHAN_VERBOSE to log every send/receive
 
 CRITICAL_SECTION g_VchanCriticalSection;
 
-static struct libvchan *g_Vchan;
+static struct libvchan *g_Vchan = NULL;
 
-int VchanSendBuffer(IN const void *buffer, IN int size)
+BOOL VchanSendBuffer(IN const void *buffer, IN int size)
 {
     int written = 0;
     int status;
+
+#ifdef LOG_VCHAN_VERBOSE
+    LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+#endif
 
     if (!g_Vchan)
-        return -1;
+    {
+        LogError("vchan not connected");
+        return FALSE;
+    }
 
     while (written < size)
     {
-        status = libvchan_write(g_Vchan, (char *) buffer + written, size - written);
-        if (status <= 0)
-            return status;
+        status = libvchan_write(g_Vchan, (char *)buffer + written, size - written);
+        if (status < 0)
+        {
+            LogError("libvchan_write failed: %d", status);
+            return FALSE;
+        }
 
         written += status;
     }
 
-    return size;
+    return TRUE;
 }
 
-int VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int dataSize)
+BOOL VchanSendMessage(IN const struct msg_hdr *header, IN int headerSize, IN const void *data, IN int dataSize)
 {
     int status;
 
+    LogVerbose("msg 0x%x for window 0x%x, size %d", header->type, header->window, header->untrusted_len);
     status = VchanSendBuffer(header, headerSize);
-    if (status <= 0)
-        return status;
+    if (status < 0)
+        return FALSE;
+
     status = VchanSendBuffer(data, dataSize);
-    if (status <= 0)
-        return status;
-    return 0;
+    if (status < 0)
+        return FALSE;
+
+    return TRUE;
 }
 
-int VchanReceiveBuffer(OUT void *buffer, IN int size)
+BOOL VchanReceiveBuffer(OUT void *buffer, IN int size)
 {
     int written = 0;
     int status;
 
+#ifdef LOG_VCHAN_VERBOSE
+    LogVerbose("vchan %p, buf %p, size %d", g_Vchan, buffer, size);
+#endif
+
     while (written < size)
     {
-        status = libvchan_read(g_Vchan, (char *) buffer + written, size - written);
-        if (status <= 0)
-            return status;
+        status = libvchan_read(g_Vchan, (char *)buffer + written, size - written);
+        if (status < 0)
+        {
+            LogError("libvchan_read failed: %d", status);
+            return FALSE;
+        }
 
         written += status;
     }
-    return size;
+    return TRUE;
 }
 
 int VchanGetReadBufferSize(void)
@@ -68,7 +92,10 @@ BOOL VchanInitServer(IN int port)
 {
     g_Vchan = libvchan_server_init(port);
     if (!g_Vchan)
+    {
+        LogError("vchan not connected");
         return FALSE;
+    }
 
     return TRUE;
 }
@@ -113,6 +140,7 @@ ULONG CheckForXenInterface(void)
     xc = xc_evtchn_open();
     if (INVALID_HANDLE_VALUE == xc)
         return ERROR_NOT_SUPPORTED;
+
     xc_evtchn_close(xc);
     return ERROR_SUCCESS;
 }

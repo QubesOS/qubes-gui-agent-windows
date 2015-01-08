@@ -10,7 +10,8 @@
 
 DWORD g_DisableCursor = TRUE;
 
-static SID *BuildSid(void)
+// SID for all authenticated users
+static SID *BuildLocalSid(void)
 {
     SID_IDENTIFIER_AUTHORITY sia = SECURITY_NT_AUTHORITY; // don't use LOCAL - only processes running in interactive session belong to that...
     SID *sid = NULL;
@@ -21,60 +22,131 @@ static SID *BuildSid(void)
     return sid;
 }
 
-HANDLE CreateNamedEvent(IN const WCHAR *name)
+// Create ACL that grants specified access to all authenticated users.
+// On success caller needs to LocalFree() sa->lpSecurityDescriptor->Dacl,
+// sa->lpSecurityDescriptor and sa. Security API is a real pain.
+static ULONG CreatePublicAcl(IN DWORD accessMask, OUT SECURITY_ATTRIBUTES **sa)
 {
-    SECURITY_ATTRIBUTES sa;
-    SECURITY_DESCRIPTOR sd;
-    EXPLICIT_ACCESS ea = { 0 };
+    SECURITY_DESCRIPTOR *sd = NULL;
     ACL *acl = NULL;
-    HANDLE event = NULL;
-    SID *localSid = NULL;
+    EXPLICIT_ACCESS ea = { 0 }; // this one can be a local variable.
+    ULONG status = ERROR_UNIDENTIFIED_ERROR;
 
-    LogDebug("%s", name);
-
-    localSid = BuildSid();
-
-    // we're running as SYSTEM at the start, default ACL for new objects is too restrictive
-    ea.grfAccessMode = GRANT_ACCESS;
-    ea.grfAccessPermissions = EVENT_MODIFY_STATE | READ_CONTROL | SYNCHRONIZE;
+    ea.grfAccessMode = SET_ACCESS;
+    ea.grfAccessPermissions = accessMask;
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    ea.Trustee.ptstrName = (WCHAR *) localSid;
+    ea.Trustee.ptstrName = (WCHAR *) BuildLocalSid();
 
-    if (SetEntriesInAcl(1, &ea, NULL, &acl) != ERROR_SUCCESS)
+    status = SetEntriesInAcl(1, &ea, NULL, &acl);
+    if (status != ERROR_SUCCESS)
     {
-        perror("SetEntriesInAcl");
+        perror2(status, "SetEntriesInAcl");
         goto cleanup;
     }
-    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+
+    sd = (SECURITY_DESCRIPTOR *) LocalAlloc(LMEM_ZEROINIT, sizeof(SECURITY_DESCRIPTOR));
+    if (!sd)
     {
-        perror("InitializeSecurityDescriptor");
+        status = perror("LocalAlloc");
         goto cleanup;
     }
-    if (!SetSecurityDescriptorDacl(&sd, TRUE, acl, FALSE))
+
+    if (!InitializeSecurityDescriptor(sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        status = perror("InitializeSecurityDescriptor");
+        goto cleanup;
+    }
+
+    if (!SetSecurityDescriptorDacl(sd, TRUE, acl, FALSE))
     {
         perror("SetSecurityDescriptorDacl");
         goto cleanup;
     }
 
-    sa.nLength = sizeof(sa);
-    sa.lpSecurityDescriptor = &sd;
-    sa.bInheritHandle = FALSE;
+    *sa = (SECURITY_ATTRIBUTES *) LocalAlloc(LMEM_ZEROINIT, sizeof(SECURITY_ATTRIBUTES));
 
-    // autoreset, not signaled
-    event = CreateEvent(&sa, FALSE, FALSE, name);
+    (*sa)->nLength = sizeof(SECURITY_ATTRIBUTES);
+    (*sa)->lpSecurityDescriptor = sd;
+    (*sa)->bInheritHandle = FALSE;
 
-    if (!event)
-    {
-        perror("CreateEvent");
-        goto cleanup;
-    }
+    status = ERROR_SUCCESS;
 
 cleanup:
-    if (acl)
-        LocalFree(acl);
+    if (ea.Trustee.ptstrName)
+        FreeSid((SID *) ea.Trustee.ptstrName);
+    if (ERROR_SUCCESS != status)
+    {
+        if (acl)
+            LocalFree(acl);
+        if (sd)
+            LocalFree(sd);
+        if (*sa)
+            LocalFree(*sa);
+    }
+    return status;
+}
+
+// returns NULL on failure
+HANDLE CreateNamedEvent(IN const WCHAR *name)
+{
+    HANDLE event = NULL;
+    SECURITY_ATTRIBUTES *sa;
+    ULONG status;
+
+    LogDebug("%s", name);
+
+    status = CreatePublicAcl(EVENT_MODIFY_STATE | READ_CONTROL | SYNCHRONIZE, &sa);
+    if (ERROR_SUCCESS != status)
+    {
+        perror2(status, "CreatePublicAcl");
+        return NULL;
+    }
+
+    // autoreset, not signaled
+    event = CreateEvent(sa, FALSE, FALSE, name);
+    status = GetLastError();
+
+    // Just reiterating that security API is amazing...
+    LocalFree(((SECURITY_DESCRIPTOR *) sa->lpSecurityDescriptor)->Dacl);
+    LocalFree(sa->lpSecurityDescriptor);
+    LocalFree(sa);
+
+    if (!event)
+        perror2(status, "CreateEvent");
+
     return event;
+}
+
+// returns NULL on failure
+HANDLE CreateNamedMailslot(IN const WCHAR *name)
+{
+    HANDLE slot = NULL;
+    SECURITY_ATTRIBUTES *sa;
+    ULONG status;
+
+    LogDebug("%s", name);
+
+    status = CreatePublicAcl(GENERIC_READ | GENERIC_WRITE | READ_CONTROL | SYNCHRONIZE, &sa);
+    if (ERROR_SUCCESS != status)
+    {
+        perror2(status, "CreatePublicAcl");
+        return NULL;
+    }
+
+    slot = CreateMailslot(name, 0, MAILSLOT_WAIT_FOREVER, sa);
+    status = GetLastError();
+
+    // Just reiterating that security API is amazing...
+    LocalFree(((SECURITY_DESCRIPTOR *) sa->lpSecurityDescriptor)->Dacl);
+    LocalFree(sa->lpSecurityDescriptor);
+    LocalFree(sa);
+
+    if (!slot)
+        perror2(status, "CreateMailslot");
+
+    return slot;
 }
 
 ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
@@ -94,6 +166,9 @@ ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
         return perror("CreateProcess");
     CloseHandle(pi.hThread);
     *processHandle = pi.hProcess;
+
+    LogDebug("PID: %lu", pi.dwProcessId);
+
     return ERROR_SUCCESS;
 }
 

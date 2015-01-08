@@ -8,6 +8,6 @@ USE_MSVCRT=1
 
 C_DEFINES = $(C_DEFINES)  /D_UNICODE /DUNICODE /DINITGUID
 
-SOURCES=disable-device.c
+SOURCES=disable-device.c version.rc
 
 TARGETLIBS = $(SDK_LIB_PATH)\setupapi.lib

@@ -7,8 +7,7 @@
 #define REG_CONFIG_KERNEL_KEY   L"\\Registry\\Machine\\Software\\Invisible Things Lab\\Qubes Tools"
 
 // value names in registry config
-#define REG_CONFIG_LOG_VALUE        L"LogDir"
-#define REG_CONFIG_FPS_VALUE        L"QvideoMaxFps"
+#define REG_CONFIG_FPS_VALUE        L"MaxFps"
 #define REG_CONFIG_DIRTY_VALUE      L"UseDirtyBits"
 #define REG_CONFIG_CURSOR_VALUE     L"DisableCursor"
 #define REG_CONFIG_SEAMLESS_VALUE   L"SeamlessMode"
@@ -23,7 +22,7 @@
 #define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
 
 // Shutdown event for the 32-bit hook server.
-#define WGA32_SHUTDOWN_EVENT_NAME L"Global\\WGA_HOOK32_SHUTDOWN"
+#define HOOK32_SHUTDOWN_EVENT_NAME L"Global\\WGA_HOOK32_SHUTDOWN"
 
 // these are hardcoded
 #define	MIN_RESOLUTION_WIDTH	320UL

@@ -6,7 +6,7 @@
 
 #include "qubes-gui-protocol.h"
 
-// window hints constants
+// window size hint constants
 // http://tronche.com/gui/x/icccm/sec-4.html
 #define USPosition  1       // User-specified x, y
 #define USSize      2       // User-specified width, height
@@ -19,16 +19,27 @@
 #define PBaseSize   256 	// Program-specified base size
 #define PWinGravity 512 	// Program-specified window gravity
 
-void SendWindowMfns(IN const WATCHED_DC *watchedDC);
-ULONG SendWindowCreate(IN const WATCHED_DC *watchedDC);
+// window hint flags
+#define InputHint          1  // input
+#define StateHint          2  // initial_state
+#define IconPixmapHint     4  // icon_pixmap
+#define IconWindowHint     8  // icon_window
+#define IconPositionHint  16  // icon_x & icon_y
+#define IconMaskHint      32  // icon_mask
+#define WindowGroupHint   64  // window_group
+#define MessageHint      128  // (this bit is obsolete)
+#define UrgencyHint      256  // urgency
+
+ULONG SendScreenMfns(void);
+ULONG SendWindowCreate(IN const WINDOW_DATA *windowData);
 ULONG SendWindowDestroy(IN HWND window);
 ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset);
-void SendWindowHints(IN HWND window, IN uint32_t flags);
-void SendScreenHints(void);
+ULONG SendWindowHints(IN HWND window, IN uint32_t flags);
+ULONG SendScreenHints(void);
 ULONG SendWindowUnmap(IN HWND window);
-ULONG SendWindowMap(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WATCHED_DC *watchedDC OPTIONAL); // if watchedDC == 0, use the whole screen
+ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL); // if windowData == 0, use the whole screen
+ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL); // if windowData == 0, use the whole screen
 ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height);
-void SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
-void SendWindowName(IN HWND window);
-void SendProtocolVersion(void);
+ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
+ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL);
+ULONG SendProtocolVersion(void);

@@ -1,0 +1,3 @@
+#define QTW_FILEDESCRIPTION_STR "GUI agent test app"
+#include "..\..\version.h"
+#include "..\..\version_common.rc"

@@ -1,0 +1,3 @@
+#define QTW_FILEDESCRIPTION_STR "Qubes install helper (create device)"
+#include "..\..\version.h"
+#include "..\..\version_common.rc"

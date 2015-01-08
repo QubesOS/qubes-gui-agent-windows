@@ -1,0 +1,3 @@
+#define QTW_FILEDESCRIPTION_STR "Qubes GUI agent helper service"
+#include "..\version.h"
+#include "..\version_common.rc"

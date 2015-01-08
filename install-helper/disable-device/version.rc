@@ -1,0 +1,3 @@
+#define QTW_FILEDESCRIPTION_STR "Qubes install helper (disable device)"
+#include "..\..\version.h"
+#include "..\..\version_common.rc"
