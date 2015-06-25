@@ -51,7 +51,9 @@
                   Account="LocalSystem"
                   ErrorControl="ignore"
                   Interactive="no"
-                  />
+                  >
+                    <ServiceDependency Id="QdbDaemon" />
+                  </ServiceInstall>
                 <ServiceControl Id="WgaHelperService" Remove="uninstall" Name="QTWHelper" Wait="no" />
               </Component>
             </Directory>
