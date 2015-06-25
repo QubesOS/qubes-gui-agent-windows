@@ -43,7 +43,7 @@
                   <ServiceInstall
                   Id="ServiceInstaller"
                   Type="ownProcess"
-                  Vital="no"
+                  Vital="yes"
                   Name="QTWHelper"
                   DisplayName="Qubes Tools for Windows Helper"
                   Description="Qubes Tools for Windows Helper"
