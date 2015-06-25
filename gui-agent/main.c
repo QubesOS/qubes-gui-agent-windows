@@ -1085,8 +1085,8 @@ static ULONG Init(void)
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
-    //HideCursors();
-    //DisableEffects();
+    HideCursors();
+    DisableEffects();
 
     status = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
     if (ERROR_SUCCESS != status)
