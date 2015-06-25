@@ -3,7 +3,7 @@
 #include "common.h"
 #include "main.h"
 
-#include "log.h"
+#include <log.h>
 
 #include <strsafe.h>
 

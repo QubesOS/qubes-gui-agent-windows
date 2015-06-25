@@ -3,8 +3,6 @@
 #include <mmsystem.h>
 #include <stdlib.h>
 
-#include <xenstore.h>
-
 #include "main.h"
 #include "vchan.h"
 #include "qvcontrol.h"
@@ -14,13 +12,16 @@
 #include "util.h"
 
 // windows-utils
-#include "log.h"
-#include "config.h"
+#include <log.h>
+#include <config.h>
+#include <qubesdb-client.h>
 
 #include <strsafe.h>
 
 #define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
 #define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
+
+extern struct libvchan *g_Vchan;
 
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
@@ -734,8 +735,6 @@ cleanup:
 // TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents(void)
 {
-    HANDLE vchan;
-    OVERLAPPED vchanAsyncState = { 0 };
     unsigned int firedPort;
     ULONG eventCount;
     DWORD i, signaledEvent;
@@ -762,10 +761,6 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
     }
 
-    vchan = VchanGetHandle();
-
-    vchanAsyncState.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
     fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!fullScreenOnEvent)
         return GetLastError();
@@ -789,7 +784,7 @@ static ULONG WINAPI WatchForEvents(void)
     vchanIoInProgress = FALSE;
     exitLoop = FALSE;
 
-    LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize());
+    LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize(g_Vchan));
 
     while (TRUE)
     {
@@ -801,24 +796,9 @@ static ULONG WINAPI WatchForEvents(void)
 
         status = ERROR_SUCCESS;
 
-        VchanPrepareToSelect();
-        // read 1 byte instead of sizeof(fired_port) to not flush fired port
-        // from evtchn buffer; evtchn driver will read only whole fired port
-        // numbers (sizeof(fired_port)), so this will end in zero-length read
-        if (!vchanIoInProgress && !ReadFile(vchan, &firedPort, 1, NULL, &vchanAsyncState))
-        {
-            status = GetLastError();
-            if (ERROR_IO_PENDING != status)
-            {
-                perror("ReadFile");
-                exitLoop = TRUE;
-                break;
-            }
-        }
-
         vchanIoInProgress = TRUE;
 
-        watchedEvents[5] = vchanAsyncState.hEvent;
+        watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
         watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
         eventCount = 7;
 
@@ -916,29 +896,11 @@ static ULONG WINAPI WatchForEvents(void)
             break;
 
         case 5: // vchan receive
-            // the following will never block; we need to do this to
-            // clear libvchan_fd pending state
-            //
-            // using libvchan_wait here instead of reading fired
-            // port at the beginning of the loop (ReadFile call) to be
-            // sure that we clear pending state _only_
-            // when handling vchan data in this loop iteration (not any
-            // other process)
             if (!g_VchanClientConnected)
             {
-                VchanWait();
-
                 vchanIoInProgress = FALSE;
 
-                LogInfo("A vchan client has connected\n");
-
-                // Remove the xenstore device/vchan/N entry.
-                if (!VchanIsServerConnected())
-                {
-                    LogError("VchanIsServerConnected() failed");
-                    exitLoop = TRUE;
-                    break;
-                }
+                LogInfo("A vchan client has connected");
 
                 // needs to be set before enumerating windows so maps get sent
                 // (and before sending anything really)
@@ -998,43 +960,11 @@ static ULONG WINAPI WatchForEvents(void)
                 break;
             }
 
-            if (!GetOverlappedResult(vchan, &vchanAsyncState, &i, FALSE))
-            {
-                if (GetLastError() == ERROR_IO_DEVICE)
-                {
-                    // in case of ring overflow, libvchan_wait
-                    // will reset the evtchn ring, so ignore this
-                    // error as already handled
-                    //
-                    // Overflow can happen when below loop ("while
-                    // (read_ready_vchan_ext())") handle a lot of data
-                    // in the same time as qrexec-daemon writes it -
-                    // there where be no libvchan_wait call (which
-                    // receive the events from the ring), but one will
-                    // be signaled after each libvchan_write in
-                    // qrexec-daemon. I don't know how to fix it
-                    // properly (without introducing any race
-                    // condition), so reset the evtchn ring (do not
-                    // confuse with vchan ring, which stays untouched)
-                    // in case of overflow.
-                }
-                else
-                {
-                    if (GetLastError() != ERROR_OPERATION_ABORTED)
-                    {
-                        perror("GetOverlappedResult(evtchn)");
-                        exitLoop = TRUE;
-                        break;
-                    }
-                }
-            }
-
             EnterCriticalSection(&g_VchanCriticalSection);
-            VchanWait();
 
             vchanIoInProgress = FALSE;
 
-            if (VchanIsEof())
+            if (!libvchan_is_open(g_Vchan))
             {
                 LogError("vchan disconnected");
                 exitLoop = TRUE;
@@ -1042,7 +972,7 @@ static ULONG WINAPI WatchForEvents(void)
                 break;
             }
 
-            while (VchanGetReadBufferSize() > 0)
+            while (VchanGetReadBufferSize(g_Vchan) > 0)
             {
                 status = HandleServerData();
                 if (ERROR_SUCCESS != status)
@@ -1063,30 +993,9 @@ static ULONG WINAPI WatchForEvents(void)
 
     LogDebug("main loop finished");
 
-    if (vchanIoInProgress)
-    {
-        if (CancelIo(vchan))
-        {
-            // Must wait for the canceled IO to complete, otherwise a race condition may occur on the
-            // OVERLAPPED structure.
-            LogDebug("Waiting for vchan operations to finish");
-            WaitForSingleObject(vchanAsyncState.hEvent, INFINITE);
-        }
-    }
-
-    if (!g_VchanClientConnected)
-    {
-        // Remove the xenstore device/vchan/N entry.
-        LogDebug("cleaning up");
-        VchanIsServerConnected();
-    }
-
     if (g_VchanClientConnected)
-        VchanClose();
+        libvchan_close(g_Vchan);
 
-    //StopHooks(&g_HookData); // don't care if it fails at this point
-
-    CloseHandle(vchanAsyncState.hEvent);
     CloseHandle(windowDamageEvent);
 
     UnregisterWatchedDC(screenDC);
@@ -1100,18 +1009,14 @@ static ULONG WINAPI WatchForEvents(void)
 static DWORD GetDomainName(OUT char *nameBuffer, IN DWORD nameLength)
 {
     DWORD status = ERROR_SUCCESS;
-    struct xs_handle *xs;
+    qdb_handle_t qdb = NULL;
     char *domainName = NULL;
 
-    xs = xs_domain_open();
-    if (!xs)
-    {
-        LogError("Failed to open xenstore connection");
-        status = ERROR_DEVICE_NOT_CONNECTED;
-        goto cleanup;
-    }
+    qdb = qdb_open(NULL);
+    if (!qdb)
+        return perror("qdb_open");
 
-    domainName = xs_read(xs, XBT_NULL, "name", NULL);
+    domainName = qdb_read(qdb, "/name", NULL);
     if (!domainName)
     {
         LogError("Failed to read domain name");
@@ -1122,14 +1027,12 @@ static DWORD GetDomainName(OUT char *nameBuffer, IN DWORD nameLength)
     LogDebug("%S", domainName);
     status = StringCchCopyA(nameBuffer, nameLength, domainName);
     if (FAILED(status))
-    {
         perror2(status, "StringCchCopyA");
-    }
 
 cleanup:
-    free(domainName);
-    if (xs)
-        xs_daemon_close(xs);
+    qdb_free(domainName);
+    if (qdb)
+        qdb_close(qdb);
 
     return status;
 }
@@ -1182,20 +1085,14 @@ static ULONG Init(void)
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
-    HideCursors();
-    DisableEffects();
+    //HideCursors();
+    //DisableEffects();
 
     status = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
     if (ERROR_SUCCESS != status)
     {
         perror("IncreaseProcessWorkingSetSize");
         // try to continue
-    }
-
-    SetLastError(status = CheckForXenInterface());
-    if (ERROR_SUCCESS != status)
-    {
-        return perror("CheckForXenInterface");
     }
 
     // Read domain name from xenstore.

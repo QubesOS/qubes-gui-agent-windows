@@ -6,7 +6,7 @@
 #include "main.h"
 #include "resource.h"
 
-#include "log.h"
+#include <log.h>
 
 DWORD g_DisableCursor = TRUE;
 

@@ -7,18 +7,15 @@ USE_MSVCRT = 1
 
 UMENTRY = wmain
 #C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE
-C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG
+C_DEFINES = $(C_DEFINES) /D_UNICODE /DUNICODE /DDEBUG /D_DEBUG
 
 INCLUDES = $(INCLUDES); \
     ..\include; \
     ..\qvideo\inc; \
     $(QUBES_INCLUDES); \
     $(DDK_INC_PATH); \
-    ..\..\core\vchan; \
-    ..\..\core\win\include; \
-    ..\gui-common\include;
 
-SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c register-hooks.c wm.h wga.rc
+SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c wm.h wga.rc
 
 TARGETLIBS = \
     $(SDK_LIB_PATH)\user32.lib \
@@ -28,6 +25,4 @@ TARGETLIBS = \
     $(SDK_LIB_PATH)\winmm.lib \
     $(QUBES_LIBS)\windows-utils.lib \
     $(QUBES_LIBS)\libvchan.lib \
-    $(QUBES_LIBS)\gntmem.lib \
-    $(QUBES_LIBS)\evtchn.lib \
-    $(QUBES_LIBS)\libxs.lib
+    $(QUBES_LIBS)\qubesdb-client.lib \

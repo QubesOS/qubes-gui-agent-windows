@@ -7,8 +7,8 @@
 #include "qvcontrol.h"
 #include "vchan.h"
 
-#include "qubes-gui-protocol.h"
-#include "log.h"
+#include <qubes-gui-protocol.h>
+#include <log.h>
 
 #include <strsafe.h>
 
@@ -104,13 +104,13 @@ ULONG SendScreenMfns(void)
     header.untrusted_len = sizeof(struct shm_cmd) + size;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    if (!VCHAN_SEND(header))
+    if (!VCHAN_SEND(header, L"MSG_MFNDUMP"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
         return perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
     }
 
-    status = VchanSendBuffer(shmCmd, sizeof(struct shm_cmd) + size);
+    status = VchanSendBuffer(g_Vchan, shmCmd, sizeof(struct shm_cmd) + size, L"shm_cmd");
     LeaveCriticalSection(&g_VchanCriticalSection);
     if (!status)
         return perror2(status, "VchanSendBuffer");
@@ -180,7 +180,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     LogDebug("(%d,%d) %dx%d", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    if (!VCHAN_SEND_MSG(header, createMsg))
+    if (!VCHAN_SEND_MSG(header, createMsg, L"MSG_CREATE"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
         return ERROR_UNIDENTIFIED_ERROR;
@@ -210,7 +210,7 @@ ULONG SendWindowDestroy(IN HWND window)
     header.window = (uint32_t) window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND(header);
+    status = VCHAN_SEND(header, L"MSG_DESTROY");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -232,7 +232,7 @@ ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsT
     flags.flags_set = flagsToSet;
     flags.flags_unset = flagsToUnset;
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, flags);
+    status = VCHAN_SEND_MSG(header, flags, L"MSG_WINDOW_FLAGS");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -254,7 +254,7 @@ ULONG SendWindowHints(IN HWND window, IN uint32_t flags)
     header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, hintsMsg);
+    status = VCHAN_SEND_MSG(header, hintsMsg, L"MSG_WINDOW_HINTS");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -278,7 +278,7 @@ ULONG SendScreenHints(void)
     header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, hintsMsg);
+    status = VCHAN_SEND_MSG(header, hintsMsg, L"MSG_WINDOW_HINTS screen");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -298,7 +298,7 @@ ULONG SendWindowUnmap(IN HWND window)
     header.window = (uint32_t) window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND(header);
+    status = VCHAN_SEND(header, L"MSG_UNMAP");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -337,7 +337,7 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
         mapMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    if (!VCHAN_SEND_MSG(header, mapMsg))
+    if (!VCHAN_SEND_MSG(header, mapMsg, L"MSG_MAP"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
         return ERROR_UNIDENTIFIED_ERROR;
@@ -411,7 +411,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
     // don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP will follow
     if (configureMsg.width > 0 && configureMsg.height > 0)
     {
-        status = VCHAN_SEND_MSG(header, configureMsg);
+        status = VCHAN_SEND_MSG(header, configureMsg, L"MSG_CONFIGURE");
         if (!status)
             goto cleanup;
     }
@@ -422,7 +422,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
 
         header.type = MSG_MAP;
-        status = VCHAN_SEND_MSG(header, mapMsg);
+        status = VCHAN_SEND_MSG(header, mapMsg, L"MSG_MAP");
     }
 
 cleanup:
@@ -453,7 +453,7 @@ ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 h
     configMsg.override_redirect = 0;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, configMsg);
+    status = VCHAN_SEND_MSG(header, configMsg, L"MSG_CONFIGURE screen");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -476,7 +476,7 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
     shmMsg.width = width;
     shmMsg.height = height;
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, shmMsg);
+    status = VCHAN_SEND_MSG(header, shmMsg, L"MSG_SHMIMAGE");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -516,7 +516,7 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
     header.window = (uint32_t) window;
     header.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, nameMsg);
+    status = VCHAN_SEND_MSG(header, nameMsg, L"MSG_WMNAME");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -528,7 +528,7 @@ ULONG SendProtocolVersion(void)
     BOOL status;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND(version);
+    status = VCHAN_SEND(version, L"version");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;

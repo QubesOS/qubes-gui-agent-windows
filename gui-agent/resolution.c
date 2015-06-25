@@ -6,7 +6,7 @@
 #include "send.h"
 #include "util.h"
 
-#include "log.h"
+#include <log.h>
 
 // Signal to actually change resolution to g_ResolutionChangeParams.
 // This is pretty ugly but we need to trigger resolution change from a separate thread...

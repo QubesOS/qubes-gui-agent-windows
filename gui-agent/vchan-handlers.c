@@ -1,12 +1,14 @@
 #include <windows.h>
+
 #include "common.h"
-#include "qubes-gui-protocol.h"
 #include "main.h"
 #include "vchan.h"
 #include "send.h"
 #include "xorg-keymap.h"
 #include "resolution.h"
-#include "log.h"
+
+#include <qubes-gui-protocol.h>
+#include <log.h>
 
 // tell helper service to simulate ctrl-alt-del
 static void SignalSASEvent(void)
@@ -33,7 +35,7 @@ DWORD HandleXconf(void)
     struct msg_xconf xconf;
 
     LogVerbose("start");
-    if (!VchanReceiveBuffer(&xconf, sizeof(xconf)))
+    if (!VchanReceiveBuffer(g_Vchan, &xconf, sizeof(xconf), L"msg_xconf"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -74,7 +76,7 @@ static DWORD HandleKeymapNotify(void)
     };
 
     LogVerbose("start");
-    if (!VchanReceiveBuffer(remoteKeys, sizeof(remoteKeys)))
+    if (!VchanReceiveBuffer(g_Vchan, remoteKeys, sizeof(remoteKeys), L"keymap"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -147,7 +149,7 @@ static DWORD HandleKeypress(IN HWND window)
     DWORD status;
 
     LogVerbose("0x%x", window);
-    if (!VchanReceiveBuffer(&keyMsg, sizeof(keyMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &keyMsg, sizeof(keyMsg), L"msg_keypress"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -199,7 +201,7 @@ static DWORD HandleButton(IN HWND window)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", window);
-    if (!VchanReceiveBuffer(&buttonMsg, sizeof(buttonMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &buttonMsg, sizeof(buttonMsg), L"msg_button"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -257,7 +259,7 @@ static DWORD HandleMotion(IN HWND window)
     RECT rect = { 0 };
 
     LogVerbose("0x%x", window);
-    if (!VchanReceiveBuffer(&motionMsg, sizeof(motionMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &motionMsg, sizeof(motionMsg), L"msg_motion"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -288,7 +290,7 @@ static DWORD HandleConfigure(IN HWND window)
 {
     struct msg_configure configureMsg;
 
-    if (!VchanReceiveBuffer(&configureMsg, sizeof(configureMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &configureMsg, sizeof(configureMsg), L"msg_configure"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -331,7 +333,7 @@ static DWORD HandleFocus(IN HWND window)
 {
     struct msg_focus focusMsg;
 
-    if (!VchanReceiveBuffer(&focusMsg, sizeof(focusMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &focusMsg, sizeof(focusMsg), L"msg_focus"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -361,7 +363,7 @@ static DWORD HandleWindowFlags(IN HWND window)
 {
     struct msg_window_flags flagsMsg;
 
-    if (!VchanReceiveBuffer(&flagsMsg, sizeof(flagsMsg)))
+    if (!VchanReceiveBuffer(g_Vchan, &flagsMsg, sizeof(flagsMsg), L"msg_window_flags"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -388,7 +390,7 @@ DWORD HandleServerData(void)
     int readSize;
     DWORD status = ERROR_SUCCESS;
 
-    if (!VchanReceiveBuffer(&header, sizeof(header)))
+    if (!VchanReceiveBuffer(g_Vchan, &header, sizeof(header), L"msg_hdr"))
     {
         LogError("VchanReceiveBuffer failed");
         return ERROR_UNIDENTIFIED_ERROR;
@@ -429,7 +431,7 @@ DWORD HandleServerData(void)
         while (header.untrusted_len > 0)
         {
             readSize = min(header.untrusted_len, sizeof(discardBuffer));
-            if (!VchanReceiveBuffer(discardBuffer, readSize))
+            if (!VchanReceiveBuffer(g_Vchan, discardBuffer, readSize, L"discard buffer"))
             {
                 LogError("VchanReceiveBuffer failed");
                 return ERROR_UNIDENTIFIED_ERROR;
