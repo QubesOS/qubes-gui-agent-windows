@@ -451,7 +451,7 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     if ((windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
     {
         LogVerbose("window rectangle is empty");
-        return ERROR_SUCCESS;
+        return FALSE;
     }
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
@@ -985,11 +985,11 @@ static ULONG WINAPI WatchForEvents(void)
             LeaveCriticalSection(&g_VchanCriticalSection);
 
             break;
-    }
+        }
 
         if (exitLoop)
             break;
-}
+    }
 
     LogDebug("main loop finished");
 
