@@ -69,7 +69,7 @@ typedef struct _PFN_ARRAY
 
 #define	IS_RESOLUTION_VALID(uWidth, uHeight)	((MIN_RESOLUTION_WIDTH <= (uWidth)) && (MIN_RESOLUTION_HEIGHT <= (uHeight)))
 
-// wga-qvideo interface
+// gui agent-qvideo interface
 typedef struct _QV_SUPPORT_MODE
 {
     ULONG Magic;		// must be present at the top of every QV_ structure
@@ -119,7 +119,7 @@ typedef struct _QV_STOP_WATCHING_SURFACE
     // A surface handle is converted automatically by GDI from HDC to SURFOBJ, so do not pass it here
 } QV_STOP_WATCHING_SURFACE;
 
-// wga->display: confirmation that all dirty page data has been read
+// gui agent->display: confirmation that all dirty page data has been read
 typedef struct _QV_SYNCHRONIZE
 {
     ULONG Magic;		// must be present at the top of every QV_ structure

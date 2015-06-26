@@ -159,7 +159,7 @@ ULONG UpdateDirtyBits(
     if (InterlockedCompareExchange(&pDirtyPages->Ready, 0, 1) == 1)
     {
         RtlZeroMemory(pDirtyPages->DirtyBits, (pages >> 3) + 1);
-        DEBUGF("WGA ready");
+        DEBUGF("gui agent ready");
     }
 
     for (ptr = (UCHAR *) va, pageNumber = 0;

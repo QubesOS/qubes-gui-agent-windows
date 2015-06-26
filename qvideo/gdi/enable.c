@@ -17,10 +17,10 @@ static DRVFN g_DrvFunctions[] =
     { INDEX_DrvEscape, (PFN) DrvEscape }
 };
 
-// default mode, before wga.exe connects
+// default mode, before gui agent connects
 ULONG g_uDefaultWidth = 800;
 ULONG g_uDefaultHeight = 600;
-// initial second mode, will be updated by wga.exe based on dom0 mode
+// initial second mode, will be updated by gui agent based on dom0 mode
 ULONG g_uWidth = 1280;
 ULONG g_uHeight = 800;
 ULONG g_uBpp = 32;
@@ -876,7 +876,7 @@ ULONG APIENTRY DrvEscape(
             return QV_INVALID_PARAMETER;
 
         InterlockedExchange(&pSurfaceDescriptor->DirtyPages->Ready, 1);
-        DISPDBG((0, "WGA synchronized\n"));
+        DISPDBG((0, "gui agent synchronized\n"));
         return QV_SUCCESS;
 
     default:
