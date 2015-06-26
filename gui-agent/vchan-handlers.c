@@ -18,14 +18,14 @@ static void SignalSASEvent(void)
     LogVerbose("start");
     if (!sasEvent)
     {
-        sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SAS_EVENT_NAME);
+        sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SAS_EVENT_NAME);
         if (!sasEvent)
             perror("OpenEvent");
     }
 
     if (sasEvent)
     {
-        LogDebug("Setting SAS event '%s'", WGA_SAS_EVENT_NAME);
+        LogDebug("Setting SAS event '%s'", QGA_SAS_EVENT_NAME);
         SetEvent(sasEvent);
     }
 }

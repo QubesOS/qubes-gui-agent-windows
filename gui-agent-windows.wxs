@@ -8,7 +8,7 @@
     <?define PFILESDIR = ProgramFiles64Folder ?>
   <?endif ?>
 
-  <Module  Id='guiAgentWindows'
+  <Module  Id='GuiAgentWindows'
     Language='1033' Codepage='1252' Version='$(env.VERSION)'>
 
     <Package Id='{99FAD33F-658E-4F04-966C-52061AC0BC45}' Keywords='Installer' Description="Qubes Gui Agent for Windows"
@@ -31,22 +31,22 @@
           <Directory Id='QubesProgramFilesDir' Name='Qubes Tools'>
             <Directory Id='BinDir' Name='bin'>
               <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
-                <File Id='wga.exe' Source='gui-agent\bin\$(var.ARCHDIR)\wga.exe' KeyPath="yes"/>
+                <File Id='qga.exe' Source='gui-agent\bin\$(var.ARCHDIR)\qga.exe' KeyPath="yes"/>
 				<!-- We only support x64 but just for the future... -->
-                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]wga.exe"'/>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]qga.exe"'/>
                 <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
-                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\wga" Name="MaxFps" Type="integer" Value='0'/>
-                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\wga" Name="DisableCursor" Type="integer" Value='1'/>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="MaxFps" Type="integer" Value='0'/>
+                <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="DisableCursor" Type="integer" Value='1'/>
               </Component>
-              <Component Id='QTWHelper' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
-                <File Id='QTWHelper.exe' Source='service\bin\$(var.ARCHDIR)\QTWHelper.exe' KeyPath="yes"/>
+              <Component Id='QgaHelper' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
+                <File Id='QgaHelper.exe' Source='service\bin\$(var.ARCHDIR)\QgaHelper.exe' KeyPath="yes"/>
                   <ServiceInstall
                   Id="ServiceInstaller"
                   Type="ownProcess"
                   Vital="yes"
-                  Name="QTWHelper"
-                  DisplayName="Qubes Tools for Windows Helper"
-                  Description="Qubes Tools for Windows Helper"
+                  Name="QgaHelper"
+                  DisplayName="Qubes Gui Agent Helper"
+                  Description="Qubes Gui Agent Helper"
                   Start="auto"
                   Account="LocalSystem"
                   ErrorControl="ignore"
@@ -54,7 +54,7 @@
                   >
                     <ServiceDependency Id="QdbDaemon" />
                   </ServiceInstall>
-                <ServiceControl Id="WgaHelperService" Remove="uninstall" Name="QTWHelper" Wait="no" />
+                <ServiceControl Id="QgaHelperService" Remove="uninstall" Name="QgaHelper" Wait="no" />
               </Component>
             </Directory>
             <Directory Id='DriversDir' Name='drivers'>

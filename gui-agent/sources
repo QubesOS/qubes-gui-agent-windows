@@ -1,4 +1,4 @@
-TARGETNAME = wga
+TARGETNAME = qga
 TARGETTYPE = PROGRAM
 TARGETPATH = bin
 
@@ -14,7 +14,7 @@ INCLUDES = $(INCLUDES); \
     $(QUBES_INCLUDES); \
     $(DDK_INC_PATH); \
 
-SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c wm.h wga.rc
+SOURCES = main.c vchan-handlers.c send.c resolution.c vchan.c qvcontrol.c xorg-keymap.c util.c wm.h qga.rc
 
 TARGETLIBS = \
     $(SDK_LIB_PATH)\user32.lib \

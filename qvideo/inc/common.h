@@ -16,13 +16,10 @@
 #define REG_CONFIG_AUTOSTART_VALUE  L"Autostart"
 
 // event created by the helper service, trigger to simulate SAS (ctrl-alt-delete)
-#define WGA_SAS_EVENT_NAME L"Global\\WGA_SAS_TRIGGER"
+#define QGA_SAS_EVENT_NAME L"Global\\QGA_SAS_TRIGGER"
 
 // When signaled, causes agent to shutdown gracefully.
-#define WGA_SHUTDOWN_EVENT_NAME L"Global\\WGA_SHUTDOWN"
-
-// Shutdown event for the 32-bit hook server.
-#define HOOK32_SHUTDOWN_EVENT_NAME L"Global\\WGA_HOOK32_SHUTDOWN"
+#define QGA_SHUTDOWN_EVENT_NAME L"Global\\QGA_SHUTDOWN"
 
 // these are hardcoded
 #define	MIN_RESOLUTION_WIDTH	320UL

@@ -6,9 +6,9 @@
 #include "log.h"
 #include "config.h"
 
-#define SERVICE_NAME L"QTWHelper"
+#define SERVICE_NAME L"QgaHelper"
 
-#define WGA_TERMINATE_TIMEOUT 2000
+#define QGA_TERMINATE_TIMEOUT 2000
 
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
@@ -37,7 +37,7 @@ const WCHAR *g_SessionEventName[] = {
 };
 
 // Held when restarting gui agent.
-CRITICAL_SECTION g_wgaCs;
+CRITICAL_SECTION g_gaCs;
 
 // Entry point.
 int wmain(int argc, WCHAR *argv[])
@@ -47,7 +47,7 @@ int wmain(int argc, WCHAR *argv[])
         { NULL, NULL }
     };
 
-    InitializeCriticalSection(&g_wgaCs);
+    InitializeCriticalSection(&g_gaCs);
     StartServiceCtrlDispatcher(serviceTable);
     return ERROR_SUCCESS;
 }
@@ -94,15 +94,15 @@ DWORD TerminateTargetProcess(IN const WCHAR *exeName)
     status = GetLastError();
     LogInfo("Process name: '%s'", exeName);
 
-    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, WGA_SHUTDOWN_EVENT_NAME);
+    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SHUTDOWN_EVENT_NAME);
     if (!shutdownEvent)
     {
         perror("OpenEvent");
-        LogInfo("Shutdown event '%s' not found, making sure it's not running", WGA_SHUTDOWN_EVENT_NAME);
+        LogInfo("Shutdown event '%s' not found, making sure it's not running", QGA_SHUTDOWN_EVENT_NAME);
     }
     else
     {
-        LogDebug("Signaling shutdown event: %s", WGA_SHUTDOWN_EVENT_NAME);
+        LogDebug("Signaling shutdown event: %s", QGA_SHUTDOWN_EVENT_NAME);
         SetEvent(shutdownEvent);
         CloseHandle(shutdownEvent);
 
@@ -112,7 +112,7 @@ DWORD TerminateTargetProcess(IN const WCHAR *exeName)
     if (IsProcessRunning(exeName, &processId, &sessionId))
     {
         LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
-            exeName, processId, sessionId, WGA_TERMINATE_TIMEOUT);
+            exeName, processId, sessionId, QGA_TERMINATE_TIMEOUT);
 
         targetProcess = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, processId);
 
@@ -122,7 +122,7 @@ DWORD TerminateTargetProcess(IN const WCHAR *exeName)
         }
 
         // wait for exit
-        if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, WGA_TERMINATE_TIMEOUT))
+        if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, QGA_TERMINATE_TIMEOUT))
         {
             LogWarning("Process didn't exit in time, killing it");
             TerminateProcess(targetProcess, 0);
@@ -148,7 +148,7 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
     {
         LogDebug("console session is 0x%x, skipping", consoleSessionId);
         return ERROR_SUCCESS;
-        // we'll launch wga when the console connects to a session again
+        // we'll launch gui agent when the console connects to a session again
     }
 
     // Get access token from ourselves.
@@ -205,14 +205,14 @@ DWORD WINAPI WatchdogThread(void *param)
     {
         Sleep(2000);
 
-        EnterCriticalSection(&g_wgaCs);
+        EnterCriticalSection(&g_gaCs);
         // Check if the gui agent is running.
         if (!IsProcessRunning(exeName, NULL, NULL))
         {
             LogWarning("Process '%s' not running, restarting it", exeName);
             StartTargetProcess(cmdline);
         }
-        LeaveCriticalSection(&g_wgaCs);
+        LeaveCriticalSection(&g_gaCs);
     }
 
     return ERROR_SUCCESS;
@@ -235,7 +235,7 @@ DWORD WINAPI SessionChangeThread(void *param)
 
     events[0] = g_ConsoleEvent;
     // Default security for the SAS event, only SYSTEM processes can signal it.
-    events[1] = CreateEvent(NULL, FALSE, FALSE, WGA_SAS_EVENT_NAME);
+    events[1] = CreateEvent(NULL, FALSE, FALSE, QGA_SAS_EVENT_NAME);
 
     while (TRUE)
     {
@@ -244,13 +244,13 @@ DWORD WINAPI SessionChangeThread(void *param)
 
         switch (signaledEvent)
         {
-        case 0: // console event: restart wga
-            EnterCriticalSection(&g_wgaCs);
+        case 0: // console event: restart gui agent
+            EnterCriticalSection(&g_gaCs);
             // Make sure process is not running.
             TerminateTargetProcess(exeName);
             // restart
             StartTargetProcess(cmdline);
-            LeaveCriticalSection(&g_wgaCs);
+            LeaveCriticalSection(&g_gaCs);
             break;
 
         case 1: // SAS event

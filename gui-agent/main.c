@@ -18,8 +18,8 @@
 
 #include <strsafe.h>
 
-#define FULLSCREEN_ON_EVENT_NAME L"WGA_FULLSCREEN_ON"
-#define FULLSCREEN_OFF_EVENT_NAME L"WGA_FULLSCREEN_OFF"
+#define FULLSCREEN_ON_EVENT_NAME L"QUBES_GUI_AGENT_FULLSCREEN_ON"
+#define FULLSCREEN_OFF_EVENT_NAME L"QUBES_GUI_AGENT_FULLSCREEN_OFF"
 
 extern struct libvchan *g_Vchan;
 
@@ -1046,7 +1046,7 @@ static ULONG Init(void)
     LogDebug("start");
 
     // This needs to be done first as a safeguard to not start multiple instances of this process.
-    g_ShutdownEvent = CreateNamedEvent(WGA_SHUTDOWN_EVENT_NAME);
+    g_ShutdownEvent = CreateNamedEvent(QGA_SHUTDOWN_EVENT_NAME);
     if (!g_ShutdownEvent)
     {
         return GetLastError();
@@ -1095,11 +1095,11 @@ static ULONG Init(void)
         // try to continue
     }
 
-    // Read domain name from xenstore.
+    // Read domain name.
     status = GetDomainName(g_DomainName, RTL_NUMBER_OF(g_DomainName));
     if (ERROR_SUCCESS != status)
     {
-        LogWarning("Failed to read domain name from xenstore, using host name");
+        LogWarning("Failed to read domain name, using host name");
 
         status = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (status == 0)
