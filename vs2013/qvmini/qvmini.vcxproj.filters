@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\qvideo\inc\common.h">
+    <ClInclude Include="..\..\include\common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\qvideo\miniport\ddk_video.h">

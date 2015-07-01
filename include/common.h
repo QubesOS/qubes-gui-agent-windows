@@ -1,5 +1,4 @@
 #pragma once
-//#include <ntddk.h>
 
 #define PAGE_SIZE 0x1000
 

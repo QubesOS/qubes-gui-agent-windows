@@ -9,28 +9,11 @@
 
 #define PTE_PER_PAGE_BITS 10    // This handles the case where the page is full
 
-//#define PXE_BASE          0xFFFFF6FB7DBED000UI64
-//#define PXE_SELFMAP       0xFFFFF6FB7DBEDF68UI64
-//#define PPE_BASE          0xFFFFF6FB7DA00000UI64
 #define PDE_BASE          0xFFFFF6FB40000000UI64
 #define PTE_BASE          0xFFFFF68000000000UI64
 
-//#define PXE_TOP           0xFFFFF6FB7DBEDFFFUI64
-//#define PPE_TOP           0xFFFFF6FB7DBFFFFFUI64
-//#define PDE_TOP           0xFFFFF6FB7FFFFFFFUI64
-//#define PTE_TOP           0xFFFFF6FFFFFFFFFFUI64
-
-//#define PDE_KTBASE_AMD64  PPE_BASE
-
 #define PTI_SHIFT 12
 #define PDI_SHIFT 21
-//#define PPI_SHIFT 30
-//#define PXI_SHIFT 39
-
-//#define PTE_PER_PAGE 512
-//#define PDE_PER_PAGE 512
-//#define PPE_PER_PAGE 512
-//#define PXE_PER_PAGE 512
 
 // Top level PXE mapping allocations:
 //

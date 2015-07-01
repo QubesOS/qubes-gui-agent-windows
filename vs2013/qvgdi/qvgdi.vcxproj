@@ -72,8 +72,8 @@
   <ItemGroup>
     <ClInclude Include="..\..\qvideo\gdi\driver.h" />
     <ClInclude Include="..\..\qvideo\gdi\support.h" />
-    <ClInclude Include="..\..\qvideo\inc\common.h" />
-    <ClInclude Include="..\..\qvideo\inc\mi.h" />
+    <ClInclude Include="..\..\include\common.h" />
+    <ClInclude Include="..\..\qvideo\gdi\mi.h" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="..\..\qvideo\qvideo.inf" />

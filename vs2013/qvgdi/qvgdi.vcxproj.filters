@@ -36,10 +36,10 @@
     <ClInclude Include="..\..\qvideo\gdi\driver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\qvideo\inc\common.h">
+    <ClInclude Include="..\..\qvideo\gdi\common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\qvideo\inc\mi.h">
+    <ClInclude Include="..\..\qvideo\gdi\mi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

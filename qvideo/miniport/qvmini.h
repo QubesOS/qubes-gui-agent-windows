@@ -1,9 +1,9 @@
 #pragma warning(disable: 4201)
-#include "dderror.h"
-#include "devioctl.h"
-#include "miniport.h"
-#include "ntddvdeo.h"
-#include "video.h"
+#include <dderror.h>
+#include <devioctl.h>
+#include <miniport.h>
+#include <ntddvdeo.h>
+#include <video.h>
 
 #include "memory.h"
 
