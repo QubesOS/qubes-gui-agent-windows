@@ -79,13 +79,6 @@ BOOL InitPdev(
     DEVINFO *
     );
 
-//
-// Determines the size of the DriverExtra information in the DEVMODE
-// structure passed to and from the display driver.
-//
-
-//#define DRIVER_EXTRA_SIZE 0
-
 // Name of the DLL in UNICODE
 #define DLL_NAME	L"QubesVideo"
 

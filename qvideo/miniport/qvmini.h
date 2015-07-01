@@ -1,3 +1,4 @@
+#pragma warning(disable: 4201)
 #include "dderror.h"
 #include "devioctl.h"
 #include "miniport.h"

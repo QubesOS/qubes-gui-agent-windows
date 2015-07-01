@@ -1,3 +1,4 @@
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
 #include <mmsystem.h>
@@ -735,15 +736,14 @@ cleanup:
 // TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents(void)
 {
-    unsigned int firedPort;
     ULONG eventCount;
-    DWORD i, signaledEvent;
+    DWORD signaledEvent;
     BOOL vchanIoInProgress;
     ULONG status;
     BOOL exitLoop;
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
     HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
-    HDC screenDC;
+    HDC screenDC = NULL;
     LARGE_INTEGER maxInterval, time1, time2;
     BOOL updatePending = FALSE;
 #ifdef DEBUG

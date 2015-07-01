@@ -1,3 +1,4 @@
+#define INITGUID
 #include <windows.h>
 #include <stdio.h>
 #include <setupapi.h>
@@ -215,7 +216,7 @@ int __cdecl wmain(int argc, WCHAR* argv[])
         &deviceInfoData,
         SPDRP_HARDWAREID,
         (BYTE *) hwIdList,
-        (wcslen(hwIdList) + 1 + 1)*sizeof(WCHAR)))
+        (DWORD)(wcslen(hwIdList) + 1 + 1)*sizeof(WCHAR)))
     {
         fwprintf(stderr, L"SetupDiSetDeviceRegistryProperty GetLastError: %d\n", GetLastError());
         goto cleanup;

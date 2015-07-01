@@ -1,5 +1,7 @@
-#include "..\include\resource.h"
+#include "resource.h"
 
 IDC_BLANK               CURSOR  DISCARDABLE     "blank.cur"
 
-#include "version.rc"
+#define QTW_FILEDESCRIPTION_STR "Qubes GUI Agent"
+#define QTW_FILETYPE VFT_APP
+#include "version_common.rc"

@@ -1,3 +1,4 @@
 #define QTW_FILEDESCRIPTION_STR "GUI agent test app"
+#define QTW_FILETYPE VFT_APP
 #include "..\..\version.h"
-#include "..\..\version_common.rc"
+#include "version_common.rc"
