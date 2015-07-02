@@ -1124,7 +1124,7 @@ static ULONG Init(void)
     return ERROR_SUCCESS;
 }
 
-int wmain(int argc, WCHAR *argv[])
+int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     if (ERROR_SUCCESS != Init())
         return perror("Init");
