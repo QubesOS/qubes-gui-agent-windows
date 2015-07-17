@@ -3,6 +3,8 @@
 
 #include "qvcontrol.h"
 
+#include <list.h>
+
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
 #define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
 
@@ -48,47 +50,6 @@ typedef struct _MODAL_SEARCH_PARAMS
     HWND ParentWindow; // window that's disabled by a modal window, input
     HWND ModalWindow; // modal window that's active, output
 } MODAL_SEARCH_PARAMS;
-
-#define InitializeListHead(ListHead) (\
-    (ListHead)->Flink = (ListHead)->Blink = (ListHead))
-
-#define RemoveEntryList(Entry) {\
-    LIST_ENTRY *_EX_Blink; \
-    LIST_ENTRY *_EX_Flink; \
-    _EX_Flink = (Entry)->Flink; \
-    _EX_Blink = (Entry)->Blink; \
-    _EX_Blink->Flink = _EX_Flink; \
-    _EX_Flink->Blink = _EX_Blink; \
-}
-
-#define RemoveHeadList(ListHead) \
-    (ListHead)->Flink; \
-{RemoveEntryList((ListHead)->Flink)}
-
-#define IsListEmpty(ListHead) \
-    ((ListHead)->Flink == (ListHead))
-
-#define InsertHeadList(ListHead,Entry) {\
-    LIST_ENTRY *_EX_Flink; \
-    LIST_ENTRY *_EX_ListHead; \
-    _EX_ListHead = (ListHead); \
-    _EX_Flink = _EX_ListHead->Flink; \
-    (Entry)->Flink = _EX_Flink; \
-    (Entry)->Blink = _EX_ListHead; \
-    _EX_Flink->Blink = (Entry); \
-    _EX_ListHead->Flink = (Entry); \
-}
-
-#define InsertTailList(ListHead,Entry) {\
-    LIST_ENTRY *_EX_Blink; \
-    LIST_ENTRY *_EX_ListHead; \
-    _EX_ListHead = (ListHead); \
-    _EX_Blink = _EX_ListHead->Blink; \
-    (Entry)->Flink = _EX_ListHead; \
-    (Entry)->Blink = _EX_Blink; \
-    _EX_Blink->Flink = (Entry); \
-    _EX_ListHead->Blink = (Entry); \
-}
 
 BOOL ShouldAcceptWindow(
     IN HWND window,
