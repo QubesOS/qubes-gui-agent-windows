@@ -53,8 +53,8 @@ static NTSTATUS CreateAndMapSection(
         return status;
     }
 
-    VideoDebugPrint((0, __FUNCTION__": section '%wZ': %p, addr %p\n",
-        sectionName, *sectionObject, *baseAddress));
+    VideoDebugPrint((0, __FUNCTION__": section '%wZ': %p, addr %p, size %lu\n",
+        sectionName, *sectionObject, *baseAddress, size));
 
     return status;
 }
@@ -109,6 +109,7 @@ static NTSTATUS GetBufferPfnArray(
                 return STATUS_NO_MEMORY;
 
             (*pfnArray)->NumberOf4kPages = numberOfPages;
+            VideoDebugPrint((0, __FUNCTION__ ": size: %lu, number pages: %lu, pfn array size: %lu\n", size, numberOfPages, numberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG)));
             RtlCopyMemory((*pfnArray)->Pfn, MmGetMdlPfnArray(mdl), numberOfPages*sizeof(PFN_NUMBER));
         }
 
@@ -146,7 +147,7 @@ void *AllocateMemory(
     if (!memory)
         return NULL;
 
-    VideoDebugPrint((0, __FUNCTION__": %p\n", memory));
+    VideoDebugPrint((0, __FUNCTION__": %p, size %lu\n", memory, size));
 
     status = GetBufferPfnArray(memory, size, pfnArray, KernelMode, FALSE, NULL);
     if (!NT_SUCCESS(status))
@@ -253,7 +254,7 @@ void FreeSection(
         IoFreeMdl(mdl);
     }
 
-    VideoDebugPrint((0, __FUNCTION__": section %p, dirty %p\n", sectionObject, dirtySectionObject));
+    VideoDebugPrint((0, __FUNCTION__": section %p, pfn %p, dirty %d\n", sectionObject, pfnArray, dirtySectionObject));
     MmUnmapViewInSystemSpace(baseAddress); // FIXME: undocumented/unsupported function
     ObDereferenceObject(sectionObject);
     ZwClose(section);

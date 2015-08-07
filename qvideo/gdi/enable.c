@@ -273,6 +273,7 @@ ULONG AllocateSurfaceMemory(
 
     QvminiAllocateMemory.Size = uLength;
 
+    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_MEMORY: size %lu", uLength);
     status = EngDeviceIoControl(
         pSurfaceDescriptor->Pdev->DriverHandle,
         IOCTL_QVMINI_ALLOCATE_MEMORY,
@@ -324,6 +325,7 @@ ULONG AllocateSection(
     QvminiAllocateSection.Size = uLength;
     QvminiAllocateSection.UseDirtyBits = g_bUseDirtyBits;
 
+    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_SECTION: size %lu, use dirty bits: %d", uLength, g_bUseDirtyBits);
     status = EngDeviceIoControl(
         pSurfaceDescriptor->Pdev->DriverHandle,
         IOCTL_QVMINI_ALLOCATE_SECTION,
@@ -521,7 +523,7 @@ ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
 
     uSurfaceMemorySize = (ULONG) (uStride * sizl.cy);
 
-    TRACEF("allocating %d x %d @ %lu, size %lu", sizl.cx, sizl.cy, ulBitCount, uSurfaceMemorySize);
+    DEBUGF("allocating surface data: %d x %d @ %lu, size %lu", sizl.cx, sizl.cy, ulBitCount, uSurfaceMemorySize);
 
     status = STATUS_NO_MEMORY;
     pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) EngAllocMem(FL_ZERO_MEMORY, sizeof(SURFACE_DESCRIPTOR), ALLOC_TAG);
@@ -758,7 +760,7 @@ ULONG UserSupportVideoMode(
     if (pQvSupportMode->Bpp != 16 && pQvSupportMode->Bpp != 24 && pQvSupportMode->Bpp != 32)
         goto cleanup;
 
-    DEBUGF("SupportVideoMode(%ld, %ld, %d)", pQvSupportMode->Width, pQvSupportMode->Height, pQvSupportMode->Bpp);
+    DEBUGF("SupportVideoMode(%ld x %ld @ %d)", pQvSupportMode->Width, pQvSupportMode->Height, pQvSupportMode->Bpp);
     g_uWidth = pQvSupportMode->Width;
     g_uHeight = pQvSupportMode->Height;
     g_uBpp = pQvSupportMode->Bpp;
@@ -801,6 +803,7 @@ ULONG UserGetSurfaceData(
     pQvGetSurfaceDataResponse->Bpp = pSurfaceDescriptor->BitCount;
     pQvGetSurfaceDataResponse->IsScreen = pSurfaceDescriptor->IsScreen;
 
+    DEBUGF("memcpy(%p, size %lu)", pQvGetSurfaceData->PfnArray, PFN_ARRAY_SIZE(pSurfaceDescriptor->Width, pSurfaceDescriptor->Height));
     memcpy(pQvGetSurfaceData->PfnArray, pSurfaceDescriptor->pPfnArray,
         PFN_ARRAY_SIZE(pSurfaceDescriptor->Width, pSurfaceDescriptor->Height));
 
