@@ -20,7 +20,10 @@ HANDLE g_DirtySection = NULL;
 
 ULONG CloseScreenSection(void)
 {
-    LogVerbose("start");
+    LogVerbose("start, g_ScreenData: %p", g_ScreenData);
+
+    if (!g_ScreenData)
+        return ERROR_SUCCESS;
 
     if (!UnmapViewOfFile(g_ScreenData))
         return perror("UnmapViewOfFile(g_pScreenData)");
