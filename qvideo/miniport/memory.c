@@ -78,7 +78,7 @@ static NTSTATUS GetBufferPfnArray(
     if (bufferMdl)
         *bufferMdl = NULL;
 
-    mdl = IoAllocateMdl(virtualAddress, size, FALSE, FALSE, NULL);
+    mdl = IoAllocateMdl(virtualAddress, size, FALSE, processorMode == UserMode, NULL);
     if (!mdl)
     {
         VideoDebugPrint((0, __FUNCTION__ ": IoAllocateMdl() failed to allocate an MDL\n"));
