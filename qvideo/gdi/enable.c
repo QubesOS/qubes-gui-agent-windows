@@ -17,17 +17,15 @@ void DriverEntry()
 // The driver function table with all function index/address pairs
 static DRVFN g_DrvFunctions[] =
 {
-    { INDEX_DrvGetModes, (PFN) DrvGetModes },
-    { INDEX_DrvSynchronizeSurface, (PFN) DrvSynchronizeSurface },
-    { INDEX_DrvEnablePDEV, (PFN) DrvEnablePDEV },
-    { INDEX_DrvCompletePDEV, (PFN) DrvCompletePDEV },
-    { INDEX_DrvDisablePDEV, (PFN) DrvDisablePDEV },
-    { INDEX_DrvEnableSurface, (PFN) DrvEnableSurface },
-    { INDEX_DrvDisableSurface, (PFN) DrvDisableSurface },
-    { INDEX_DrvAssertMode, (PFN) DrvAssertMode },
-    //{INDEX_DrvCreateDeviceBitmap, (PFN) DrvCreateDeviceBitmap},
-    //{INDEX_DrvDeleteDeviceBitmap, (PFN) DrvDeleteDeviceBitmap},
-    { INDEX_DrvEscape, (PFN) DrvEscape }
+    { INDEX_DrvGetModes, (PFN)DrvGetModes },
+    { INDEX_DrvSynchronizeSurface, (PFN)DrvSynchronizeSurface },
+    { INDEX_DrvEnablePDEV, (PFN)DrvEnablePDEV },
+    { INDEX_DrvCompletePDEV, (PFN)DrvCompletePDEV },
+    { INDEX_DrvDisablePDEV, (PFN)DrvDisablePDEV },
+    { INDEX_DrvEnableSurface, (PFN)DrvEnableSurface },
+    { INDEX_DrvDisableSurface, (PFN)DrvDisableSurface },
+    { INDEX_DrvAssertMode, (PFN)DrvAssertMode },
+    { INDEX_DrvEscape, (PFN)DrvEscape }
 };
 
 // default mode, before gui agent connects
@@ -38,6 +36,7 @@ ULONG g_uWidth = 1280;
 ULONG g_uHeight = 800;
 ULONG g_uBpp = 32;
 
+// defines which GDI operations will call driver-defined callbacks
 #define flGlobalHooks HOOK_SYNCHRONIZE
 
 /******************************Public*Routine******************************\
@@ -47,23 +46,23 @@ ULONG g_uBpp = 32;
 *
 \**************************************************************************/
 BOOL APIENTRY DrvEnableDriver(
-    ULONG iEngineVersion,
-    ULONG cj,
-    __in_bcount(cj) DRVENABLEDATA *pded
+    __in ULONG EngineVersion,
+    __in ULONG cbEnableData,
+    __in_bcount(cbEnableData) DRVENABLEDATA *EnableData
     )
 {
     BOOL status = FALSE;
     FUNCTION_ENTER();
 
-    if ((iEngineVersion < DDI_DRIVER_VERSION_NT5) || (cj < sizeof(DRVENABLEDATA)))
+    if ((EngineVersion < DDI_DRIVER_VERSION_NT5) || (cbEnableData < sizeof(DRVENABLEDATA)))
     {
-        ERRORF("Unsupported engine version %d, DRVENABLEDATA size %d", iEngineVersion, cj);
+        ERRORF("Unsupported engine version %lu, DRVENABLEDATA size %lu", EngineVersion, cbEnableData);
         goto cleanup;
     }
 
-    pded->pdrvfn = g_DrvFunctions;
-    pded->c = sizeof(g_DrvFunctions) / sizeof(DRVFN);
-    pded->iDriverVersion = DDI_DRIVER_VERSION_NT5;
+    EnableData->pdrvfn = g_DrvFunctions;
+    EnableData->c = sizeof(g_DrvFunctions) / sizeof(DRVFN);
+    EnableData->iDriverVersion = DDI_DRIVER_VERSION_NT5;
 
     ReadRegistryConfig();
     status = TRUE;
@@ -83,151 +82,150 @@ cleanup:
 \**************************************************************************/
 
 DHPDEV APIENTRY DrvEnablePDEV(
-    __in DEVMODEW *pDevmode,	// Pointer to DEVMODE
-    __in_opt WCHAR *pwszLogAddress,	// Logical address
-    __in ULONG cPatterns,	// number of patterns
-    __in_opt HSURF *ahsurfPatterns,	// return standard patterns
-    __in ULONG cjGdiInfo,	// Length of memory pointed to by pGdiInfo
-    __out_bcount(cjGdiInfo) ULONG *pGdiInfo,	// Pointer to GdiInfo structure
-    __in ULONG cjDevInfo,	// Length of following PDEVINFO structure
-    __out_bcount(cjDevInfo) DEVINFO *pDevInfo,	// physical device information structure
-    __in_opt HDEV hdev,	// HDEV, used for callbacks
-    __in_opt WCHAR *pwszDeviceName,	// DeviceName - not used
-    __in HANDLE hDriver	// Handle to base driver
+    __in PDEVMODEW DevMode,	// Pointer to DEVMODE
+    __in_opt PWCHAR LogicalAddress,	// Logical address, for printer drivers
+    __in ULONG NumberPatterns,	// Number of patterns, for printer drivers
+    __in_opt HSURF *StandardPatterns, // Return standard patterns, for printer drivers
+    __in ULONG cbDevCaps, // Size of buffer pointed to by DevCaps
+    __out_bcount(cbDevCaps) ULONG *DevCaps,	// Pointer to GDIINFO structure that describes device capabilities
+    __in ULONG cbDevInfo, // Size of the following DEVINFO structure
+    __out_bcount(cbDevInfo) PDEVINFO DevInfo, // Physical device information structure
+    __in_opt HDEV EngDeviceHandle,	// GDI-supplied handle to the device, used for callbacks
+    __in_opt WCHAR *DeviceName,	// User-readable device name
+    __in HANDLE DisplayHandle // Display device handle
     )
 {
-    PDEV *ppdev = NULL;
+    PQV_PDEV pdev = NULL;
 
     FUNCTION_ENTER();
 
-    UNREFERENCED_PARAMETER(pwszLogAddress);
-    UNREFERENCED_PARAMETER(cPatterns);
-    UNREFERENCED_PARAMETER(ahsurfPatterns);
-    UNREFERENCED_PARAMETER(hdev);
-    UNREFERENCED_PARAMETER(pwszDeviceName);
+    UNREFERENCED_PARAMETER(LogicalAddress);
+    UNREFERENCED_PARAMETER(NumberPatterns);
+    UNREFERENCED_PARAMETER(StandardPatterns);
+    UNREFERENCED_PARAMETER(EngDeviceHandle);
+    UNREFERENCED_PARAMETER(DeviceName);
 
-    if (sizeof(DEVINFO) > cjDevInfo)
+    if (sizeof(DEVINFO) > cbDevInfo)
     {
-        ERRORF("insufficient pDevInfo memory");
+        ERRORF("insufficient DEVINFO memory");
         goto cleanup;
     }
 
-    if (sizeof(GDIINFO) > cjGdiInfo)
+    if (sizeof(GDIINFO) > cbDevCaps)
     {
-        ERRORF("insufficient pGdiInfo memory");
+        ERRORF("insufficient GDIINFO memory");
         goto cleanup;
     }
 
     // Allocate a physical device structure.
-    ppdev = (PDEV *) EngAllocMem(FL_ZERO_MEMORY, sizeof(PDEV), ALLOC_TAG);
-    if (ppdev == NULL)
+    pdev = (PQV_PDEV)EngAllocMem(FL_ZERO_MEMORY, sizeof(QV_PDEV), ALLOC_TAG);
+    if (pdev == NULL)
     {
-        ERRORF("EngAllocMem() failed");
+        ERRORF("EngAllocMem(QV_PDEV) failed");
         goto cleanup;
     }
 
-    // Save the screen handle in the PDEV.
-    ppdev->DriverHandle = hDriver;
+    pdev->DisplayHandle = DisplayHandle;
 
     // Get the current screen mode information. Set up device caps and devinfo.
-    if (!InitPdev(ppdev, pDevmode, (GDIINFO *) pGdiInfo, pDevInfo))
+    if (!InitPdev(pdev, DevMode, (PGDIINFO)DevCaps, DevInfo))
     {
         ERRORF("InitPdev() failed");
-        EngFreeMem(ppdev);
-        ppdev = NULL;
+        EngFreeMem(pdev);
+        pdev = NULL;
         goto cleanup;
     }
 
 cleanup:
-
     FUNCTION_EXIT();
-    return (DHPDEV)ppdev;
+    return (DHPDEV)pdev;
 }
 
 /******************************Public*Routine******************************\
 * DrvCompletePDEV
 *
-* Store the HPDEV, the engines handle for this PDEV, in the DHPDEV.
+* Store the HDEV, the engines handle for this PDEV, in the DHPDEV.
 *
 \**************************************************************************/
 
 VOID APIENTRY DrvCompletePDEV(
-    DHPDEV dhpdev,
-    HDEV hdev
+    __inout DHPDEV PhysicalDeviceHandle, // physical device handle created in DrvEnablePDEV
+    __in HDEV EngDeviceHandle // GDI handle for pdev
     )
 {
     FUNCTION_ENTER();
-    ((PDEV *)dhpdev)->EngPdevHandle = hdev;
+    ((PQV_PDEV)PhysicalDeviceHandle)->EngPdevHandle = EngDeviceHandle;
     FUNCTION_EXIT();
 }
 
 ULONG APIENTRY DrvGetModes(
-    HANDLE hDriver,
-    ULONG cjSize,
-    DEVMODEW *pdm
+    __in HANDLE DisplayHandle, // display device handle
+    __in ULONG cbDevMode, // size of the DevMode buffer
+    __out_bcount_opt(cbDevMode) PDEVMODEW DevMode // display mode array
     )
 {
-    ULONG ulBytesWritten = 0, ulBytesNeeded = 2 * sizeof(DEVMODEW);
-    ULONG ulReturnValue;
+    ULONG bytesWritten = 0, bytesNeeded = 2 * sizeof(DEVMODEW); // 2 modes are supported
+    ULONG returnValue;
     DWORD i;
 
     FUNCTION_ENTER();
 
-    UNREFERENCED_PARAMETER(hDriver);
-    UNREFERENCED_PARAMETER(cjSize);
+    UNREFERENCED_PARAMETER(DisplayHandle);
 
-    DEBUGF("pdm: %p, size: %lu, bytes needed: %lu", pdm, cjSize, ulBytesNeeded);
-    if (pdm == NULL)
+    DEBUGF("DevMode: %p, size: %lu, bytes needed: %lu", DevMode, cbDevMode, bytesNeeded);
+    if (DevMode == NULL) // return the required buffer size
     {
-        ulReturnValue = ulBytesNeeded;
+        returnValue = bytesNeeded;
     }
-    else if (cjSize < ulBytesNeeded)
+    else if (cbDevMode < bytesNeeded)
     {
-        ulReturnValue = 0;
+        returnValue = 0;
     }
     else
     {
-        ulBytesWritten = ulBytesNeeded;
+        bytesWritten = bytesNeeded;
 
-        RtlZeroMemory(pdm, ulBytesNeeded);
+        RtlZeroMemory(DevMode, bytesNeeded);
         for (i = 0; i < 2; i++)
         {
-            memcpy(pdm[i].dmDeviceName, DLL_NAME, sizeof(DLL_NAME));
+            memcpy(DevMode[i].dmDeviceName,
+                   DLL_NAME,
+                   sizeof(DevMode[i].dmDeviceName) < sizeof(DLL_NAME) ? sizeof(DevMode[i].dmDeviceName) : sizeof(DLL_NAME));
 
-            pdm[i].dmSpecVersion = DM_SPECVERSION;
-            pdm[i].dmDriverVersion = DM_SPECVERSION;
+            DevMode[i].dmSpecVersion = DM_SPECVERSION;
+            DevMode[i].dmDriverVersion = DM_SPECVERSION;
 
-            pdm[i].dmDriverExtra = 0;
-            pdm[i].dmSize = sizeof(DEVMODEW);
-            pdm[i].dmBitsPerPel = g_uBpp;
+            DevMode[i].dmDriverExtra = 0;
+            DevMode[i].dmSize = sizeof(DEVMODEW);
+            DevMode[i].dmBitsPerPel = g_uBpp;
+
             switch (i)
             {
-            case 0:
-                pdm[i].dmPelsWidth = g_uDefaultWidth;
-                pdm[i].dmPelsHeight = g_uDefaultHeight;
+            case 0: // default resolution
+                DevMode[i].dmPelsWidth = g_uDefaultWidth;
+                DevMode[i].dmPelsHeight = g_uDefaultHeight;
                 break;
-            case 1:
-                pdm[i].dmPelsWidth = g_uWidth;
-                pdm[i].dmPelsHeight = g_uHeight;
+            case 1: // current resolution
+                DevMode[i].dmPelsWidth = g_uWidth;
+                DevMode[i].dmPelsHeight = g_uHeight;
                 break;
             }
-            pdm[i].dmDisplayFrequency = 75;
 
-            pdm[i].dmDisplayFlags = 0;
+            DevMode[i].dmDisplayFrequency = 60;
+            DevMode[i].dmDisplayFlags = 0;
+            DevMode[i].dmPanningWidth = DevMode[i].dmPelsWidth;
+            DevMode[i].dmPanningHeight = DevMode[i].dmPelsHeight;
 
-            pdm[i].dmPanningWidth = pdm[i].dmPelsWidth;
-            pdm[i].dmPanningHeight = pdm[i].dmPelsHeight;
-
-            pdm[i].dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
+            DevMode[i].dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
         }
 
-        ulReturnValue = ulBytesWritten;
+        returnValue = bytesWritten;
     }
 
-    DEBUGF("return %lu", ulReturnValue);
+    DEBUGF("return %lu", returnValue);
 
     FUNCTION_EXIT();
-    return ulReturnValue;
+    return returnValue;
 }
 
 /******************************Public*Routine******************************\
@@ -239,61 +237,62 @@ ULONG APIENTRY DrvGetModes(
 \**************************************************************************/
 
 VOID APIENTRY DrvDisablePDEV(
-    DHPDEV dhpdev
+    DHPDEV PhysicalDeviceHandle
     )
 {
-    PDEV *ppdev = (PDEV *) dhpdev;
+    PQV_PDEV pdev = (PQV_PDEV)PhysicalDeviceHandle;
 
     FUNCTION_ENTER();
-
-    EngDeletePalette(ppdev->DefaultPalette);
-    EngFreeMem(ppdev);
+    EngDeletePalette(pdev->DefaultPalette);
+    RtlZeroMemory(pdev, sizeof(QV_PDEV));
+    EngFreeMem(pdev);
+    FUNCTION_EXIT();
 }
 
 ULONG AllocateSurfaceMemory(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor,
-    ULONG uLength
+    __inout PQV_SURFACE Surface,
+    __in ULONG PixelDataSize
     )
 {
-    QVMINI_ALLOCATE_MEMORY_RESPONSE *pQvminiAllocateMemoryResponse = NULL;
+    QVMINI_ALLOCATE_MEMORY_RESPONSE *QvminiAllocateMemoryResponse = NULL;
     QVMINI_ALLOCATE_MEMORY QvminiAllocateMemory;
-    ULONG nbReturned;
+    ULONG returned;
     DWORD status = STATUS_NO_MEMORY;
 
     FUNCTION_ENTER();
 
-    pQvminiAllocateMemoryResponse = (QVMINI_ALLOCATE_MEMORY_RESPONSE *)
+    QvminiAllocateMemoryResponse = (QVMINI_ALLOCATE_MEMORY_RESPONSE *)
         EngAllocMem(FL_ZERO_MEMORY, sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE), ALLOC_TAG);
 
-    if (!pQvminiAllocateMemoryResponse)
+    if (!QvminiAllocateMemoryResponse)
     {
         ERRORF("EngAllocMem(QVMINI_ALLOCATE_MEMORY_RESPONSE) failed");
         goto cleanup;
     }
 
-    QvminiAllocateMemory.Size = uLength;
+    QvminiAllocateMemory.Size = PixelDataSize;
 
-    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_MEMORY: size %lu", uLength);
+    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_MEMORY: size %lu", PixelDataSize);
     status = EngDeviceIoControl(
-        pSurfaceDescriptor->Pdev->DriverHandle,
+        Surface->Pdev->DisplayHandle,
         IOCTL_QVMINI_ALLOCATE_MEMORY,
         &QvminiAllocateMemory,
         sizeof(QvminiAllocateMemory),
-        pQvminiAllocateMemoryResponse,
+        QvminiAllocateMemoryResponse,
         sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE),
-        &nbReturned);
+        &returned);
 
     if (STATUS_SUCCESS != status)
     {
         ERRORF("EngDeviceIoControl(IOCTL_QVMINI_ALLOCATE_MEMORY) failed: 0x%lx", status);
-        EngFreeMem(pQvminiAllocateMemoryResponse);
+        EngFreeMem(QvminiAllocateMemoryResponse);
         goto cleanup;
     }
 
-    pSurfaceDescriptor->SurfaceData = pQvminiAllocateMemoryResponse->VirtualAddress;
-    pSurfaceDescriptor->pPfnArray = pQvminiAllocateMemoryResponse->PfnArray;
+    Surface->PixelData = QvminiAllocateMemoryResponse->VirtualAddress;
+    Surface->PfnArray = QvminiAllocateMemoryResponse->PfnArray;
 
-    EngFreeMem(pQvminiAllocateMemoryResponse);
+    EngFreeMem(QvminiAllocateMemoryResponse);
     status = STATUS_SUCCESS;
 
 cleanup:
@@ -302,58 +301,58 @@ cleanup:
 }
 
 ULONG AllocateSection(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor,
-    ULONG uLength
+    __inout PQV_SURFACE Surface,
+    __in ULONG PixelDataSize
     )
 {
-    QVMINI_ALLOCATE_SECTION_RESPONSE *pQvminiAllocateSectionResponse = NULL;
+    QVMINI_ALLOCATE_SECTION_RESPONSE *QvminiAllocateSectionResponse = NULL;
     QVMINI_ALLOCATE_SECTION QvminiAllocateSection;
-    ULONG nbReturned;
+    ULONG returned;
     DWORD status = STATUS_NO_MEMORY;
 
     FUNCTION_ENTER();
 
-    pQvminiAllocateSectionResponse = (QVMINI_ALLOCATE_SECTION_RESPONSE *)
+    QvminiAllocateSectionResponse = (QVMINI_ALLOCATE_SECTION_RESPONSE *)
         EngAllocMem(FL_ZERO_MEMORY, sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE), ALLOC_TAG);
 
-    if (!pQvminiAllocateSectionResponse)
+    if (!QvminiAllocateSectionResponse)
     {
         ERRORF("EngAllocMem(QVMINI_ALLOCATE_SECTION_RESPONSE) failed");
         goto cleanup;
     }
 
-    QvminiAllocateSection.Size = uLength;
+    QvminiAllocateSection.Size = PixelDataSize;
     QvminiAllocateSection.UseDirtyBits = g_bUseDirtyBits;
 
-    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_SECTION: size %lu, use dirty bits: %d", uLength, g_bUseDirtyBits);
+    DEBUGF("calling IOCTL_QVMINI_ALLOCATE_SECTION: size %lu, use dirty bits: %d", PixelDataSize, g_bUseDirtyBits);
     status = EngDeviceIoControl(
-        pSurfaceDescriptor->Pdev->DriverHandle,
+        Surface->Pdev->DisplayHandle,
         IOCTL_QVMINI_ALLOCATE_SECTION,
         &QvminiAllocateSection,
         sizeof(QvminiAllocateSection),
-        pQvminiAllocateSectionResponse,
+        QvminiAllocateSectionResponse,
         sizeof(QVMINI_ALLOCATE_SECTION_RESPONSE),
-        &nbReturned);
+        &returned);
 
     if (STATUS_SUCCESS != status)
     {
         ERRORF("EngDeviceIoControl(IOCTL_QVMINI_ALLOCATE_SECTION) failed: 0x%lx", status);
-        EngFreeMem(pQvminiAllocateSectionResponse);
+        EngFreeMem(QvminiAllocateSectionResponse);
         goto cleanup;
     }
 
-    pSurfaceDescriptor->SurfaceData = pQvminiAllocateSectionResponse->VirtualAddress;
-    pSurfaceDescriptor->SurfaceSection = pQvminiAllocateSectionResponse->Section;
-    pSurfaceDescriptor->SectionObject = pQvminiAllocateSectionResponse->SectionObject;
-    pSurfaceDescriptor->Mdl = pQvminiAllocateSectionResponse->Mdl;
+    Surface->PixelData = QvminiAllocateSectionResponse->VirtualAddress;
+    Surface->Section = QvminiAllocateSectionResponse->Section;
+    Surface->SectionObject = QvminiAllocateSectionResponse->SectionObject;
+    Surface->Mdl = QvminiAllocateSectionResponse->Mdl;
 
-    pSurfaceDescriptor->DirtySectionObject = pQvminiAllocateSectionResponse->DirtySectionObject;
-    pSurfaceDescriptor->DirtySection = pQvminiAllocateSectionResponse->DirtySection;
-    pSurfaceDescriptor->DirtyPages = pQvminiAllocateSectionResponse->DirtyPages;
+    Surface->DirtySectionObject = QvminiAllocateSectionResponse->DirtySectionObject;
+    Surface->DirtySection = QvminiAllocateSectionResponse->DirtySection;
+    Surface->DirtyPages = QvminiAllocateSectionResponse->DirtyPages;
 
-    pSurfaceDescriptor->pPfnArray = pQvminiAllocateSectionResponse->PfnArray;
+    Surface->PfnArray = QvminiAllocateSectionResponse->PfnArray;
 
-    EngFreeMem(pQvminiAllocateSectionResponse);
+    EngFreeMem(QvminiAllocateSectionResponse);
     status = STATUS_SUCCESS;
 
 cleanup:
@@ -362,227 +361,233 @@ cleanup:
 }
 
 ULONG AllocateSurfaceData(
-    BOOLEAN bSurface,
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor,
-    ULONG uLength
+    __in BOOLEAN IsSurface,
+    __inout PQV_SURFACE Surface,
+    __in ULONG PixelDataSize
     )
 {
     ULONG status;
 
     FUNCTION_ENTER();
 
-    if (bSurface)
-        status = AllocateSection(pSurfaceDescriptor, uLength);
+    if (IsSurface)
+        status = AllocateSection(Surface, PixelDataSize);
     else
-        status = AllocateSurfaceMemory(pSurfaceDescriptor, uLength);
+        status = AllocateSurfaceMemory(Surface, PixelDataSize);
 
     FUNCTION_EXIT();
     return status;
 }
 
 VOID FreeSurfaceMemory(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor
+    __inout PQV_SURFACE Surface
     )
 {
-    DWORD dwResult;
+    DWORD status;
     QVMINI_FREE_MEMORY QvminiFreeMemory;
-    ULONG nbReturned;
+    ULONG returned;
 
     FUNCTION_ENTER();
 
-    DEBUGF("surface: %p, data: %p", pSurfaceDescriptor, pSurfaceDescriptor->SurfaceData);
+    DEBUGF("surface: %p, data: %p", Surface, Surface->PixelData);
 
-    QvminiFreeMemory.VirtualAddress = pSurfaceDescriptor->SurfaceData;
-    QvminiFreeMemory.PfnArray = pSurfaceDescriptor->pPfnArray;
+    QvminiFreeMemory.VirtualAddress = Surface->PixelData;
+    QvminiFreeMemory.PfnArray = Surface->PfnArray;
 
-    dwResult = EngDeviceIoControl(pSurfaceDescriptor->Pdev->DriverHandle,
-        IOCTL_QVMINI_FREE_MEMORY, &QvminiFreeMemory, sizeof(QvminiFreeMemory), NULL, 0, &nbReturned);
+    status = EngDeviceIoControl(Surface->Pdev->DisplayHandle,
+                                IOCTL_QVMINI_FREE_MEMORY, &QvminiFreeMemory, sizeof(QvminiFreeMemory), NULL, 0, &returned);
 
-    if (STATUS_SUCCESS != dwResult)
+    if (STATUS_SUCCESS != status)
     {
-        ERRORF("EngDeviceIoControl(IOCTL_QVMINI_FREE_MEMORY) failed: 0x%lx", dwResult);
+        ERRORF("EngDeviceIoControl(IOCTL_QVMINI_FREE_MEMORY) failed: 0x%lx", status);
     }
 
     FUNCTION_EXIT();
 }
 
 VOID FreeSection(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor
+    __inout PQV_SURFACE Surface
     )
 {
-    DWORD dwResult;
+    DWORD status;
     QVMINI_FREE_SECTION QvminiFreeSection;
-    ULONG nbReturned;
+    ULONG returned;
 
     FUNCTION_ENTER();
 
-    DEBUGF("surface: %p, data: %p", pSurfaceDescriptor, pSurfaceDescriptor->SurfaceData);
+    DEBUGF("surface: %p, data: %p", Surface, Surface->PixelData);
 
-    QvminiFreeSection.VirtualAddress = pSurfaceDescriptor->SurfaceData;
-    QvminiFreeSection.Section = pSurfaceDescriptor->SurfaceSection;
-    QvminiFreeSection.SectionObject = pSurfaceDescriptor->SectionObject;
-    QvminiFreeSection.Mdl = pSurfaceDescriptor->Mdl;
+    QvminiFreeSection.VirtualAddress = Surface->PixelData;
+    QvminiFreeSection.Section = Surface->Section;
+    QvminiFreeSection.SectionObject = Surface->SectionObject;
+    QvminiFreeSection.Mdl = Surface->Mdl;
 
-    QvminiFreeSection.DirtyPages = pSurfaceDescriptor->DirtyPages;
-    QvminiFreeSection.DirtySection = pSurfaceDescriptor->DirtySection;
-    QvminiFreeSection.DirtySectionObject = pSurfaceDescriptor->DirtySectionObject;
+    QvminiFreeSection.DirtyPages = Surface->DirtyPages;
+    QvminiFreeSection.DirtySection = Surface->DirtySection;
+    QvminiFreeSection.DirtySectionObject = Surface->DirtySectionObject;
 
-    QvminiFreeSection.PfnArray = pSurfaceDescriptor->pPfnArray;
+    QvminiFreeSection.PfnArray = Surface->PfnArray;
 
-    dwResult = EngDeviceIoControl(pSurfaceDescriptor->Pdev->DriverHandle,
-        IOCTL_QVMINI_FREE_SECTION, &QvminiFreeSection, sizeof(QvminiFreeSection), NULL, 0, &nbReturned);
+    status = EngDeviceIoControl(Surface->Pdev->DisplayHandle,
+                                IOCTL_QVMINI_FREE_SECTION, &QvminiFreeSection, sizeof(QvminiFreeSection), NULL, 0, &returned);
 
-    if (0 != dwResult)
+    if (0 != status)
     {
-        ERRORF("EngDeviceIoControl(IOCTL_QVMINI_FREE_SECTION) failed: 0x%lx", dwResult);
+        ERRORF("EngDeviceIoControl(IOCTL_QVMINI_FREE_SECTION) failed: 0x%lx", status);
     }
 
     FUNCTION_EXIT();
 }
 
 VOID FreeSurfaceData(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor
+    __inout PQV_SURFACE Surface
     )
 {
     FUNCTION_ENTER();
 
-    if (pSurfaceDescriptor->IsScreen)
-        FreeSection(pSurfaceDescriptor);
+    DEBUGF("surface: %p, screen? %d", Surface, Surface->IsScreen);
+    if (Surface->IsScreen)
+        FreeSection(Surface);
     else
-        FreeSurfaceMemory(pSurfaceDescriptor);
+        FreeSurfaceMemory(Surface);
 
     FUNCTION_EXIT();
 }
 
-VOID FreeSurfaceDescriptor(
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor
+VOID FreeSurface(
+    __inout PQV_SURFACE Surface
     )
 {
     FUNCTION_ENTER();
 
-    if (!pSurfaceDescriptor)
+    if (!Surface)
         goto cleanup;
 
-    if (pSurfaceDescriptor->DriverObj)
+    DEBUGF("surface: %p", Surface);
+    if (Surface->DriverObj) // user mode client didn't explicitely clean up
     {
         // Require a cleanup callback to be called.
-        // pSurfaceDescriptor->hDriverObj will be set no NULL by the callback.
-        EngDeleteDriverObj(pSurfaceDescriptor->DriverObj, TRUE, FALSE);
+        // surface->DriverObj will be set to NULL by the callback.
+        EngDeleteDriverObj(Surface->DriverObj, TRUE, FALSE);
     }
 
-    FreeSurfaceData(pSurfaceDescriptor);
-    EngFreeMem(pSurfaceDescriptor);
+    FreeSurfaceData(Surface);
+    RtlZeroMemory(Surface, sizeof(QV_SURFACE));
+    EngFreeMem(Surface);
 
 cleanup:
     FUNCTION_EXIT();
 }
 
 ULONG AllocateNonOpaqueDeviceSurfaceOrBitmap(
-    BOOLEAN bSurface,
-    HDEV hdev,
-    ULONG ulBitCount,
-    SIZEL sizl,
-    ULONG ulHooks,
-    HSURF *pHsurf,
-    SURFACE_DESCRIPTOR **ppSurfaceDescriptor,
-    PDEV *ppdev
+    BOOLEAN IsSurface,
+    HDEV EngDeviceHandle,
+    ULONG BitCount,
+    SIZEL Size,
+    ULONG Hooks,
+    __out HSURF *EngSurfaceHandle,
+    __out PQV_SURFACE *Surface,
+    PQV_PDEV Pdev
     )
 {
-    ULONG ulBitmapType;
-    ULONG uSurfaceMemorySize;
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor;
-    ULONG uStride;
-    HSURF hsurf;
-    DHSURF dhsurf;
+    ULONG bitmapType;
+    ULONG pixelDataSize;
+    QV_SURFACE *surface;
+    ULONG stride;
+    HSURF surfaceHandle;
+    DHSURF deviceSurfaceHandle;
     ULONG status = STATUS_INVALID_PARAMETER;
 
     FUNCTION_ENTER();
 
-    if (!hdev || !pHsurf || !ppSurfaceDescriptor)
+    if (!EngDeviceHandle || !EngSurfaceHandle || !Surface)
         goto cleanup;
 
-    switch (ulBitCount)
+    DEBUGF("IsSurface %d, bpp %lu, %dx%d", IsSurface, BitCount, Size.cx, Size.cy);
+
+    switch (BitCount)
     {
     case 8:
-        ulBitmapType = BMF_8BPP;
+        bitmapType = BMF_8BPP;
         break;
     case 16:
-        ulBitmapType = BMF_16BPP;
+        bitmapType = BMF_16BPP;
         break;
     case 24:
-        ulBitmapType = BMF_24BPP;
+        bitmapType = BMF_24BPP;
         break;
     case 32:
-        ulBitmapType = BMF_32BPP;
+        bitmapType = BMF_32BPP;
         break;
     default:
         goto cleanup;
     }
 
-    uStride = (ulBitCount >> 3) * sizl.cx;
+    stride = (BitCount >> 3) * Size.cx;
 
-    uSurfaceMemorySize = (ULONG) (uStride * sizl.cy);
+    pixelDataSize = (ULONG)(stride * Size.cy);
 
-    DEBUGF("allocating surface data: %d x %d @ %lu, size %lu", sizl.cx, sizl.cy, ulBitCount, uSurfaceMemorySize);
+    DEBUGF("allocating pixel data: %d x %d @ %lu, size %lu", Size.cx, Size.cy, BitCount, pixelDataSize);
 
     status = STATUS_NO_MEMORY;
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) EngAllocMem(FL_ZERO_MEMORY, sizeof(SURFACE_DESCRIPTOR), ALLOC_TAG);
-    if (!pSurfaceDescriptor)
+    surface = (PQV_SURFACE)EngAllocMem(FL_ZERO_MEMORY, sizeof(QV_SURFACE), ALLOC_TAG);
+    if (!surface)
     {
-        ERRORF("EngAllocMem(SURFACE_DESCRIPTOR) failed");
+        ERRORF("EngAllocMem(QV_SURFACE) failed");
         goto cleanup;
     }
 
-    pSurfaceDescriptor->Pdev = ppdev;
+    surface->Pdev = Pdev;
 
-    // pSurfaceDescriptor->ppdev must be set before calling this,
+    // surface->Pdev must be set before calling this,
     // because we query our miniport through EngDeviceIoControl().
-    status = AllocateSurfaceData(bSurface, pSurfaceDescriptor, uSurfaceMemorySize);
+    status = AllocateSurfaceData(IsSurface, surface, pixelDataSize);
     if (STATUS_SUCCESS != status)
     {
         ERRORF("AllocateSurfaceData() failed: 0x%lx", status);
-        EngFreeMem(pSurfaceDescriptor);
+        EngFreeMem(surface);
         goto cleanup;
     }
 
     // Create a surface.
-    dhsurf = (DHSURF) pSurfaceDescriptor;
+    deviceSurfaceHandle = (DHSURF)surface;
 
-    if (bSurface)
-        hsurf = EngCreateDeviceSurface(dhsurf, sizl, ulBitmapType);
+    if (IsSurface)
+        surfaceHandle = EngCreateDeviceSurface(deviceSurfaceHandle, Size, bitmapType);
     else
-        hsurf = (HSURF) EngCreateDeviceBitmap(dhsurf, sizl, ulBitmapType);
+        surfaceHandle = (HSURF)EngCreateDeviceBitmap(deviceSurfaceHandle, Size, bitmapType);
 
     status = STATUS_INVALID_HANDLE;
-    if (!hsurf)
+    if (!surfaceHandle)
     {
         ERRORF("EngCreateDevice*() failed");
-        FreeSurfaceDescriptor(pSurfaceDescriptor);
+        FreeSurface(surface);
         goto cleanup;
     }
 
-    if (!EngModifySurface(hsurf, hdev, ulHooks, 0, (DHSURF) dhsurf, pSurfaceDescriptor->SurfaceData, uStride, NULL))
+    // set surface to be device-managed
+    if (!EngModifySurface(surfaceHandle, EngDeviceHandle, Hooks, 0, (DHSURF)deviceSurfaceHandle, surface->PixelData, stride, NULL))
     {
         ERRORF("EngModifySurface() failed");
-        EngDeleteSurface(hsurf);
-        FreeSurfaceDescriptor(pSurfaceDescriptor);
+        EngDeleteSurface(surfaceHandle);
+        FreeSurface(surface);
         goto cleanup;
     }
 
-    pSurfaceDescriptor->Width = sizl.cx;
-    pSurfaceDescriptor->Height = sizl.cy;
-    pSurfaceDescriptor->Delta = uStride;
-    pSurfaceDescriptor->BitCount = ulBitCount;
+    surface->Width = Size.cx;
+    surface->Height = Size.cy;
+    surface->Delta = stride;
+    surface->BitCount = BitCount;
 
-    if (sizl.cx > 50)
+    if (Size.cx > 50)
     {
-        DEBUGF("Surface %dx%d, data at %p (0x%x bytes), pfns: %d",
-            sizl.cx, sizl.cy, pSurfaceDescriptor->SurfaceData, uSurfaceMemorySize,
-            pSurfaceDescriptor->pPfnArray->NumberOf4kPages);
+        DEBUGF("Surface %dx%d, data at %p (%lu bytes), pfns: %lu",
+               Size.cx, Size.cy, surface->PixelData, pixelDataSize,
+               surface->PfnArray->NumberOf4kPages);
     }
 
-    *ppSurfaceDescriptor = pSurfaceDescriptor;
-    *pHsurf = hsurf;
+    *Surface = surface;
+    *EngSurfaceHandle = surfaceHandle;
     status = STATUS_SUCCESS;
 
 cleanup:
@@ -590,49 +595,42 @@ cleanup:
     return status;
 }
 
-/******************************Public*Routine******************************\
-* DrvEnableSurface
-*
-* Enable the surface for the device. Hook the calls this driver supports.
-*
-* Return: Handle to the surface if successful, 0 for failure.
-*
-\**************************************************************************/
-
+// Set up a surface to be drawn on and associate it with a given physical device.
 HSURF APIENTRY DrvEnableSurface(
-    DHPDEV dhpdev
+    __inout DHPDEV PhysicalDeviceHandle
     )
 {
-    PDEV *ppdev;
-    HSURF hsurf;
-    SIZEL sizl;
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
-    LONG Status;
+    PQV_PDEV pdev;
+    HSURF engSurfaceHandle;
+    SIZEL screenSize;
+    PQV_SURFACE surface = NULL;
+    ULONG status;
 
     FUNCTION_ENTER();
 
+    DEBUGF("pdev %p", PhysicalDeviceHandle);
     // Create engine bitmap around frame buffer.
-    ppdev = (PDEV *)dhpdev;
+    pdev = (QV_PDEV *)PhysicalDeviceHandle;
 
-    sizl.cx = ppdev->ScreenWidth;
-    sizl.cy = ppdev->ScreenHeight;
+    screenSize.cx = pdev->ScreenWidth;
+    screenSize.cy = pdev->ScreenHeight;
 
-    Status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
-        TRUE, ppdev->EngPdevHandle, ppdev->BitsPerPel, sizl, flGlobalHooks, &hsurf, &pSurfaceDescriptor, ppdev);
+    status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
+        TRUE, pdev->EngPdevHandle, pdev->BitsPerPel, screenSize, flGlobalHooks, &engSurfaceHandle, &surface, pdev);
 
-    if (Status < 0)
+    if (status != STATUS_SUCCESS)
     {
-        ERRORF("AllocateNonOpaqueDeviceSurfaceOrBitmap() failed: 0x%lx", Status);
+        ERRORF("AllocateNonOpaqueDeviceSurfaceOrBitmap() failed: 0x%lx", status);
         return NULL;
     }
 
-    ppdev->EngSurfaceHandle = (HSURF) hsurf;
-    ppdev->ScreenSurfaceDescriptor = (PVOID) pSurfaceDescriptor;
+    pdev->EngSurfaceHandle = (HSURF)engSurfaceHandle;
+    pdev->ScreenSurface = (PVOID)surface;
 
-    pSurfaceDescriptor->IsScreen = TRUE;
+    surface->IsScreen = TRUE;
 
     FUNCTION_EXIT();
-    return hsurf;
+    return engSurfaceHandle;
 }
 
 /******************************Public*Routine******************************\
@@ -643,127 +641,122 @@ HSURF APIENTRY DrvEnableSurface(
 \**************************************************************************/
 
 VOID APIENTRY DrvDisableSurface(
-    DHPDEV dhpdev
+    __inout DHPDEV PhysicalDeviceHandle
     )
 {
-    PDEV *ppdev = (PDEV *) dhpdev;
+    PQV_PDEV pdev = (PQV_PDEV)PhysicalDeviceHandle;
 
     FUNCTION_ENTER();
 
-    EngDeleteSurface(ppdev->EngSurfaceHandle);
+    EngDeleteSurface(pdev->EngSurfaceHandle);
+    FreeSurface(pdev->ScreenSurface);
+    pdev->ScreenSurface = NULL;
 
-    // deallocate SURFACE_DESCRIPTOR structure.
-
-    FreeSurfaceDescriptor(ppdev->ScreenSurfaceDescriptor);
-    ppdev->ScreenSurfaceDescriptor = NULL;
+    FUNCTION_EXIT();
 }
 
 HBITMAP APIENTRY DrvCreateDeviceBitmap(
-    IN DHPDEV dhpdev,
-    IN SIZEL sizl,
-    IN ULONG iFormat
+    __inout DHPDEV PhysiaclDeviceHandle,
+    __in SIZEL BitmapSize,
+    __in ULONG BitmapFormat // bits per pixel
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
-    ULONG ulBitCount;
-    HSURF hsurf = NULL;
-    LONG Status;
-
-    PDEV *ppdev = (PDEV *) dhpdev;
+    PQV_SURFACE surface = NULL;
+    ULONG bitCount;
+    HSURF surfaceHandle = NULL;
+    ULONG status;
+    PQV_PDEV pdev = (PQV_PDEV)PhysiaclDeviceHandle;
 
     FUNCTION_ENTER();
-    //DISPDBG((1,"CreateDeviceBitmap: %dx%d\n", sizl.cx, sizl.cy));
+    DEBUGF("%dx%d, format %lu", BitmapSize.cx, BitmapSize.cy, BitmapFormat);
 
-    switch (iFormat)
+    switch (BitmapFormat)
     {
     case BMF_8BPP:
-        ulBitCount = 8;
+        bitCount = 8;
         break;
     case BMF_16BPP:
-        ulBitCount = 16;
+        bitCount = 16;
         break;
     case BMF_24BPP:
-        ulBitCount = 24;
+        bitCount = 24;
         break;
     case BMF_32BPP:
-        ulBitCount = 32;
+        bitCount = 32;
         break;
     default:
         goto cleanup;
     }
 
-    Status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
-        FALSE, ppdev->EngPdevHandle, ulBitCount, sizl, flGlobalHooks, &hsurf, &pSurfaceDescriptor, ppdev);
+    status = AllocateNonOpaqueDeviceSurfaceOrBitmap(
+        FALSE, pdev->EngPdevHandle, bitCount, BitmapSize, flGlobalHooks, &surfaceHandle, &surface, pdev);
 
-    if (Status != STATUS_SUCCESS)
+    if (status != STATUS_SUCCESS)
     {
-        ERRORF("AllocateNonOpaqueDeviceSurfaceOrBitmap() failed: 0x%lx", Status);
+        ERRORF("AllocateNonOpaqueDeviceSurfaceOrBitmap() failed: 0x%lx", status);
         goto cleanup;
     }
 
-    pSurfaceDescriptor->IsScreen = FALSE;
+    surface->IsScreen = FALSE;
 
 cleanup:
     FUNCTION_EXIT();
-    return (HBITMAP) hsurf;
+    return (HBITMAP)surfaceHandle;
 }
 
 VOID APIENTRY DrvDeleteDeviceBitmap(
-    IN DHSURF dhsurf
+    __inout DHSURF DeviceSurfaceHandle
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor;
+    PQV_SURFACE surface;
 
     FUNCTION_ENTER();
 
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) dhsurf;
-    FreeSurfaceDescriptor(pSurfaceDescriptor);
+    surface = (PQV_SURFACE)DeviceSurfaceHandle;
+    FreeSurface(surface);
 
     FUNCTION_EXIT();
 }
 
 BOOL APIENTRY DrvAssertMode(
-    DHPDEV dhpdev,
-    BOOL bEnable
+    DHPDEV PhysicalDeviceHandle,
+    BOOL Enable
     )
 {
-    PDEV *ppdev = (PDEV *) dhpdev;
-
     FUNCTION_ENTER();
 
-    UNREFERENCED_PARAMETER(bEnable);
-    UNREFERENCED_PARAMETER(ppdev);
-
-    DEBUGF("DrvAssertMode(%lx, %lx)", dhpdev, bEnable);
+    // FIXME: is this required to support multiple desktops?
+    // this function should switch resolution
+    DEBUGF("pdev %p, enable %d", PhysicalDeviceHandle, Enable);
 
     FUNCTION_EXIT();
     return TRUE;
 }
 
 ULONG UserSupportVideoMode(
-    ULONG cjIn,
-    QV_SUPPORT_MODE *pQvSupportMode
+    __in ULONG cbInput, // size of the input buffer
+    __in_bcount(cbInput) QV_SUPPORT_MODE *QvSupportMode
     )
 {
     ULONG status = QV_INVALID_PARAMETER;
 
     FUNCTION_ENTER();
 
-    if (cjIn < sizeof(QV_SUPPORT_MODE) || !pQvSupportMode)
+    if (cbInput < sizeof(QV_SUPPORT_MODE) || !QvSupportMode)
         goto cleanup;
 
     status = QV_SUPPORT_MODE_INVALID_RESOLUTION;
-    if (!IS_RESOLUTION_VALID(pQvSupportMode->Width, pQvSupportMode->Height))
+    if (!IS_RESOLUTION_VALID(QvSupportMode->Width, QvSupportMode->Height))
         goto cleanup;
 
     status = QV_SUPPORT_MODE_INVALID_BPP;
-    if (pQvSupportMode->Bpp != 16 && pQvSupportMode->Bpp != 24 && pQvSupportMode->Bpp != 32)
+    if (QvSupportMode->Bpp != 16 && QvSupportMode->Bpp != 24 && QvSupportMode->Bpp != 32)
         goto cleanup;
 
-    DEBUGF("SupportVideoMode(%ld x %ld @ %d)", pQvSupportMode->Width, pQvSupportMode->Height, pQvSupportMode->Bpp);
-    g_uWidth = pQvSupportMode->Width;
-    g_uHeight = pQvSupportMode->Height;
-    g_uBpp = pQvSupportMode->Bpp;
+    DEBUGF("%lu x %lu @ %lu)", QvSupportMode->Width, QvSupportMode->Height, QvSupportMode->Bpp);
+    g_uWidth = QvSupportMode->Width;
+    g_uHeight = QvSupportMode->Height;
+    g_uBpp = QvSupportMode->Bpp;
     status = QV_SUCCESS;
 
 cleanup:
@@ -772,40 +765,32 @@ cleanup:
 }
 
 ULONG UserGetSurfaceData(
-    SURFOBJ *pso,
-    ULONG cjIn,
-    QV_GET_SURFACE_DATA *pQvGetSurfaceData,
-    ULONG cjOut,
-    QV_GET_SURFACE_DATA_RESPONSE *pQvGetSurfaceDataResponse
+    __in PQV_SURFACE Surface,
+    __in ULONG cbInput,
+    __in_bcount(cbInput) QV_GET_SURFACE_DATA *QvGetSurfaceData,
+    __in ULONG cbOutput,
+    __out_bcount(cbOutput) QV_GET_SURFACE_DATA_RESPONSE *QvGetSurfaceDataResponse
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
     ULONG status = QV_INVALID_PARAMETER;
 
     FUNCTION_ENTER();
 
-    if (!pso || cjOut < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !pQvGetSurfaceDataResponse
-        || cjIn < sizeof(QV_GET_SURFACE_DATA) || !pQvGetSurfaceData)
+    if (cbOutput < sizeof(QV_GET_SURFACE_DATA_RESPONSE) || !QvGetSurfaceDataResponse
+        || cbInput < sizeof(QV_GET_SURFACE_DATA) || !QvGetSurfaceData)
         goto cleanup;
 
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) pso->dhsurf;
-    if (!pSurfaceDescriptor || !pSurfaceDescriptor->Pdev)
-    {
-        // A surface is managed by GDI
-        goto cleanup;
-    }
+    QvGetSurfaceDataResponse->Magic = QVIDEO_MAGIC;
 
-    pQvGetSurfaceDataResponse->Magic = QVIDEO_MAGIC;
+    QvGetSurfaceDataResponse->Width = Surface->Width;
+    QvGetSurfaceDataResponse->Height = Surface->Height;
+    QvGetSurfaceDataResponse->Delta = Surface->Delta;
+    QvGetSurfaceDataResponse->Bpp = Surface->BitCount;
+    QvGetSurfaceDataResponse->IsScreen = Surface->IsScreen;
 
-    pQvGetSurfaceDataResponse->Width = pSurfaceDescriptor->Width;
-    pQvGetSurfaceDataResponse->Height = pSurfaceDescriptor->Height;
-    pQvGetSurfaceDataResponse->Delta = pSurfaceDescriptor->Delta;
-    pQvGetSurfaceDataResponse->Bpp = pSurfaceDescriptor->BitCount;
-    pQvGetSurfaceDataResponse->IsScreen = pSurfaceDescriptor->IsScreen;
-
-    DEBUGF("memcpy(%p, size %lu)", pQvGetSurfaceData->PfnArray, PFN_ARRAY_SIZE(pSurfaceDescriptor->Width, pSurfaceDescriptor->Height));
-    memcpy(pQvGetSurfaceData->PfnArray, pSurfaceDescriptor->pPfnArray,
-        PFN_ARRAY_SIZE(pSurfaceDescriptor->Width, pSurfaceDescriptor->Height));
+    DEBUGF("PFN memcpy(%p, size %lu)", QvGetSurfaceData->PfnArray, PFN_ARRAY_SIZE(Surface->Width, Surface->Height));
+    memcpy(QvGetSurfaceData->PfnArray, Surface->PfnArray,
+           PFN_ARRAY_SIZE(Surface->Width, Surface->Height));
 
     status = QV_SUCCESS;
 
@@ -814,83 +799,78 @@ cleanup:
     return status;
 }
 
-BOOL CALLBACK UnmapDamageNotificationEventProc(
-    DRIVEROBJ *pDriverObj
+// This function is called when a client process (gui agent) terminates without cleaning up first.
+// This function frees up resource(s) registered by EngCreateDriverObj (in this case, damage notification event).
+BOOL CALLBACK ProcessCleanup(
+    __in DRIVEROBJ *DriverObj
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
+    PQV_SURFACE surface = NULL;
 
     FUNCTION_ENTER();
 
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *)pDriverObj->pvObj;
-    DEBUGF("unmapping %p", pSurfaceDescriptor->DamageNotificationEvent);
+    surface = (PQV_SURFACE)DriverObj->pvObj; // set when a client starts watching surface
+    DEBUGF("surface %p, unmapping event %p", surface, surface->DamageNotificationEvent);
 
-    EngUnmapEvent(pSurfaceDescriptor->DamageNotificationEvent);
+    EngUnmapEvent(surface->DamageNotificationEvent);
 
-    pSurfaceDescriptor->DamageNotificationEvent = NULL;
-    pSurfaceDescriptor->DriverObj = NULL;
+    surface->DamageNotificationEvent = NULL;
+    surface->DriverObj = NULL;
 
     FUNCTION_EXIT();
     return TRUE;
 }
 
 ULONG UserWatchSurface(
-    SURFOBJ *pso,
-    ULONG cjIn,
-    QV_WATCH_SURFACE *pQvWatchSurface
+    __inout PQV_SURFACE Surface,
+    __in HDEV EngDeviceHandle,
+    __in ULONG cbInput,
+    __in_bcount(cbInput) QV_WATCH_SURFACE *QvWatchSurface
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
-    PEVENT pDamageNotificationEvent = NULL;
+    PEVENT damageNotificationEvent = NULL;
     ULONG status = QV_INVALID_PARAMETER;
 
     FUNCTION_ENTER();
 
-    if (!pso || cjIn < sizeof(QV_WATCH_SURFACE) || !pQvWatchSurface)
+    if (cbInput < sizeof(QV_WATCH_SURFACE) || !QvWatchSurface)
         goto cleanup;
 
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) pso->dhsurf;
-    if (!pSurfaceDescriptor)
-    {
-        // A surface is managed by GDI
-        goto cleanup;
-    }
+    DEBUGF("surface: %p, event: %p", Surface, QvWatchSurface->UserModeEvent);
 
-    DEBUGF("surface: %p, event: %p", pso, pQvWatchSurface->UserModeEvent);
-
-    if (pSurfaceDescriptor->DriverObj)
+    if (Surface->DriverObj)
     {
-        DEBUGF("Surface %p is already watched", pso);
+        DEBUGF("Surface %p is already watched", Surface);
         goto cleanup;
     }
 
     status = QV_INVALID_HANDLE;
-    pDamageNotificationEvent = EngMapEvent(pso->hdev, pQvWatchSurface->UserModeEvent, NULL, NULL, NULL);
-    if (!pDamageNotificationEvent)
+    damageNotificationEvent = EngMapEvent(EngDeviceHandle, QvWatchSurface->UserModeEvent, NULL, NULL, NULL);
+    if (!damageNotificationEvent)
     {
-        ERRORF("EngMapEvent(%p) failed: 0x%lx", pQvWatchSurface->UserModeEvent, EngGetLastError());
+        ERRORF("EngMapEvent(%p) failed: 0x%lx", QvWatchSurface->UserModeEvent, EngGetLastError());
         goto cleanup;
     }
 
-    DEBUGF("event: %p", pDamageNotificationEvent);
+    DEBUGF("event: %p", damageNotificationEvent);
 
     // *Maybe* this surface can be accessed by UnmapDamageNotificationEventProc() or DrvSynchronizeSurface() right after EngCreateDriverObj(),
     // so pSurfaceDescriptor->pDamageNotificationEvent must be set before calling it.
-    pSurfaceDescriptor->DamageNotificationEvent = pDamageNotificationEvent;
+    Surface->DamageNotificationEvent = damageNotificationEvent;
 
     // Install a notification callback for process deletion.
     // We have to unmap the event if the client process terminates unexpectedly.
-    pSurfaceDescriptor->DriverObj = EngCreateDriverObj(pSurfaceDescriptor, UnmapDamageNotificationEventProc, pso->hdev);
-    if (!pSurfaceDescriptor->DriverObj)
+    Surface->DriverObj = EngCreateDriverObj(Surface, ProcessCleanup, EngDeviceHandle);
+    if (!Surface->DriverObj)
     {
-        ERRORF("EngCreateDriverObj(%p) failed: 0x%lx", pSurfaceDescriptor, EngGetLastError());
+        ERRORF("EngCreateDriverObj(%p) failed: 0x%lx", Surface, EngGetLastError());
 
-        pSurfaceDescriptor->DamageNotificationEvent = NULL;
-        EngUnmapEvent(pDamageNotificationEvent);
+        Surface->DamageNotificationEvent = NULL;
+        EngUnmapEvent(damageNotificationEvent);
         goto cleanup;
     }
 
-    DEBUGF("DriverObj: %p", pSurfaceDescriptor->DriverObj);
+    DEBUGF("DriverObj: %p", Surface->DriverObj);
     status = QV_SUCCESS;
 
 cleanup:
@@ -899,35 +879,24 @@ cleanup:
 }
 
 ULONG UserStopWatchingSurface(
-    SURFOBJ *pso
+    __inout PQV_SURFACE Surface
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
     ULONG status = QV_INVALID_PARAMETER;
 
     FUNCTION_ENTER();
 
-    if (!pso)
-        goto cleanup;
-
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) pso->dhsurf;
-    if (!pSurfaceDescriptor)
-    {
-        // A surface is managed by GDI
-        goto cleanup;
-    }
-
-    if (!pSurfaceDescriptor->DriverObj)
+    if (!Surface->DriverObj)
     {
         WARNINGF("DriverObj is zero");
         goto cleanup;
     }
 
-    DEBUGF("surface: %p", pso);
+    DEBUGF("surface: %p", Surface);
 
     // Require a cleanup callback to be called.
-    // pSurfaceDescriptor->hDriverObj will be set to NULL by the callback.
-    EngDeleteDriverObj(pSurfaceDescriptor->DriverObj, TRUE, FALSE);
+    // DriverObj will be set to NULL by the callback.
+    EngDeleteDriverObj(Surface->DriverObj, TRUE, FALSE);
     status = QV_SUCCESS;
 
 cleanup:
@@ -936,95 +905,94 @@ cleanup:
 }
 
 ULONG APIENTRY DrvEscape(
-    SURFOBJ *pso,
-    ULONG iEsc,
-    ULONG cjIn,
-    void *pvIn,
-    ULONG cjOut,
-    void *pvOut
+    __inout SURFOBJ *SurfaceObject,
+    __in ULONG EscapeCode,
+    __in ULONG cbInput,
+    __in_bcount(cbInput) PVOID InputBuffer,
+    __in ULONG cbOutput,
+    __out_bcount(cbOutput) PVOID OutputBuffer
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor;
+    PQV_SURFACE surface;
 
     FUNCTION_ENTER();
 
-    DEBUGF("surface: %p, code: 0x%lx", pso, iEsc);
-    if ((cjIn < sizeof(ULONG)) || !pvIn || (*(PULONG) pvIn != QVIDEO_MAGIC))
+    DEBUGF("surfobj: %p, code: 0x%lx", SurfaceObject, EscapeCode);
+    if ((cbInput < sizeof(ULONG)) || !InputBuffer || (*(PULONG)InputBuffer != QVIDEO_MAGIC))
     {
-        // 0 means "not supported"
         WARNINGF("bad size/magic");
-        return 0;
+        return QV_INVALID_PARAMETER;
     }
 
+    surface = (PQV_SURFACE)SurfaceObject->dhsurf;
+    if (!surface || !surface->Pdev)
+    {
+        WARNINGF("invalid surface");
+        return QV_INVALID_PARAMETER;
+    }
     // FIXME: validate user buffers!
 
-    switch (iEsc)
+    switch (EscapeCode)
     {
     case QVESC_SUPPORT_MODE:
-        return UserSupportVideoMode(cjIn, pvIn);
+        return UserSupportVideoMode(cbInput, InputBuffer);
 
     case QVESC_GET_SURFACE_DATA:
-        return UserGetSurfaceData(pso, cjIn, pvIn, cjOut, pvOut);
+        return UserGetSurfaceData(surface, cbInput, InputBuffer, cbOutput, OutputBuffer);
 
     case QVESC_WATCH_SURFACE:
-        return UserWatchSurface(pso, cjIn, pvIn);
+        return UserWatchSurface(surface, SurfaceObject->hdev, cbInput, InputBuffer);
 
     case QVESC_STOP_WATCHING_SURFACE:
-        return UserStopWatchingSurface(pso);
+        return UserStopWatchingSurface(surface);
 
     case QVESC_SYNCHRONIZE:
         if (!g_bUseDirtyBits)
-            return 0;
-        
-        pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) pso->dhsurf;
-        if (!pSurfaceDescriptor || !pSurfaceDescriptor->Pdev)
-            return QV_INVALID_PARAMETER;
+            return QV_NOT_SUPPORTED;
 
-        InterlockedExchange(&pSurfaceDescriptor->DirtyPages->Ready, 1);
+        InterlockedExchange(&surface->DirtyPages->Ready, 1);
         TRACEF("gui agent synchronized");
         return QV_SUCCESS;
 
     default:
-        WARNINGF("bad code 0x%lx", iEsc);
-        // 0 means "not supported"
-        return 0;
+        WARNINGF("bad code 0x%lx", EscapeCode);
+        return QV_NOT_SUPPORTED;
     }
 }
 
 VOID APIENTRY DrvSynchronizeSurface(
-    SURFOBJ *pso,
-    RECTL *prcl,
-    FLONG fl
+    SURFOBJ *SurfaceObject,
+    PRECTL DamageRectangle,
+    FLONG Flag
     )
 {
-    SURFACE_DESCRIPTOR *pSurfaceDescriptor = NULL;
-    ULONG uSize, uDirty;
+    PQV_SURFACE surface = NULL;
+    ULONG surfaceBufferSize, dirty;
 
     FUNCTION_ENTER();
 
-    UNREFERENCED_PARAMETER(prcl);
-    UNREFERENCED_PARAMETER(fl);
+    UNREFERENCED_PARAMETER(DamageRectangle);
+    UNREFERENCED_PARAMETER(Flag);
 
-    if (!pso)
+    if (!SurfaceObject)
         return;
 
-    pSurfaceDescriptor = (SURFACE_DESCRIPTOR *) pso->dhsurf;
-    if (!pSurfaceDescriptor)
+    surface = (PQV_SURFACE)SurfaceObject->dhsurf;
+    if (!surface)
         return;
 
-    if (!pSurfaceDescriptor->DamageNotificationEvent)
-        // This surface is not watched.
+    if (!surface->DamageNotificationEvent)
+        // This surface is not being watched.
         return;
 
-    // surface buffer size
-    uSize = pSurfaceDescriptor->Delta * pSurfaceDescriptor->Height;
+    surfaceBufferSize = surface->Delta * surface->Height;
 
     // UpdateDirtyBits returns 0 also if the check was too early after a previous one.
     // This just returns 1 if using dirty bits is disabled.
-    uDirty = UpdateDirtyBits(pSurfaceDescriptor->SurfaceData, uSize, pSurfaceDescriptor->DirtyPages);
+    dirty = UpdateDirtyBits(surface->PixelData, surfaceBufferSize, surface->DirtyPages);
 
-    if (uDirty > 0) // only signal the event if something changed
-        EngSetEvent(pSurfaceDescriptor->DamageNotificationEvent);
+    if (dirty > 0) // only signal the event if something changed
+        EngSetEvent(surface->DamageNotificationEvent);
 
     FUNCTION_EXIT();
 }

@@ -21,21 +21,21 @@
 #include "debug.h"
 #include "common.h"
 
-typedef struct _SURFACE_DESCRIPTOR SURFACE_DESCRIPTOR;
-typedef struct _PDEV
+typedef struct _QV_SURFACE QV_SURFACE;
+typedef struct _QV_PDEV
 {
-    HANDLE DriverHandle;     // Handle to \Device\Screen
-    HDEV EngPdevHandle;      // Engine's handle to PDEV
-    HSURF EngSurfaceHandle;  // Engine's handle to surface
+    HANDLE DisplayHandle;    // Handle to \Device\Screen.
+    HDEV EngPdevHandle;      // Engine's handle to PDEV.
+    HSURF EngSurfaceHandle;  // Engine's handle to screen surface.
     HPALETTE DefaultPalette; // Handle to the default palette for device.
 
-    ULONG ScreenWidth;       // Visible screen width
-    ULONG ScreenHeight;      // Visible screen height
-    LONG ScreenDelta;        // Distance from one scan to the next.
-    ULONG BitsPerPel;        // number of bits per pel: only 16, 24, 32 are supported.
+    ULONG ScreenWidth;       // Visible screen width.
+    ULONG ScreenHeight;      // Visible screen height.
+    LONG ScreenDelta;        // Distance from one scan line to the next.
+    ULONG BitsPerPel;        // Number of bits per pel: only 16, 24, 32 are supported.
 
-    SURFACE_DESCRIPTOR *ScreenSurfaceDescriptor; // ptr to SURFACE_DESCRIPTOR bits for screen surface
-} PDEV;
+    QV_SURFACE *ScreenSurface; // Pointer to screen surface data.
+} QV_PDEV, *PQV_PDEV;
 
 #pragma pack(push, 1)
 typedef struct _BITMAP_HEADER
@@ -45,7 +45,7 @@ typedef struct _BITMAP_HEADER
 } BITMAP_HEADER;
 #pragma pack(pop)
 
-typedef struct _SURFACE_DESCRIPTOR
+typedef struct _QV_SURFACE
 {
     ULONG Width;
     ULONG Height;
@@ -53,27 +53,25 @@ typedef struct _SURFACE_DESCRIPTOR
     ULONG BitCount;
     BOOLEAN IsScreen;
 
-    PDEV *Pdev;
+    PQV_PDEV Pdev;
     HDRVOBJ DriverObj;
     PEVENT DamageNotificationEvent;
 
-    void *SurfaceData;
-    HANDLE SurfaceSection;
-    void *SectionObject;
-    void *Mdl;
-    PFN_ARRAY *pPfnArray; // this is allocated by the miniport part
+    PVOID PixelData;
+    HANDLE Section;
+    PVOID SectionObject;
+    PVOID Mdl;
+    PFN_ARRAY *PfnArray; // this is allocated by the miniport part
 
     // page numbers that changed in the surface buffer since the last check
     // this is exposed as a section so the user mode client can easily check what changed
-    void *DirtySectionObject;
+    PVOID DirtySectionObject;
     HANDLE DirtySection;
     QV_DIRTY_PAGES *DirtyPages;
-
-    //  BITMAP_HEADER BitmapHeader;
-} SURFACE_DESCRIPTOR;
+} QV_SURFACE, *PQV_SURFACE;
 
 BOOL InitPdev(
-    PDEV *,
+    QV_PDEV *,
     DEVMODEW *,
     GDIINFO *,
     DEVINFO *

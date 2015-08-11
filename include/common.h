@@ -61,6 +61,8 @@ typedef struct _PFN_ARRAY
 #define QVESC_GET_PFN_LIST		    (QVIDEO_ESC_BASE + 4)
 #define QVESC_SYNCHRONIZE		    (QVIDEO_ESC_BASE + 5)
 
+// 0 is defined as "not supported" for DrvEscape
+#define QV_NOT_SUPPORTED 0
 #define QV_SUCCESS	1
 #define QV_INVALID_PARAMETER	2
 #define QV_SUPPORT_MODE_INVALID_RESOLUTION	3
