@@ -43,7 +43,7 @@ DWORD HandleXconf(void)
     LogInfo("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
-    return SetVideoMode(xconf.w, xconf.h, 32 /*xconf.depth*/); // FIXME: bpp affects screen section name
+    return SetVideoMode(xconf.w, xconf.h, 32 /*xconf.depth*/); // 32bpp is still hardcoded all over the place (mainly in qvideo)
 }
 
 static int BitSet(IN OUT BYTE *keys, IN int num)
@@ -401,28 +401,28 @@ DWORD HandleServerData(void)
     switch (header.type)
     {
     case MSG_KEYPRESS:
-        status = HandleKeypress((HWND) header.window);
+        status = HandleKeypress((HWND)header.window);
         break;
     case MSG_BUTTON:
-        status = HandleButton((HWND) header.window);
+        status = HandleButton((HWND)header.window);
         break;
     case MSG_MOTION:
-        status = HandleMotion((HWND) header.window);
+        status = HandleMotion((HWND)header.window);
         break;
     case MSG_CONFIGURE:
-        status = HandleConfigure((HWND) header.window);
+        status = HandleConfigure((HWND)header.window);
         break;
     case MSG_FOCUS:
-        status = HandleFocus((HWND) header.window);
+        status = HandleFocus((HWND)header.window);
         break;
     case MSG_CLOSE:
-        status = HandleClose((HWND) header.window);
+        status = HandleClose((HWND)header.window);
         break;
     case MSG_KEYMAP_NOTIFY:
         status = HandleKeymapNotify();
         break;
     case MSG_WINDOW_FLAGS:
-        status = HandleWindowFlags((HWND) header.window);
+        status = HandleWindowFlags((HWND)header.window);
         break;
     default:
         LogWarning("got unknown msg type %d, ignoring", header.type);

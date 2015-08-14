@@ -61,6 +61,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\include\common.h" />
     <ClInclude Include="..\..\qvideo\miniport\ddk_video.h" />
+    <ClInclude Include="..\..\qvideo\miniport\list.h" />
     <ClInclude Include="..\..\qvideo\miniport\memory.h" />
     <ClInclude Include="..\..\qvideo\miniport\qvmini.h" />
   </ItemGroup>

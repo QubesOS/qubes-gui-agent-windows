@@ -21,7 +21,7 @@
 #include "debug.h"
 #include "common.h"
 
-typedef struct _QV_SURFACE QV_SURFACE;
+typedef struct _QV_SURFACE QV_SURFACE, *PQV_SURFACE;
 typedef struct _QV_PDEV
 {
     HANDLE DisplayHandle;    // Handle to \Device\Screen.
@@ -34,7 +34,7 @@ typedef struct _QV_PDEV
     LONG ScreenDelta;        // Distance from one scan line to the next.
     ULONG BitsPerPel;        // Number of bits per pel: only 16, 24, 32 are supported.
 
-    QV_SURFACE *ScreenSurface; // Pointer to screen surface data.
+    PQV_SURFACE ScreenSurface; // Pointer to screen surface data.
 } QV_PDEV, *PQV_PDEV;
 
 #pragma pack(push, 1)
@@ -49,7 +49,7 @@ typedef struct _QV_SURFACE
 {
     ULONG Width;
     ULONG Height;
-    ULONG Delta;
+    ULONG Stride;
     ULONG BitCount;
     BOOLEAN IsScreen;
 
@@ -58,16 +58,11 @@ typedef struct _QV_SURFACE
     PEVENT DamageNotificationEvent;
 
     PVOID PixelData;
-    HANDLE Section;
-    PVOID SectionObject;
-    PVOID Mdl;
-    PFN_ARRAY *PfnArray; // this is allocated by the miniport part
+    PPFN_ARRAY PfnArray; // kernel address
+    PPFN_ARRAY UserPfnArray; // user mapped address
 
     // page numbers that changed in the surface buffer since the last check
-    // this is exposed as a section so the user mode client can easily check what changed
-    PVOID DirtySectionObject;
-    HANDLE DirtySection;
-    QV_DIRTY_PAGES *DirtyPages;
+    PQV_DIRTY_PAGES DirtyPages;
 } QV_SURFACE, *PQV_SURFACE;
 
 BOOL InitPdev(

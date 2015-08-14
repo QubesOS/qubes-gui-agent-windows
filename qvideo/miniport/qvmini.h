@@ -5,9 +5,20 @@
 #include <ntddvdeo.h>
 #include <video.h>
 
+// miniport headers don't include list macros for some ungodly reason...
+#include "list.h"
 #include "memory.h"
 
-VP_STATUS __checkReturn QubesVideoFindAdapter(
+#define QFN "[QVMINI] " __FUNCTION__ ": "
+
+// device extension, per-adapter data
+typedef struct _QVMINI_DX
+{
+    PSPIN_LOCK BufferListLock;
+    LIST_ENTRY BufferList;
+} QVMINI_DX, *PQVMINI_DX;
+
+VP_STATUS __checkReturn HwVidFindAdapter(
     __in void *HwDeviceExtension,
     __in void *HwContext,
     __in WCHAR *ArgumentString,
@@ -15,11 +26,11 @@ VP_STATUS __checkReturn QubesVideoFindAdapter(
     __out UCHAR *Again
     );
 
-BOOLEAN __checkReturn QubesVideoInitialize(
+BOOLEAN __checkReturn HwVidInitialize(
     __in void *HwDeviceExtension
     );
 
-BOOLEAN __checkReturn QubesVideoStartIO(
+BOOLEAN __checkReturn HwVidStartIO(
     __in void *HwDeviceExtension,
     __in_bcount(sizeof(VIDEO_REQUEST_PACKET)) VIDEO_REQUEST_PACKET *RequestPacket
     );

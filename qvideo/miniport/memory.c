@@ -1,271 +1,220 @@
 #include "ddk_video.h"
-#include "ntstrsafe.h"
+#include <ntstrsafe.h>
 #include "memory.h"
 
-static NTSTATUS CreateAndMapSection(
-    IN UNICODE_STRING sectionName,
-    IN ULONG size,
-    OUT HANDLE *section,
-    OUT void **sectionObject,
-    OUT void **baseAddress
+#define QFN "[QVMINI] " __FUNCTION__ ": "
+
+/**
+ * @brief Initialize PFN array for the specified buffer.
+ * @param Buffer Buffer descriptor. Uninitialized fields must be zeroed.
+ * @return NTSTATUS.
+ */
+static NTSTATUS GetBufferPfnArray(
+    __inout PQVM_BUFFER Buffer
     )
 {
-    SIZE_T viewSize = 0;
-    NTSTATUS status;
-    OBJECT_ATTRIBUTES objectAttributes;
-    LARGE_INTEGER sizeLarge;
+    NTSTATUS status = STATUS_NO_MEMORY;
+    ULONG numberPages;
+    PMDL mdl = NULL;
 
-    if (!size || !section || !sectionObject || !baseAddress)
-        return STATUS_INVALID_PARAMETER;
-
-    *sectionObject = NULL;
-    *baseAddress = NULL;
-
-    InitializeObjectAttributes(&objectAttributes, &sectionName, OBJ_KERNEL_HANDLE, NULL, NULL);
-
-    sizeLarge.HighPart = 0;
-    sizeLarge.LowPart = size;
-
-    viewSize = size;
-
-    status = ZwCreateSection(section, SECTION_ALL_ACCESS, &objectAttributes, &sizeLarge, PAGE_READWRITE, SEC_COMMIT, NULL);
-    if (!NT_SUCCESS(status))
+    mdl = IoAllocateMdl(Buffer->KernelVa, Buffer->AlignedSize, FALSE, FALSE, NULL);
+    if (!mdl)
     {
-        VideoDebugPrint((0, __FUNCTION__ ": ZwCreateSection() failed with status 0x%X\n", status));
-        return status;
+        VideoDebugPrint((0, QFN "IoAllocateMdl(buffer) failed\n"));
+        goto cleanup;
     }
 
-    status = ObReferenceObjectByHandle(*section, SECTION_ALL_ACCESS, NULL, KernelMode, sectionObject, NULL);
-    if (!NT_SUCCESS(status))
+    MmBuildMdlForNonPagedPool(mdl);
+
+    numberPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Buffer->KernelVa, MmGetMdlByteCount(mdl));
+    Buffer->PfnArraySize = numberPages*sizeof(PFN_NUMBER) + sizeof(ULONG);
+    VideoDebugPrint((0, QFN "buffer %p, PfnArraySize: %lu, aligned: %lu, number pages: %lu\n",
+        Buffer, Buffer->PfnArraySize, ALIGN(Buffer->PfnArraySize, PAGE_SIZE), numberPages));
+
+    // align to page size because it'll be mapped to user mode
+    Buffer->PfnArraySize = ALIGN(Buffer->PfnArraySize, PAGE_SIZE);
+    Buffer->PfnArray = ExAllocatePoolWithTag(NonPagedPool, Buffer->PfnArraySize, QVMINI_TAG);
+
+    if (!Buffer->PfnArray)
     {
-        VideoDebugPrint((0, __FUNCTION__ ": ObReferenceObjectByHandle() failed with status 0x%X\n", status));
-        ZwClose(*section);
-        return status;
+        VideoDebugPrint((0, QFN "pfn array allocation failed\n"));
+        goto cleanup;
     }
 
-    // FIXME: undocumented/unsupported function
-    status = MmMapViewInSystemSpace(*sectionObject, baseAddress, &viewSize);
-    if (!NT_SUCCESS(status))
+    RtlZeroMemory(Buffer->PfnArray, Buffer->PfnArraySize);
+    Buffer->PfnArray->NumberOf4kPages = numberPages;
+    // copy actual pfns
+    memcpy(Buffer->PfnArray->Pfn, MmGetMdlPfnArray(mdl), numberPages*sizeof(PFN_NUMBER));
+    IoFreeMdl(mdl);
+    mdl = NULL;
+
+    Buffer->PfnMdl = IoAllocateMdl(Buffer->PfnArray, Buffer->PfnArraySize, FALSE, FALSE, NULL);
+    if (!Buffer->PfnMdl)
     {
-        VideoDebugPrint((0, __FUNCTION__ ": MmMapViewInSystemSpace() failed with status 0x%X\n", status));
-        ObDereferenceObject(*sectionObject);
-        ZwClose(*section);
-        return status;
+        VideoDebugPrint((0, QFN "IoAllocateMdl(pfns) failed\n"));
+        goto cleanup;
     }
 
-    VideoDebugPrint((0, __FUNCTION__": section '%wZ': %p, addr %p, size %lu\n",
-        sectionName, *sectionObject, *baseAddress, size));
+    MmBuildMdlForNonPagedPool(Buffer->PfnMdl);
+    status = STATUS_SUCCESS;
 
+cleanup:
+    if (!NT_SUCCESS(status))
+    {
+        if (mdl)
+            IoFreeMdl(mdl);
+        if (Buffer->PfnMdl)
+            IoFreeMdl(Buffer->PfnMdl);
+        if (Buffer->PfnArray)
+            ExFreePoolWithTag(Buffer->PfnArray, QVMINI_TAG);
+    }
     return status;
 }
 
-static NTSTATUS GetBufferPfnArray(
-    IN void *virtualAddress,
-    IN ULONG size,
-    OUT PFN_ARRAY **pfnArray OPTIONAL, // pfn array is allocated here
-    IN KPROCESSOR_MODE processorMode,
-    IN BOOLEAN lockPages,
-    OUT MDL **bufferMdl OPTIONAL
+/**
+ * @brief Allocate a non-paged buffer and get its PFN list.
+ * @param Size Required size. Allocation will be aligned to PAGE_SIZE.
+ * @return Buffer descriptor.
+ */
+PQVM_BUFFER QvmAllocateBuffer(
+    __in ULONG Size
     )
 {
-    NTSTATUS status;
-    MDL *mdl = NULL;
-    ULONG numberOfPages;
+    PQVM_BUFFER buffer = NULL;
+    NTSTATUS status = STATUS_NO_MEMORY;
 
-    if (!virtualAddress || !size)
-        return STATUS_INVALID_PARAMETER;
-
-    if (bufferMdl)
-        *bufferMdl = NULL;
-
-    mdl = IoAllocateMdl(virtualAddress, size, FALSE, processorMode == UserMode, NULL);
-    if (!mdl)
+    buffer = ExAllocatePoolWithTag(NonPagedPool, sizeof(QVM_BUFFER), QVMINI_TAG);
+    if (!buffer)
     {
-        VideoDebugPrint((0, __FUNCTION__ ": IoAllocateMdl() failed to allocate an MDL\n"));
-        return STATUS_UNSUCCESSFUL;
+        VideoDebugPrint((0, QFN "allocate buffer failed\n"));
+        goto cleanup;
     }
+
+    RtlZeroMemory(buffer, sizeof(QVM_BUFFER));
+    buffer->OriginalSize = Size;
+    // Size must be page-aligned because this buffer will be mapped into user space.
+    // Mapping is page-granular and we don't want to leak any kernel data.
+    // Only allocations sized >= PAGE_SIZE are guaranteed to start at a page-aligned address.
+    buffer->AlignedSize = ALIGN(buffer->OriginalSize, PAGE_SIZE);
+
+    buffer->KernelVa = ExAllocatePoolWithTag(NonPagedPool, buffer->AlignedSize, QVMINI_TAG);
+    if (!buffer->KernelVa)
+    {
+        VideoDebugPrint((0, QFN "allocate buffer data (%lu) failed\n", buffer->AlignedSize));
+        goto cleanup;
+    }
+
+    status = GetBufferPfnArray(buffer);
+    if (!NT_SUCCESS(status))
+    {
+        VideoDebugPrint((0, QFN "GetBufferPfnArray (%p) failed: 0x%x\n", buffer, status));
+        goto cleanup;
+    }
+
+    VideoDebugPrint((0, QFN "buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n",
+        buffer, buffer->KernelVa, buffer->AlignedSize, buffer->PfnArray, buffer->PfnArraySize));
 
     status = STATUS_SUCCESS;
 
-    try
+cleanup:
+    if (!NT_SUCCESS(status))
     {
-        MmProbeAndLockPages(mdl, processorMode, IoWriteAccess);
+        RtlZeroMemory(buffer, sizeof(QVM_BUFFER));
+        ExFreePoolWithTag(buffer, QVMINI_TAG);
+        buffer = NULL;
     }
-    except(EXCEPTION_EXECUTE_HANDLER)
+    return buffer;
+}
+
+/**
+ * @brief Free a buffer allocated by QvmAllocateBuffer. Unmap pfns from user space if mapped.
+ * @param Buffer Buffer descriptor.
+ */
+VOID QvmFreeBuffer(
+    __inout PQVM_BUFFER Buffer
+    )
+{
+    VideoDebugPrint((0, QFN "buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n",
+        Buffer, Buffer->KernelVa, Buffer->AlignedSize, Buffer->PfnArray, Buffer->PfnArraySize));
+
+    if (Buffer->PfnUserVa)
+        QvmUnmapBufferPfns(Buffer);
+
+    IoFreeMdl(Buffer->PfnMdl);
+    RtlZeroMemory(Buffer->PfnArray, Buffer->PfnArraySize);
+    ExFreePoolWithTag(Buffer->PfnArray, QVMINI_TAG);
+    RtlZeroMemory(Buffer, sizeof(QVM_BUFFER));
+    ExFreePoolWithTag(Buffer, QVMINI_TAG);
+}
+
+/**
+ * @brief Map a buffer's pfn array into the current process.
+ * @param Buffer Buffer descriptor.
+ * @return NTSTATUS.
+ */
+ULONG QvmMapBufferPfns(
+    __inout PQVM_BUFFER Buffer
+    )
+{
+    NTSTATUS status;
+
+    ASSERT(!Buffer->Process);
+    ASSERT(!Buffer->PfnUserVa);
+
+    VideoDebugPrint((0, QFN "mapping pfns of buffer %p, kva %p\n", Buffer, Buffer->KernelVa));
+#pragma prefast(suppress: 6320) // we want to catch all exceptions
+    __try
     {
-        VideoDebugPrint((0, __FUNCTION__ ": MmProbeAndLockPages() raised an exception, status 0x%08X\n", GetExceptionCode()));
-        status = STATUS_UNSUCCESSFUL;
+        Buffer->PfnUserVa = MmMapLockedPagesSpecifyCache(Buffer->PfnMdl, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
+        // make the map read only
+        status = MmProtectMdlSystemAddress(Buffer->PfnMdl, PAGE_READONLY);
     }
-
-    if (NT_SUCCESS(status))
+    __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        if (pfnArray)
-        {
-            numberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(MmGetMdlVirtualAddress(mdl), MmGetMdlByteCount(mdl));
-            // size of PFN_ARRAY
-            *pfnArray = ExAllocatePoolWithTag(NonPagedPool, numberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG), QVMINI_TAG);
-
-            if (!(*pfnArray))
-                return STATUS_NO_MEMORY;
-
-            (*pfnArray)->NumberOf4kPages = numberOfPages;
-            VideoDebugPrint((0, __FUNCTION__ ": size: %lu, number pages: %lu, pfn array size: %lu\n", size, numberOfPages, numberOfPages*sizeof(PFN_NUMBER) + sizeof(ULONG)));
-            RtlCopyMemory((*pfnArray)->Pfn, MmGetMdlPfnArray(mdl), numberOfPages*sizeof(PFN_NUMBER));
-        }
-
-        if (!lockPages)
-        {
-            MmUnlockPages(mdl);
-            IoFreeMdl(mdl);
-        }
-        else
-        {
-            if (bufferMdl)
-                *bufferMdl = mdl;
-        }
+        status = GetExceptionCode();
+        VideoDebugPrint((0, QFN "exception 0x%x\n", status));
+        goto cleanup;
     }
-    else
-        IoFreeMdl(mdl);
 
+    Buffer->Process = PsGetCurrentProcess();
+    VideoDebugPrint((0, QFN "PfnUserVa %p, process %p\n", Buffer->PfnUserVa, Buffer->Process));
+    status = STATUS_SUCCESS;
+
+cleanup:
     return status;
 }
 
-void *AllocateMemory(
-    IN ULONG size,
-    OUT PFN_ARRAY **pfnArray
-    )
-{
-    void *memory = NULL;
-    NTSTATUS status;
-
-    if (!size || !pfnArray)
-        return NULL;
-
-    size = ALIGN(size, PAGE_SIZE);
-
-    memory = ExAllocatePoolWithTag(NonPagedPool, size, QVMINI_TAG);
-    if (!memory)
-        return NULL;
-
-    VideoDebugPrint((0, __FUNCTION__": %p, size %lu\n", memory, size));
-
-    status = GetBufferPfnArray(memory, size, pfnArray, KernelMode, FALSE, NULL);
-    if (!NT_SUCCESS(status))
-    {
-        FreeMemory(memory, NULL); // ppPfnArray is only allocated on success
-        return NULL;
-    }
-
-    return memory;
-}
-
-void FreeMemory(
-    IN void *memory,
-    IN void *pfnArray OPTIONAL
-    )
-{
-    if (!memory)
-        return;
-
-    VideoDebugPrint((0, __FUNCTION__": %p, pfn: %p\n", memory, pfnArray));
-
-    ExFreePoolWithTag(memory, QVMINI_TAG);
-    if (pfnArray)
-        ExFreePoolWithTag(pfnArray, QVMINI_TAG);
-    return;
-}
-
-// Creates a named kernel mode section mapped in the system space, locks it,
-// and returns its handle, a referenced section object, an MDL and a PFN list.
-void *AllocateSection(
-    IN ULONG size,
-    OUT HANDLE *section,
-    OUT void **sectionObject,
-    OUT MDL **mdl,
-    OUT PFN_ARRAY **pfnArray,
-    OUT HANDLE *dirtySection OPTIONAL,
-    OUT void **dirtySectionObject OPTIONAL,
-    OUT void **dirtySectionMemory OPTIONAL
+/**
+* @brief Unmap a buffer's pfn array from the current process.
+* @param Buffer Buffer descriptor.
+* @return NTSTATUS.
+*/
+ULONG QvmUnmapBufferPfns(
+    __inout PQVM_BUFFER Buffer
     )
 {
     NTSTATUS status;
-    void *baseAddress = NULL;
-    UNICODE_STRING sectionNameU;
-    WCHAR sectionName[100];
 
-    if (!size || !section || !sectionObject || !mdl || !pfnArray)
-        return NULL;
+    ASSERT(Buffer->PfnUserVa && Buffer->Process);
+    ASSERT(Buffer->Process == PsGetCurrentProcess());
 
-    RtlStringCchPrintfW(sectionName, RTL_NUMBER_OF(sectionName), L"\\BaseNamedObjects\\QubesSharedMemory_%x", size);
-    RtlInitUnicodeString(&sectionNameU, sectionName);
-
-    status = CreateAndMapSection(sectionNameU, size, section, sectionObject, &baseAddress);
-    if (!NT_SUCCESS(status))
-        return NULL;
-
-    // Lock the section memory and return its MDL.
-    status = GetBufferPfnArray(baseAddress, size, pfnArray, KernelMode, TRUE, mdl);
-    if (!NT_SUCCESS(status))
+    VideoDebugPrint((0, QFN "unmapping pfns of buffer %p, kva %p\n", Buffer, Buffer->KernelVa));
+#pragma prefast(suppress: 6320) // we want to catch all exceptions
+    __try
     {
-        FreeSection(*section, *sectionObject, NULL, baseAddress, NULL, NULL, NULL, NULL);
-        return NULL;
+        MmUnmapLockedPages(Buffer->PfnUserVa, Buffer->PfnMdl);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        status = GetExceptionCode();
+        VideoDebugPrint((0, QFN "exception 0x%x\n", status));
+        goto cleanup;
     }
 
-    if (dirtySection && dirtySectionObject && dirtySectionMemory)
-    {
-        *dirtySection = NULL;
-        *dirtySectionObject = NULL;
-        *dirtySectionMemory = NULL;
+    Buffer->PfnUserVa = NULL;
+    Buffer->Process = NULL;
+    status = STATUS_SUCCESS;
 
-        // struct header + bit array for dirty pages
-        size = sizeof(QV_DIRTY_PAGES) + ((size / PAGE_SIZE) >> 3) + 1;
-        RtlStringCchPrintfW(sectionName, RTL_NUMBER_OF(sectionName), L"\\BaseNamedObjects\\QvideoDirtyPages_%x", size);
-        RtlInitUnicodeString(&sectionNameU, sectionName);
-
-        status = CreateAndMapSection(sectionNameU, size, dirtySection, dirtySectionObject, dirtySectionMemory);
-        if (!NT_SUCCESS(status))
-            return NULL;
-
-        // just lock, don't get PFNs
-        status = GetBufferPfnArray(*dirtySectionMemory, size, NULL, KernelMode, TRUE, NULL);
-        if (!NT_SUCCESS(status))
-        {
-            FreeSection(*section, *sectionObject, NULL, baseAddress, NULL, *dirtySection, *dirtySectionObject, *dirtySectionMemory);
-            return NULL;
-        }
-    }
-    return baseAddress;
-}
-
-void FreeSection(
-    IN HANDLE section,
-    IN void *sectionObject,
-    IN MDL *mdl,
-    IN void *baseAddress,
-    IN void *pfnArray,
-    OPTIONAL HANDLE dirtySection,
-    OPTIONAL void *dirtySectionObject,
-    OPTIONAL void *dirtySectionMemory
-    )
-{
-    if (mdl)
-    {
-        MmUnlockPages(mdl);
-        IoFreeMdl(mdl);
-    }
-
-    VideoDebugPrint((0, __FUNCTION__": section %p, pfn %p, dirty %d\n", sectionObject, pfnArray, dirtySectionObject));
-    MmUnmapViewInSystemSpace(baseAddress); // FIXME: undocumented/unsupported function
-    ObDereferenceObject(sectionObject);
-    ZwClose(section);
-
-    if (pfnArray)
-        ExFreePoolWithTag(pfnArray, QVMINI_TAG);
-
-    if (dirtySection && dirtySectionObject && dirtySectionMemory)
-    {
-        MmUnmapViewInSystemSpace(dirtySectionMemory);
-        ObDereferenceObject(dirtySectionObject);
-        ZwClose(dirtySection);
-    }
+cleanup:
+    return status;
 }

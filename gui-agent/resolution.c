@@ -91,15 +91,15 @@ static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height, IN ULONG bpp)
     // This can happen on "quick user switch".
     AttachToInputDesktop();
 
-    if (ERROR_SUCCESS != FindQubesDisplayDevice(&device))
-        return perror("FindQubesDisplayDevice");
+    if (ERROR_SUCCESS != QvFindQubesDisplayDevice(&device))
+        return perror("QvFindQubesDisplayDevice");
 
-    deviceName = (WCHAR *) &device.DeviceName[0];
+    deviceName = (WCHAR *)&device.DeviceName[0];
 
     LogDebug("DeviceName: %s", deviceName);
 
-    if (ERROR_SUCCESS != SupportVideoMode(deviceName, width, height, bpp))
-        return perror("SupportVideoMode");
+    if (ERROR_SUCCESS != QvSupportVideoMode(deviceName, width, height, bpp))
+        return perror("QvSupportVideoMode");
 
     if (ERROR_SUCCESS != ChangeVideoMode(deviceName, width, height, bpp))
         return perror("ChangeVideoMode");
@@ -107,7 +107,7 @@ static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height, IN ULONG bpp)
     return ERROR_SUCCESS;
 }
 
-// set video mode, open screen section
+// set video mode
 ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
 {
     ULONG status = SetVideoModeInternal(width, height, bpp);
@@ -116,7 +116,7 @@ ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
     {
         g_SeamlessMode = FALSE;
 
-        LogDebug("SetVideoMode() failed: %lu, keeping original resolution %lux%lu", status, g_ScreenWidth, g_ScreenHeight);
+        LogDebug("SetVideoModeInternal failed: %lu, keeping original resolution %lux%lu", status, g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
@@ -124,7 +124,7 @@ ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
         g_ScreenHeight = height;
     }
 
-    return OpenScreenSection();
+    return status;
 }
 
 // Reinitialize everything, change resolution (params in g_ResolutionChangeParams).
@@ -134,9 +134,7 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
 
     LogDebug("deinitializing");
 
-    if (ERROR_SUCCESS != (status = UnregisterWatchedDC(*screenDC)))
-        return status;
-    if (ERROR_SUCCESS != (status = CloseScreenSection()))
+    if (ERROR_SUCCESS != (status = QvUnregisterWatchedDC(*screenDC)))
         return status;
     if (!ReleaseDC(NULL, *screenDC))
         return GetLastError();
@@ -150,7 +148,7 @@ ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
     *screenDC = GetDC(NULL);
     if (!(*screenDC))
         return GetLastError();
-    if (ERROR_SUCCESS != (status = RegisterWatchedDC(*screenDC, damageEvent)))
+    if (ERROR_SUCCESS != (status = QvRegisterWatchedDC(*screenDC, damageEvent)))
         return status;
 
     status = SendScreenMfns(); // update screen framebuffer

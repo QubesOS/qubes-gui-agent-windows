@@ -27,6 +27,9 @@
     <ClInclude Include="..\..\qvideo\miniport\qvmini.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\qvideo\miniport\list.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\qvideo\miniport\memory.c">

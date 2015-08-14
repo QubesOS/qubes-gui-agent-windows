@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "common.h"
 #include "send.h"
@@ -18,7 +19,6 @@ static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
     QV_GET_SURFACE_DATA_RESPONSE surfaceData;
     ULONG status;
     ULONG shmCmdSize = 0;
-    PFN_ARRAY *pfnArray = NULL;
     ULONG width;
     ULONG height;
     ULONG bpp;
@@ -28,30 +28,21 @@ static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
         return ERROR_INVALID_PARAMETER;
 
     *shmCmd = NULL;
-    //debugf("start");
 
     LogDebug("fullcreen capture");
 
-    pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-    pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
-
-    status = GetWindowData(NULL, &surfaceData, pfnArray);
+    // this will map driver-managed pfn list into the process, user address is in the response struct
+    status = QvGetWindowData(NULL, &surfaceData);
     if (ERROR_SUCCESS != status)
-    {
-        LogError("GetWindowData() failed with error %d\n", status);
-        return status;
-    }
+        return perror2(status, "QvGetWindowData");
 
     width = surfaceData.Width;
     height = surfaceData.Height;
     bpp = surfaceData.Bpp;
 
-    LogDebug("screen %dx%d @ %d bpp", width, height, bpp);
+    LogDebug("screen %dx%d @ %d bpp, number of pfns: %lu", width, height, bpp, surfaceData.PfnArray->NumberOf4kPages);
 
-    LogVerbose("PFNs: %d; 0x%x, 0x%x, 0x%x\n", pfnArray->NumberOf4kPages,
-        pfnArray->Pfn[0], pfnArray->Pfn[1], pfnArray->Pfn[2]);
-
-    shmCmdSize = sizeof(struct shm_cmd) + pfnArray->NumberOf4kPages * sizeof(uint32_t);
+    shmCmdSize = sizeof(struct shm_cmd) + surfaceData.PfnArray->NumberOf4kPages * sizeof(uint32_t);
 
     *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
     if (*shmCmd == NULL)
@@ -65,16 +56,21 @@ static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
     (*shmCmd)->height = height;
     (*shmCmd)->bpp = bpp;
     (*shmCmd)->off = 0;
-    (*shmCmd)->num_mfn = pfnArray->NumberOf4kPages;
+    (*shmCmd)->num_mfn = surfaceData.PfnArray->NumberOf4kPages;
     (*shmCmd)->domid = 0;
 
-    for (i = 0; i < pfnArray->NumberOf4kPages; i++)
-        (*shmCmd)->mfns[i] = (uint32_t) pfnArray->Pfn[i];
+    for (i = 0; i < surfaceData.PfnArray->NumberOf4kPages; i++)
+    {
+        assert(surfaceData.PfnArray->Pfn[i] == (uint32_t)surfaceData.PfnArray->Pfn[i]);
+        (*shmCmd)->mfns[i] = (uint32_t)surfaceData.PfnArray->Pfn[i]; // on x64 pfn numbers are 64bit
+    }
 
-    free(pfnArray);
+    // unmap the pfn array
+    status = QvReleaseWindowData(NULL);
+    if (ERROR_SUCCESS != status)
+        perror2(status, "QvReleaseWindowData");
 
-    //debugf("success");
-    return ERROR_SUCCESS;
+    return status;
 }
 
 ULONG SendScreenMfns(void)
@@ -92,7 +88,7 @@ ULONG SendScreenMfns(void)
 
     if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
     {
-        LogError("too large num_mfn=%lu", shmCmd->num_mfn);
+        LogError("invalid pfn count: %lu", shmCmd->num_mfn);
         free(shmCmd);
         return ERROR_INSUFFICIENT_BUFFER;
     }
@@ -125,7 +121,6 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     WINDOWINFO wi;
     struct msg_hdr header;
     struct msg_create createMsg;
-    PFN_ARRAY *pfnArray = NULL;
     ULONG status;
 
     if (!g_VchanClientConnected)
@@ -142,27 +137,24 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
 
-        pfnArray = malloc(PFN_ARRAY_SIZE(g_ScreenWidth, g_ScreenHeight));
-        pfnArray->NumberOf4kPages = FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight);
-
-        status = GetWindowData(NULL, &surfaceData, pfnArray);
+        status = QvGetWindowData(NULL, &surfaceData);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "GetWindowData");
+            return perror2(status, "QvGetWindowData");
 
         wi.rcWindow.right = surfaceData.Width;
         wi.rcWindow.bottom = surfaceData.Height;
 
-        free(pfnArray);
+        QvReleaseWindowData(NULL); // unmap the pfn array (TODO: make the mapping optional since it's not used here)
 
         header.window = 0;
     }
     else
     {
         LogDebug("hwnd=0x%x, (%d,%d) %dx%d, override=%d", windowData->WindowHandle,
-            windowData->X, windowData->Y, windowData->Width, windowData->Height,
-            windowData->IsOverrideRedirect);
+                 windowData->X, windowData->Y, windowData->Width, windowData->Height,
+                 windowData->IsOverrideRedirect);
 
-        header.window = (uint32_t) windowData->WindowHandle;
+        header.window = (uint32_t)windowData->WindowHandle;
         wi.rcWindow.left = windowData->X;
         wi.rcWindow.top = windowData->Y;
         wi.rcWindow.right = windowData->X + windowData->Width;
@@ -175,7 +167,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     createMsg.y = wi.rcWindow.top;
     createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
     createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
-    createMsg.parent = (uint32_t) INVALID_HANDLE_VALUE; /* TODO? */
+    createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
     LogDebug("(%d,%d) %dx%d", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 
@@ -207,7 +199,7 @@ ULONG SendWindowDestroy(IN HWND window)
 
     LogDebug("0x%x", window);
     header.type = MSG_DESTROY;
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     status = VCHAN_SEND(header, L"MSG_DESTROY");
@@ -227,7 +219,7 @@ ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsT
 
     LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsToSet, flagsToUnset);
     header.type = MSG_WINDOW_FLAGS;
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     header.untrusted_len = 0;
     flags.flags_set = flagsToSet;
     flags.flags_unset = flagsToUnset;
@@ -250,7 +242,7 @@ ULONG SendWindowHints(IN HWND window, IN uint32_t flags)
     hintsMsg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
 
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     header.type = MSG_WINDOW_HINTS;
 
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -292,10 +284,10 @@ ULONG SendWindowUnmap(IN HWND window)
     if (!g_VchanClientConnected)
         return ERROR_SUCCESS;
 
-    LogInfo("Unmapping window 0x%x\n", window);
+    LogInfo("Unmapping window 0x%x", window);
 
     header.type = MSG_UNMAP;
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
     status = VCHAN_SEND(header, L"MSG_UNMAP");
@@ -315,21 +307,21 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
         return ERROR_SUCCESS;
 
     if (windowData)
-        LogInfo("Mapping window 0x%x\n", windowData->WindowHandle);
+        LogInfo("Mapping window 0x%x", windowData->WindowHandle);
     else
-        LogInfo("Mapping desktop window\n");
+        LogInfo("Mapping desktop window");
 
     header.type = MSG_MAP;
     if (windowData)
-        header.window = (uint32_t) windowData->WindowHandle;
+        header.window = (uint32_t)windowData->WindowHandle;
     else
         header.window = 0;
     header.untrusted_len = 0;
 
     if (windowData && windowData->ModalParent)
-        mapMsg.transient_for = (uint32_t) windowData->ModalParent;
+        mapMsg.transient_for = (uint32_t)windowData->ModalParent;
     else
-        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE;
+        mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE;
 
     if (windowData)
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
@@ -381,7 +373,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
     if (windowData)
     {
         LogDebug("0x%x", windowData->WindowHandle);
-        header.window = (uint32_t) windowData->WindowHandle;
+        header.window = (uint32_t)windowData->WindowHandle;
 
         header.type = MSG_CONFIGURE;
 
@@ -418,7 +410,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 
     if (windowData)
     {
-        mapMsg.transient_for = (uint32_t) INVALID_HANDLE_VALUE; // TODO?
+        mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE; // TODO?
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
 
         header.type = MSG_MAP;
@@ -470,7 +462,7 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
 
     LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
     header.type = MSG_SHMIMAGE;
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     shmMsg.x = x;
     shmMsg.y = y;
     shmMsg.width = width;
@@ -513,7 +505,7 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
 
     LogDebug("0x%x %S", window, nameMsg.data);
 
-    header.window = (uint32_t) window;
+    header.window = (uint32_t)window;
     header.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);
     status = VCHAN_SEND_MSG(header, nameMsg, L"MSG_WMNAME");

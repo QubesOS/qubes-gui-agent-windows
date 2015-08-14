@@ -1,37 +1,51 @@
 #include "common.h"
 
-#define QVMINI_TAG	'MMVQ'
+#define QVMINI_TAG	'PMVQ'
 
-void *AllocateMemory(
-    IN ULONG size,
-    OUT PFN_ARRAY **pfnArray
+typedef struct _QVM_BUFFER
+{
+    LIST_ENTRY ListEntry;
+    PVOID KernelVa;
+    ULONG OriginalSize;
+    ULONG AlignedSize;
+    PVOID PfnUserVa;
+    PVOID PfnMdl; // miniport headers don't define MDLs...
+    PVOID Process; // ...nor EPROCESS :/
+    PPFN_ARRAY PfnArray;
+    ULONG PfnArraySize;
+} QVM_BUFFER, *PQVM_BUFFER;
+
+/**
+* @brief Allocate a non-paged buffer and get its PFN list.
+* @param Size Required size. Allocation will be aligned to PAGE_SIZE.
+* @return Buffer descriptor.
+*/
+PQVM_BUFFER QvmAllocateBuffer(
+    __in ULONG Size
     );
 
-void FreeMemory(
-    IN void *memory,
-    IN void *pfnArray OPTIONAL
+/**
+* @brief Free a buffer allocated by QvmAllocateBuffer.
+* @param Buffer Buffer descriptor.
+*/
+VOID QvmFreeBuffer(
+    __inout PQVM_BUFFER Buffer
     );
 
-// Creates a named kernel mode section mapped in the system space, locks it,
-// and returns its handle, a referenced section object, an MDL and a PFN list.
-void *AllocateSection(
-    IN ULONG size,
-    OUT HANDLE *section,
-    OUT void **sectionObject,
-    OUT void **mdl, // MDL**, but good luck including required headers for the type
-    OUT PFN_ARRAY **pfnArray,
-    OUT HANDLE *dirtySection OPTIONAL,
-    OUT void **dirtySectionObject OPTIONAL,
-    OUT void **dirtySectionMemory OPTIONAL
+/**
+* @brief Map a buffer's pfn array into the current process.
+* @param Buffer Buffer descriptor.
+* @return NTSTATUS.
+*/
+ULONG QvmMapBufferPfns(
+    __inout PQVM_BUFFER Buffer
     );
 
-VOID FreeSection(
-    IN HANDLE section,
-    IN void *sectionObject,
-    IN void *mdl, // MDL*, but good luck including required headers for the type
-    IN void *baseAddress,
-    IN void *pfnArray,
-    IN HANDLE dirtySection OPTIONAL,
-    IN void *dirtySectionObject OPTIONAL,
-    IN void *dirtySectionMemory OPTIONAL
+/**
+* @brief Unmap a buffer's pfn array from the current process.
+* @param Buffer Buffer descriptor.
+* @return NTSTATUS.
+*/
+ULONG QvmUnmapBufferPfns(
+    __inout PQVM_BUFFER Buffer
     );
