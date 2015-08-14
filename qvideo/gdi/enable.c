@@ -64,7 +64,7 @@ BOOL APIENTRY DrvEnableDriver(
     EnableData->c = sizeof(g_DrvFunctions) / sizeof(DRVFN);
     EnableData->iDriverVersion = DDI_DRIVER_VERSION_NT5;
 
-    ReadRegistryConfig();
+    //ReadRegistryConfig();
     status = TRUE;
 
 cleanup:
@@ -926,7 +926,7 @@ ULONG APIENTRY DrvEscape(
 
     case QVESC_STOP_WATCHING_SURFACE:
         return UserStopWatchingSurface(surface);
-
+#if 0
     case QVESC_SYNCHRONIZE:
         if (!g_bUseDirtyBits)
             return QV_NOT_SUPPORTED;
@@ -934,7 +934,7 @@ ULONG APIENTRY DrvEscape(
         InterlockedExchange(&surface->DirtyPages->Ready, 1);
         TRACEF("gui agent synchronized");
         return QV_SUCCESS;
-
+#endif
     default:
         WARNINGF("bad code 0x%lx", EscapeCode);
         return QV_NOT_SUPPORTED;
@@ -948,7 +948,8 @@ VOID APIENTRY DrvSynchronizeSurface(
     )
 {
     PQV_SURFACE surface = NULL;
-    ULONG surfaceBufferSize, dirty;
+    ULONG surfaceBufferSize;
+    //ULONG dirty;
 
     //FUNCTION_ENTER();
 
@@ -968,12 +969,14 @@ VOID APIENTRY DrvSynchronizeSurface(
 
     surfaceBufferSize = surface->Stride * surface->Height;
 
+    EngSetEvent(surface->DamageNotificationEvent);
+#if 0
     // UpdateDirtyBits returns 0 also if the check was too early after a previous one.
     // This just returns 1 if using dirty bits is disabled.
     dirty = UpdateDirtyBits(surface->PixelData, surfaceBufferSize, surface->DirtyPages);
 
     if (dirty > 0) // only signal the event if something changed
         EngSetEvent(surface->DamageNotificationEvent);
-
+#endif
     //FUNCTION_EXIT();
 }

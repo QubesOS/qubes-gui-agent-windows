@@ -26,7 +26,7 @@ extern struct libvchan *g_Vchan;
 
 // If set, only invalidate parts of the screen that changed according to
 // qvideo's dirty page scan of surface memory buffer.
-BOOL g_UseDirtyBits = FALSE;
+BOOL g_UseDirtyBits = FALSE; // this should be always disabled for now, driver doesn't support it after memory sharing code change
 DWORD g_MaxFps = 0; // max refresh event batches per second that are sent to guid (0 = disabled)
 
 LONG g_ScreenHeight;
@@ -1039,14 +1039,14 @@ static ULONG Init(void)
     }
 
     status = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
-
+    /* disabled for now because driver lacks interface for it
     status = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_UseDirtyBits, NULL);
     if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read '%s' config value, disabling that feature", REG_CONFIG_DIRTY_VALUE);
         g_UseDirtyBits = FALSE;
     }
-
+    */
     status = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
     if (ERROR_SUCCESS != status)
     {

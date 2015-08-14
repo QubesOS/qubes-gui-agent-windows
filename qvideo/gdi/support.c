@@ -3,7 +3,8 @@
 #include "support.h"
 #include "mi.h"
 
-BOOLEAN g_bUseDirtyBits = TRUE;
+#if 0
+BOOLEAN g_bUseDirtyBits = FALSE;
 
 ULONG CfgReadDword(IN WCHAR *valueName, OUT ULONG *value)
 {
@@ -194,3 +195,4 @@ ULONG UpdateDirtyBits(
 
     return dirty;
 }
+#endif

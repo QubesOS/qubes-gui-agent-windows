@@ -32,6 +32,7 @@ ULONG NTAPI DbgPrintEx(
 #define FUNCTION_ENTER()   TRACEF("==>")
 #define FUNCTION_EXIT()    TRACEF("<==")
 
+#if 0
 VOID ReadRegistryConfig(VOID);
 
 // returns number of changed pages
@@ -42,3 +43,4 @@ ULONG UpdateDirtyBits(
     );
 
 extern BOOLEAN g_bUseDirtyBits;
+#endif
