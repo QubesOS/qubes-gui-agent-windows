@@ -46,9 +46,11 @@ BOOL VchanSendMessage(IN const struct msg_hdr *header, IN int headerSize, IN con
     return TRUE;
 }
 
-BOOL VchanInitServer(IN int port)
+BOOL VchanInit(IN int port)
 {
-    g_Vchan = libvchan_server_init(0, port, 16384, 16384);
+    // We give a 5 minute timeout here because xeniface can take some time
+    // to load the first time after reboot after pvdrivers installation.
+    g_Vchan = VchanInitServer(0, port, 16384, 5 * 60 * 1000);
     if (!g_Vchan)
     {
         LogError("libvchan_server_init failed");

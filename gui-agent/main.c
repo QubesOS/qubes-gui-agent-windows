@@ -764,7 +764,7 @@ static ULONG WINAPI WatchForEvents(void)
     windowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
-    if (!VchanInitServer(6000))
+    if (!VchanInit(6000))
     {
         LogError("VchanInitServer() failed");
         return GetLastError();
