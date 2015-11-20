@@ -53,7 +53,7 @@ BOOL VchanInit(IN int port)
     g_Vchan = VchanInitServer(0, port, 16384, 5 * 60 * 1000);
     if (!g_Vchan)
     {
-        LogError("libvchan_server_init failed");
+        LogError("VchanInitServer failed");
         return FALSE;
     }
 

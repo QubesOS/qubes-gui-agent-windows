@@ -766,7 +766,7 @@ static ULONG WINAPI WatchForEvents(void)
     // This will not block.
     if (!VchanInit(6000))
     {
-        LogError("VchanInitServer() failed");
+        LogError("VchanInit() failed");
         return GetLastError();
     }
 
