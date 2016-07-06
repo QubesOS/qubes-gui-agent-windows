@@ -1078,8 +1078,8 @@ static ULONG Init(void)
     status = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &g_SeamlessMode, NULL);
     if (ERROR_SUCCESS != status)
     {
-        LogWarning("Failed to read '%s' config value, using default (TRUE)", REG_CONFIG_SEAMLESS_VALUE);
-        g_SeamlessMode = TRUE;
+        LogWarning("Failed to read '%s' config value, using default (FALSE)", REG_CONFIG_SEAMLESS_VALUE);
+        g_SeamlessMode = FALSE;
     }
 
     status = CfgReadDword(moduleName, REG_CONFIG_FPS_VALUE, &g_MaxFps, NULL);

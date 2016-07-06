@@ -52,6 +52,7 @@ DisplayName='Installation directory'
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="MaxFps" Type="integer" Value='0'/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="DisableCursor" Type="integer" Value='1'/>
+                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="SeamlessMode" Type="integer" Value='0'/>
                     </Component>
                     <Component Id='QgaWatchdog' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
                         <File Id='QgaWatchdog.exe' Source='bin\$(env.DDK_ARCH)\QgaWatchdog.exe' KeyPath="yes"/>
