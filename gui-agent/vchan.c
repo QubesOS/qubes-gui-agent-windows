@@ -50,7 +50,15 @@ BOOL VchanInit(IN int port)
 {
     // We give a 5 minute timeout here because xeniface can take some time
     // to load the first time after reboot after pvdrivers installation.
-    g_Vchan = VchanInitServer(0, port, 16384, 5 * 60 * 1000);
+
+    // TODO: vchan buffer size here should be able to contain MFN dump for the desktop,
+    // which limits the resolution: X * Y * 4(bpp) / 4096(page size) * 4(mfn size).
+    // THIS IS PROBABLY A BUG THOUGH: we should be able to send MSG_MFNDUMP in chunks,
+    // but currently vchan send hangs if the data size is higher than the vchan buffer size.
+    // Investigate if this is a problem with windows vchan implementation or something else.
+    // 64k allows for 4 x 1440p screens.
+
+    g_Vchan = VchanInitServer(0, port, 65536, 5 * 60 * 1000);
     if (!g_Vchan)
     {
         LogError("VchanInitServer failed");
