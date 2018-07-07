@@ -176,6 +176,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
                  windowData->X, windowData->Y, windowData->Width, windowData->Height,
                  windowData->IsOverrideRedirect);
 
+#pragma warning(suppress:4311)
         header.window = (uint32_t)windowData->WindowHandle;
         wi.rcWindow.left = windowData->X;
         wi.rcWindow.top = windowData->Y;
@@ -189,6 +190,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     createMsg.y = wi.rcWindow.top;
     createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
     createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
+#pragma warning(suppress:4311)
     createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
     LogDebug("(%d,%d) %dx%d", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
@@ -221,6 +223,7 @@ ULONG SendWindowDestroy(IN HWND window)
 
     LogDebug("0x%x", window);
     header.type = MSG_DESTROY;
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -241,6 +244,7 @@ ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsT
 
     LogDebug("0x%x: set 0x%x, unset 0x%x", window, flagsToSet, flagsToUnset);
     header.type = MSG_WINDOW_FLAGS;
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     header.untrusted_len = 0;
     flags.flags_set = flagsToSet;
@@ -264,6 +268,7 @@ ULONG SendWindowHints(IN HWND window, IN uint32_t flags)
     hintsMsg.flags = flags;
     LogDebug("flags: 0x%lx", flags);
 
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     header.type = MSG_WINDOW_HINTS;
 
@@ -309,6 +314,7 @@ ULONG SendWindowUnmap(IN HWND window)
     LogInfo("Unmapping window 0x%x", window);
 
     header.type = MSG_UNMAP;
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     header.untrusted_len = 0;
     EnterCriticalSection(&g_VchanCriticalSection);
@@ -335,14 +341,17 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
 
     header.type = MSG_MAP;
     if (windowData)
+#pragma warning(suppress:4311)
         header.window = (uint32_t)windowData->WindowHandle;
     else
         header.window = 0;
     header.untrusted_len = 0;
 
     if (windowData && windowData->ModalParent)
+#pragma warning(suppress:4311)
         mapMsg.transient_for = (uint32_t)windowData->ModalParent;
     else
+#pragma warning(suppress:4311)
         mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE;
 
     if (windowData)
@@ -395,6 +404,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
     if (windowData)
     {
         LogDebug("0x%x", windowData->WindowHandle);
+#pragma warning(suppress:4311)
         header.window = (uint32_t)windowData->WindowHandle;
 
         header.type = MSG_CONFIGURE;
@@ -432,6 +442,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
 
     if (windowData)
     {
+#pragma warning(suppress:4311)
         mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE; // TODO?
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
 
@@ -484,6 +495,7 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
 
     LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
     header.type = MSG_SHMIMAGE;
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     shmMsg.x = x;
     shmMsg.y = y;
@@ -527,6 +539,7 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
 
     LogDebug("0x%x %S", window, nameMsg.data);
 
+#pragma warning(suppress:4311)
     header.window = (uint32_t)window;
     header.type = MSG_WMNAME;
     EnterCriticalSection(&g_VchanCriticalSection);

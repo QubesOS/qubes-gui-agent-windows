@@ -419,6 +419,8 @@ DWORD HandleServerData(void)
 
     LogVerbose("received message type %d for 0x%x", header.type, header.window);
 
+#pragma warning(push)
+#pragma warning(disable:4312)
     switch (header.type)
     {
     case MSG_KEYPRESS:
@@ -445,6 +447,7 @@ DWORD HandleServerData(void)
     case MSG_WINDOW_FLAGS:
         status = HandleWindowFlags((HWND)header.window);
         break;
+#pragma warning(pop)
     default:
         LogWarning("got unknown msg type %d, ignoring", header.type);
 
