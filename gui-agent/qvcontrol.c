@@ -20,6 +20,7 @@
  */
 
 #include <windows.h>
+#include <stdio.h>
 
 #include "common.h"
 #include "main.h"

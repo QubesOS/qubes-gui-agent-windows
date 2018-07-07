@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include "common.h"
 #include "send.h"

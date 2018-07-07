@@ -24,6 +24,7 @@
 #include <winsock2.h>
 #include <mmsystem.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "main.h"
 #include "vchan.h"
