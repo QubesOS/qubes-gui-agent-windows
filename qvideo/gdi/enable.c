@@ -26,14 +26,12 @@
 
 #define STATUS_SUCCESS 0
 
-#if DBG
 // This is only to make linker happy. Enabling security checks
 // causes linking a special library that expects that DriverEntry is present.
 void DriverEntry()
 {
-    ERRORF("THIS SHOULD NOT BE CALLED, EVER");
+    // THIS SHOULD NOT BE CALLED, EVER
 }
-#endif
 
 // The driver function table with all function index/address pairs
 static DRVFN g_DrvFunctions[] =

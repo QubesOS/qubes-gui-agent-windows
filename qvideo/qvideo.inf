@@ -58,7 +58,7 @@ AddService = qvideo, 0x00000002, qvideo_Service_Inst, qvideo_EventLog_Inst
 [qvideo_Service_Inst]
 
 ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
-StartType      = 1                  ; SERVICE_SYSTEM_START
+StartType      = 3                  ; SERVICE_DEMAND_START
 ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
 LoadOrderGroup = Video
 ServiceBinary  = %12%\qvmini.sys
@@ -67,7 +67,7 @@ ServiceBinary  = %12%\qvmini.sys
 AddReg = qvideo_EventLog_AddReg
 
 [qvideo_EventLog_AddReg]
-HKR,,EventMessageFile,0x00020000,"%SystemRoot%\System32\IoLogMsg.dll;%SystemRoot%\System32\drivers\qvmini.sys"
+HKR,,EventMessageFile,0x00020000,"%%SystemRoot%%\System32\IoLogMsg.dll;%%SystemRoot%%\System32\drivers\qvmini.sys"
 HKR,,TypesSupported,0x00010001,7
 
 ;
@@ -81,11 +81,6 @@ AddReg = qvideo_SoftwareDeviceSettings
 HKR,, QVideoDriver,                %REG_DWORD%,    1
 HKR,, InstalledDisplayDrivers,     %REG_MULTI_SZ%, qvgdi
 HKR,, VgaCompatible,               %REG_DWORD%,    0
-
-[qvideo.OpenGLSoftwareSettings]
-AddReg = qvideo_OpenGLSoftwareSettings
-
-[qvideo_OpenGLSoftwareSettings]
 
 ;
 ; Source file information
