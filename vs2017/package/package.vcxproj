@@ -31,7 +31,7 @@
   <PropertyGroup Label="Configuration">
     <TargetVersion>Windows7</TargetVersion>
     <UseDebugLibraries Condition="'$(Configuration)'=='Win7 Debug'">true</UseDebugLibraries>
-    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
     <ConfigurationType>Utility</ConfigurationType>
     <DriverType>Package</DriverType>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
@@ -56,13 +56,6 @@
     <IntDir>$(SolutionDir)\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
-    <PostBuildEvent>
-      <Message>Copying output files</Message>
-      <Command>xcopy /y "$(PackageDir)qvgdi.dll" "$(SolutionDir)..\bin\$(PlatformTarget)\"
-xcopy /y "$(PackageDir)qvideo.cat" "$(SolutionDir)..\bin\$(PlatformTarget)\"
-xcopy /y "$(PackageDir)qvideo.inf" "$(SolutionDir)..\bin\$(PlatformTarget)\"
-xcopy /y "$(PackageDir)qvmini.sys" "$(SolutionDir)..\bin\$(PlatformTarget)\"</Command>
-    </PostBuildEvent>
     <Inf2Cat>
       <UseLocalTime>true</UseLocalTime>
     </Inf2Cat>

@@ -31,7 +31,7 @@
   <PropertyGroup Label="Configuration">
     <TargetVersion>Windows7</TargetVersion>
     <UseDebugLibraries Condition="'$(Configuration)'=='Win7 Debug'">true</UseDebugLibraries>
-    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
     <ConfigurationType>Driver</ConfigurationType>
     <DriverType>WDM</DriverType>
   </PropertyGroup>

@@ -6,15 +6,13 @@
   <PropertyGroup Label="UserMacros" />
 
   <PropertyGroup>
-    <IncludePath>$(SolutionDir)\..\include;$(QUBES_INCLUDES);$(IncludePath)</IncludePath>
-    <LibraryPath>$(SolutionDir)\$(Configuration)\$(Platform);$(QUBES_LIBS);$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)\$(Configuration)\$(Platform)\</OutDir>
     <IntDir>$(SolutionDir)\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
 
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
@@ -29,10 +27,12 @@
 
   <ItemDefinitionGroup>
     <Link>
+      <AdditionalLibraryDirectories>$(SolutionDir)\$(Configuration)\$(Platform);$(QUBES_LIBS);$(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>windows-utils.lib;libvchan.lib;qubesdb-client.lib;winmm.lib;setupapi.lib;ws2_32.lib;shlwapi.lib;wtsapi32.lib;userenv.lib;version.lib;ntdll.lib;kernel32.lib;user32.lib;gdi32.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\include;$(QUBES_INCLUDES);$(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -40,19 +40,16 @@
       <ExceptionHandling>false</ExceptionHandling>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\include;$(QUBES_INCLUDES);$(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
     <CustomBuildStep>
+      <Message>Copying output files</Message>
+      <Inputs>$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).lib</Inputs>
+      <Outputs>$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetFileName);$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetName).pdb;$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetName).lib;%(Outputs)</Outputs>
       <Command>xcopy /y $(TargetPath) $(SolutionDir)\..\bin\$(PlatformTarget)\
 xcopy /y $(TargetDir)$(TargetName).pdb $(SolutionDir)\..\bin\$(PlatformTarget)\
 if exist $(TargetDir)$(TargetName).lib xcopy /y $(TargetDir)$(TargetName).lib $(SolutionDir)\..\bin\$(PlatformTarget)\</Command>
-    </CustomBuildStep>
-    <CustomBuildStep>
-      <Message>Copying output files</Message>
-    </CustomBuildStep>
-    <CustomBuildStep>
-      <Outputs>$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetFileName);$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetName).pdb;$(SolutionDir)\..\bin\$(PlatformTarget)$(TargetName).lib;%(Outputs)</Outputs>
-    </CustomBuildStep>
-    <CustomBuildStep>
-      <Inputs>$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).lib</Inputs>
     </CustomBuildStep>
   </ItemDefinitionGroup>
 

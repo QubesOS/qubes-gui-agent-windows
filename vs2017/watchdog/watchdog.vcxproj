@@ -18,30 +18,24 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\install-helper\create-device\create-device.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\..\install-helper\create-device\version.rc" />
-  </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{DC944026-262A-4045-B677-6C8A1504C20C}</ProjectGuid>
+    <ProjectGuid>{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>createdevice</RootNamespace>
+    <RootNamespace>watchdog</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v120</PlatformToolset>
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
+    <TargetName>QgaWatchdog</TargetName>
   </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\common.props" />
   </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
@@ -51,6 +45,12 @@
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\watchdog\watchdog.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\watchdog\version.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

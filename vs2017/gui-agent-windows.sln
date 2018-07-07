@@ -1,9 +1,12 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.31101.0
+# Visual Studio 15
+VisualStudioVersion = 15.0.27703.2035
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qvgdi", "qvgdi\qvgdi.vcxproj", "{D2320FE2-2122-4126-BB57-EF955AC887C2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{5A8BA80D-E650-4204-92D3-9FD09CB49324} = {5A8BA80D-E650-4204-92D3-9FD09CB49324}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "package", "package\package.vcxproj", "{DCDEBFF8-EB94-42AE-B9AB-C0D27B965FD9}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -11,6 +14,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "package", "package\package.
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qvmini", "qvmini\qvmini.vcxproj", "{5A8BA80D-E650-4204-92D3-9FD09CB49324}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "package-post-build", "package-post-build\package-post-build.vcxproj", "{9EB25088-A726-4C42-A18F-BD5458D7221A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gui-agent", "gui-agent\gui-agent.vcxproj", "{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}"
 EndProject
@@ -22,8 +27,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "disable-device", "disable-d
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test-window", "test-window\test-window.vcxproj", "{D17ACE2E-2C83-4C96-A094-08C20A1B0488}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pattern-generator", "pattern-generator\pattern-generator.csproj", "{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}"
-EndProject
+#Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pattern-generator", "pattern-generator\pattern-generator.csproj", "{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}"
+#EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -104,6 +109,14 @@ Global
 		{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}.Release|Win32.Build.0 = Release|Any CPU
 		{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}.Release|x64.ActiveCfg = Release|Any CPU
 		{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}.Release|x64.Build.0 = Release|Any CPU
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Debug|Win32.ActiveCfg = Win7 Debug|Win32
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Debug|Win32.Build.0 = Win7 Debug|Win32
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Debug|x64.ActiveCfg = Win7 Debug|x64
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Debug|x64.Build.0 = Win7 Debug|x64
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Release|Win32.ActiveCfg = Win7 Release|Win32
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Release|Win32.Build.0 = Win7 Release|Win32
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Release|x64.ActiveCfg = Win7 Release|x64
+		{9EB25088-A726-4C42-A18F-BD5458D7221A}.Release|x64.Build.0 = Win7 Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

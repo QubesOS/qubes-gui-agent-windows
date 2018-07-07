@@ -19,38 +19,43 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}</ProjectGuid>
+    <ProjectGuid>{D17ACE2E-2C83-4C96-A094-08C20A1B0488}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>watchdog</RootNamespace>
+    <RootNamespace>testwindow</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v120</PlatformToolset>
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
-    <TargetName>QgaWatchdog</TargetName>
   </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\common.props" />
   </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\watchdog\watchdog.c" />
+    <ClInclude Include="..\..\test\test-window\Resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\watchdog\version.rc" />
+    <Image Include="..\..\test\test-window\small.ico" />
+    <Image Include="..\..\test\test-window\test-window.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\test\test-window\test-window.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\test\test-window\test-window.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

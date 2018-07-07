@@ -19,44 +19,36 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{D17ACE2E-2C83-4C96-A094-08C20A1B0488}</ProjectGuid>
+    <ProjectGuid>{B3A4588F-0A32-4DB7-BB26-E28FF81FD5C5}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>testwindow</RootNamespace>
+    <RootNamespace>disabledevice</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v120</PlatformToolset>
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\common.props" />
   </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>_WINDOWS;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\test\test-window\Resource.h" />
+    <ClCompile Include="..\..\install-helper\disable-device\disable-device.c" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="..\..\test\test-window\small.ico" />
-    <Image Include="..\..\test\test-window\test-window.ico" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\test\test-window\test-window.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\..\test\test-window\test-window.rc" />
+    <ResourceCompile Include="..\..\install-helper\disable-device\version.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
