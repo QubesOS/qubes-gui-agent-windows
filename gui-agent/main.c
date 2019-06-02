@@ -72,7 +72,7 @@ HWND g_DesktopWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
-ULONG ProcessUpdatedWindows(IN HDC screenDC);
+static ULONG ProcessUpdatedWindows(IN HDC screenDC);
 
 #ifdef DEBUG
 // diagnostic: dump all watched windows
@@ -1132,7 +1132,11 @@ static ULONG Init(void)
     return ERROR_SUCCESS;
 }
 
+#ifdef __MINGW32__
+int CALLBACK wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, WCHAR *lpCmdLine, int nCmdShow)
+#else
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+#endif
 {
     if (ERROR_SUCCESS != Init())
         return perror("Init");

@@ -20,8 +20,8 @@
  */
 
 #include <windows.h>
-#include <WtsApi32.h>
-#include <Shlwapi.h>
+#include <wtsapi32.h>
+#include <shlwapi.h>
 #include <string.h>
 #include "common.h"
 

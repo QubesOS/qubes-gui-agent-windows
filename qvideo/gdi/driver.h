@@ -22,6 +22,12 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#ifdef __MINGW32__
+#include <driverspecs.h>
+#define __in_opt SAL__in_opt
+#define __out_bcount_opt SAL__out_bcount_opt
+#endif
+
 #pragma warning(push)
 #pragma warning(disable: 4200 4201 4214)
 

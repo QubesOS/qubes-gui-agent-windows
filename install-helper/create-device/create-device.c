@@ -27,6 +27,11 @@
 #include <devpkey.h>
 #include <strsafe.h>
 
+#ifdef __MINGW32__
+#include "customddkinc.h"
+#include "setupapifn.h"
+#endif
+
 void Usage(IN const WCHAR *selfName)
 {
     fwprintf(stderr, L"Usage: %s inf-path hardware-id\n", selfName);
