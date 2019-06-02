@@ -3,7 +3,7 @@ INCLUDES = -Iinclude/mingw -Iinclude
 CFLAGS += $(INCLUDES) -std=c11 -fgnu89-inline -DUNICODE -D_UNICODE -DWINVER=0x0600
 LDFLAGS += -L$(OUTDIR) -lwindows-utils
 
-all: $(OUTDIR) $(OUTDIR)/qga.exe $(OUTDIR)/QgaWatchdog.exe $(OUTDIR)/create-device.exe $(OUTDIR)/disable-device.exe $(OUTDIR)/qvgdi.dll $(OUTDIR)/qvmini.sys $(OUTDIR)/qvideo.inf $(OUTDIR)/qvideo.cat
+all: $(OUTDIR) $(OUTDIR)/qga.exe $(OUTDIR)/QgaWatchdog.exe $(OUTDIR)/create-device.exe $(OUTDIR)/disable-device.exe $(OUTDIR)/qvgdi.dll $(OUTDIR)/qvmini.sys $(OUTDIR)/qvideo.inf $(OUTDIR)/pkihelper.exe
 
 $(OUTDIR):
 	mkdir -p $@
@@ -33,6 +33,9 @@ $(OUTDIR)/disable-device.exe: install-helper/disable-device/disable-device.c
 $(OUTDIR)/create-device.exe $(OUTDIR)/disable-device.exe: $(OUTDIR)/%.exe:
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lsetupapi -mconsole -municode -o $@
 
+$(OUTDIR)/pkihelper.exe: install-helper/pkihelper/pkihelper.c
+	$(CC) $^ $(CFLAGS) $(LDFLAGS) -UUNICODE -U_UNICODE -mconsole -o $@
+
 $(OUTDIR)/qvgdi.dll: LDFLAGS = -L$(OUTDIR) -lwin32k -lntoskrnl -lhal -lwmilib -nostdlib -Wl,--subsystem,native -Wl,--no-insert-timestamp -e DrvEnableDriver -shared -D__INTRINSIC_DEFINED__InterlockedAdd64
 $(OUTDIR)/qvgdi.dll: CFLAGS = $(INCLUDES) -I$(DDK_PATH) -DUNICODE -D_UNICODE
 $(OUTDIR)/qvgdi.dll: $(OUTDIR)/libwin32k.a qvideo/gdi/debug.c qvideo/gdi/enable.c qvideo/gdi/screen.c
@@ -50,7 +53,3 @@ $(OUTDIR)/lib%.a: include/mingw/%.def
 
 $(OUTDIR)/qvideo.inf: qvideo/qvideo.inf
 	cp $^ $@
-
-#TODO
-$(OUTDIR)/qvideo.cat:
-	touch $@
