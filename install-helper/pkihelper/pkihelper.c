@@ -29,7 +29,7 @@ static int opt_silent = 1;
 
 #define STR_BUFFER_SIZE             256
 
-#define KEY_CONTAINER               L"libwdi key container"
+#define KEY_CONTAINER               L"qvideo key container"
 
 /*
  * The following is the data Microsoft adds on the
@@ -320,13 +320,13 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	LPSTR szCertPolicyElementId = "1.3.6.1.5.5.7.3.3"; // szOID_PKIX_KP_CODE_SIGNING;
 	CERT_ENHKEY_USAGE certEnhKeyUsage = { 1, &szCertPolicyElementId };
 	// Alternate Name (URL)
-	CERT_ALT_NAME_ENTRY certAltNameEntry = { CERT_ALT_NAME_URL, {.pwszURL = L"http://libwdi.akeo.ie"} };
+	CERT_ALT_NAME_ENTRY certAltNameEntry = { CERT_ALT_NAME_URL, {.pwszURL = L"http://qvideo.qubes-os.org"} };
 	CERT_ALT_NAME_INFO certAltNameInfo = { 1, &certAltNameEntry };
 	// Certificate Policies
 	CERT_POLICY_QUALIFIER_INFO certPolicyQualifier;
 	CERT_POLICY_INFO certPolicyInfo = { "1.3.6.1.5.5.7.2.1", 1, &certPolicyQualifier };
 	CERT_POLICIES_INFO certPolicyInfoArray = { 1, &certPolicyInfo };
-	CHAR szCPSName[] = "http://libwdi-cps.akeo.ie";
+	CHAR szCPSName[] = "http://qvideo-cps.qubes-os.org";
 	CERT_NAME_VALUE certCPSValue;
 
 	// Set Enhanced Key Usage extension to Code Signing only
@@ -584,7 +584,7 @@ out:
 BOOL AddCertToStore(PCCERT_CONTEXT pCertContext, LPCSTR szStoreName)
 {
 	HCERTSTORE hSystemStore = NULL;
-	CRYPT_DATA_BLOB libwdiNameBlob = {14, (BYTE*)L"libwdi"};
+	CRYPT_DATA_BLOB qvideoNameBlob = {14, (BYTE*)L"qvideo"};
 	BOOL r = FALSE;
 
 	hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
@@ -594,7 +594,7 @@ BOOL AddCertToStore(PCCERT_CONTEXT pCertContext, LPCSTR szStoreName)
 		goto out;
 	}
 
-	if (!CertSetCertificateContextProperty(pCertContext, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
+	if (!CertSetCertificateContextProperty(pCertContext, CERT_FRIENDLY_NAME_PROP_ID, 0, &qvideoNameBlob)) {
 		oprintf("coud not set friendly name: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -801,7 +801,7 @@ BOOL DeletePrivateKey(PCCERT_CONTEXT pCertContext)
 	BOOL bFreeCSP = FALSE, r = FALSE;
 	HCERTSTORE hSystemStore;
 	LPCSTR szStoresToUpdate[2] = { "Root", "TrustedPublisher" };
-	CRYPT_DATA_BLOB libwdiNameBlob = {14, (BYTE*)L"libwdi"};
+	CRYPT_DATA_BLOB qvideoNameBlob = {14, (BYTE*)L"qvideo"};
 	PCCERT_CONTEXT pCertContextUpdate = NULL;
 	int i;
 
@@ -825,7 +825,7 @@ BOOL DeletePrivateKey(PCCERT_CONTEXT pCertContext)
 		if ( (CertAddEncodedCertificateToStore(hSystemStore, X509_ASN_ENCODING, pCertContext->pbCertEncoded,
 			pCertContext->cbCertEncoded, CERT_STORE_ADD_REPLACE_EXISTING, &pCertContextUpdate)) && (pCertContextUpdate != NULL) ) {
 			// The friendly name is lost in this operation - restore it
-			if (!CertSetCertificateContextProperty(pCertContextUpdate, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
+			if (!CertSetCertificateContextProperty(pCertContextUpdate, CERT_FRIENDLY_NAME_PROP_ID, 0, &qvideoNameBlob)) {
 				oprintf("coud not set friendly name: %s", winpki_error_str(0));
 			}
 			CertFreeCertificateContext(pCertContextUpdate);
