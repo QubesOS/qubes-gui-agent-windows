@@ -46,8 +46,13 @@
     <ClCompile>
       <PreprocessorDefinitions>_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <PreLinkEvent>
+      <Command>lib /def:..\..\include\mscat32.def /machine:$(Platform) /out:$(SolutionDir)\$(Configuration)\$(Platform)\mscat32.lib
+lib /def:..\..\include\mssign32.def /machine:$(Platform) /out:$(SolutionDir)\$(Configuration)\$(Platform)\mssign32.lib</Command>
+    </PreLinkEvent>
     <Link>
       <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>shlwapi.lib;crypt32.lib;wintrust.lib;mscat32.lib;mssign32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

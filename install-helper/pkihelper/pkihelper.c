@@ -1,45 +1,21 @@
+#include <windows.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
 #include <wincrypt.h>
+#include <wintrust.h>
+#include <mssign32.h>
+#include <mscat.h>
+#ifdef __MINGW32__
+#include <mscat_ext.h>
+#endif
 #include <stdint.h>
-#include <config.h>
 #include <ctype.h>
-
-/* Helper functions to access DLLs */
-static __inline HMODULE GetLibraryHandle(char* szDLLName)
-{
-        HANDLE h = GetModuleHandleA(szDLLName);
-        if (h == NULL)
-                h = LoadLibraryA(szDLLName);
-        return h;
-}
-
-struct option
-{
-  const char *name;
-  int has_arg;
-  int *flag;
-  int val;
-};
 
 static int opt_silent = 1;
 
 #define oprintf(...) do {if (!opt_silent) { printf(__VA_ARGS__); printf("\n"); }} while(0)
-
-#define PF_DECL_LIBRARY(name) HANDLE h##name = NULL
-#define PF_LOAD_LIBRARY(name) h##name = LoadLibraryA(#name)
-#define PF_DECL_LOAD_LIBRARY(name) HANDLE PF_LOAD_LIBRARY(name)
-#define PF_FREE_LIBRARY(name) FreeLibrary(h##name); h##name = NULL
-#define PF_TYPE(api, ret, proc, args) typedef ret (api *proc##_t)args
-#define PF_DECL(proc) proc##_t pf##proc = NULL
-#define PF_TYPE_DECL(api, ret, proc, args) PF_TYPE(api, ret, proc, args); PF_DECL(proc)
-#define PF_INIT(proc, name) if (h##name == NULL) h##name = GetLibraryHandle(#name); \
-        pf##proc = (proc##_t) GetProcAddress(h##name, #proc)
-#define PF_INIT_OR_OUT(proc, name) PF_INIT(proc, name); if (pf##proc == NULL) { \
-        oprintf("Unable to locate %s() in %s\n", #proc, #name); goto out; }
-
 
 #define safe_sprintf(dst, count, ...) do {_snprintf(dst, count, __VA_ARGS__); (dst)[(count)-1] = 0; } while(0)
 #define safe_strlen(str) ((((char*)str)==NULL)?0:strlen(str))
@@ -54,36 +30,6 @@ static int opt_silent = 1;
 #define STR_BUFFER_SIZE             256
 
 #define KEY_CONTAINER               L"libwdi key container"
-#ifndef CERT_STORE_PROV_SYSTEM_A
-#define CERT_STORE_PROV_SYSTEM_A    ((LPCSTR) 9)
-#endif
-#ifndef szOID_RSA_SHA1RSA
-#define szOID_RSA_SHA1RSA           "1.2.840.113549.1.1.5"
-#endif
-
-// SIGNER_SUBJECT_INFO
-#define SIGNER_SUBJECT_FILE                                     1
-#define SIGNER_SUBJECT_BLOB                                     2
-// SIGNER_CERT
-#define SIGNER_CERT_SPC_FILE                            1
-#define SIGNER_CERT_STORE                                       2
-#define SIGNER_CERT_SPC_CHAIN                           3
-// SIGNER_SPC_CHAIN_INFO
-#define SIGNER_CERT_POLICY_STORE                        1
-#define SIGNER_CERT_POLICY_CHAIN                        2
-#define SIGNER_CERT_POLICY_CHAIN_NO_ROOT        8
-// SIGNER_SIGNATURE_INFO
-#define SIGNER_NO_ATTR                                          0
-#define SIGNER_AUTHCODE_ATTR                            1
-// SIGNER_PROVIDER_INFO
-#define PVK_TYPE_FILE_NAME                                      1
-#define PVK_TYPE_KEYCONTAINER                           2
-// SignerSignEx
-#define SPC_EXC_PE_PAGE_HASHES_FLAG                     0x10
-#define SPC_INC_PE_IMPORT_ADDR_TABLE_FLAG       0x20
-#define SPC_INC_PE_DEBUG_INFO_FLAG                      0x40
-#define SPC_INC_PE_RESOURCES_FLAG                       0x80
-#define SPC_INC_PE_PAGE_HASHES_FLAG                     0x100
 
 /*
  * The following is the data Microsoft adds on the
@@ -92,454 +38,10 @@ static int opt_silent = 1;
 #define SP_OPUS_INFO_DATA       { 0x30, 0x00 }
 #define STATEMENT_TYPE_DATA     { 0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x01, 0x15}
 
-typedef struct _SIGNER_FILE_INFO {
-        DWORD cbSize;
-        LPCWSTR pwszFileName;
-        HANDLE hFile;
-} SIGNER_FILE_INFO, *PSIGNER_FILE_INFO;
-
-typedef struct _SIGNER_BLOB_INFO {
-        DWORD cbSize;
-        GUID *pGuidSubject;
-        DWORD cbBlob;
-        BYTE *pbBlob;
-        LPCWSTR pwszDisplayName;
-} SIGNER_BLOB_INFO, *PSIGNER_BLOB_INFO;
-
-typedef struct _SIGNER_SUBJECT_INFO {
-        DWORD cbSize;
-        DWORD *pdwIndex;
-        DWORD dwSubjectChoice;
-        union {
-                SIGNER_FILE_INFO *pSignerFileInfo;
-                SIGNER_BLOB_INFO *pSignerBlobInfo;
-        };
-} SIGNER_SUBJECT_INFO, *PSIGNER_SUBJECT_INFO;
-
-typedef struct _SIGNER_CERT_STORE_INFO {
-        DWORD cbSize;
-        PCCERT_CONTEXT pSigningCert;
-        DWORD dwCertPolicy;
-        HCERTSTORE hCertStore;
-} SIGNER_CERT_STORE_INFO, *PSIGNER_CERT_STORE_INFO;
-
-typedef struct _SIGNER_SPC_CHAIN_INFO {
-        DWORD cbSize;
-        LPCWSTR pwszSpcFile;
-        DWORD dwCertPolicy;
-        HCERTSTORE hCertStore;
-} SIGNER_SPC_CHAIN_INFO, *PSIGNER_SPC_CHAIN_INFO;
-
-typedef struct _SIGNER_CERT {
-        DWORD cbSize;
-        DWORD dwCertChoice;
-        union {
-                LPCWSTR pwszSpcFile;
-                SIGNER_CERT_STORE_INFO *pCertStoreInfo;
-                SIGNER_SPC_CHAIN_INFO *pSpcChainInfo;
-        };
-        HWND hwnd;
-} SIGNER_CERT, *PSIGNER_CERT;
-
-typedef struct _SIGNER_ATTR_AUTHCODE {
-        DWORD cbSize;
-        BOOL fCommercial;
-        BOOL fIndividual;
-        LPCWSTR pwszName;
-        LPCWSTR pwszInfo;
-} SIGNER_ATTR_AUTHCODE, *PSIGNER_ATTR_AUTHCODE;
-
-// MinGW32 doesn't know CRYPT_ATTRIBUTES
-typedef struct _CRYPT_ATTRIBUTES_ARRAY {
-        DWORD cAttr;
-        PCRYPT_ATTRIBUTE rgAttr;
-} CRYPT_ATTRIBUTES_ARRAY, *PCRYPT_ATTRIBUTES_ARRAY;
-
-typedef struct _SIGNER_SIGNATURE_INFO {
-        DWORD cbSize;
-        ALG_ID algidHash;
-        DWORD dwAttrChoice;
-        union {
-                SIGNER_ATTR_AUTHCODE *pAttrAuthcode;
-        };
-        PCRYPT_ATTRIBUTES_ARRAY psAuthenticated;
-        PCRYPT_ATTRIBUTES_ARRAY psUnauthenticated;
-} SIGNER_SIGNATURE_INFO, *PSIGNER_SIGNATURE_INFO;
-
-
-typedef struct _SIGNER_PROVIDER_INFO {
-        DWORD cbSize;
-        LPCWSTR pwszProviderName;
-        DWORD dwProviderType;
-        DWORD dwKeySpec;
-        DWORD dwPvkChoice;
-        union {
-                LPWSTR pwszPvkFileName;
-                LPWSTR pwszKeyContainer;
-        } ;
-} SIGNER_PROVIDER_INFO,  *PSIGNER_PROVIDER_INFO;
-
-typedef struct _SIGNER_CONTEXT {
-        DWORD cbSize;
-        DWORD cbBlob;
-        BYTE *pbBlob;
-} SIGNER_CONTEXT, *PSIGNER_CONTEXT;
-
-
-/*
- * typedefs for the function prototypes.
- */
-typedef HRESULT (WINAPI *SignerFreeSignerContext_t)(
-        SIGNER_CONTEXT *pSignerContext
-);
-
-typedef HRESULT (WINAPI *SignError_t)(void);
-
-typedef HRESULT (WINAPI *SignerSign_t)(
-        SIGNER_SUBJECT_INFO *pSubjectInfo,
-        SIGNER_CERT *pSignerCert,
-        SIGNER_SIGNATURE_INFO *pSignatureInfo,
-        SIGNER_PROVIDER_INFO *pProviderInfo,
-        LPCWSTR pwszHttpTimeStamp,
-        PCRYPT_ATTRIBUTES_ARRAY psRequest,
-        LPVOID pSipData
-);
-
-typedef HRESULT (WINAPI *SignerSignEx_t)(
-        DWORD dwFlags,
-        SIGNER_SUBJECT_INFO *pSubjectInfo,
-        SIGNER_CERT *pSignerCert,
-        SIGNER_SIGNATURE_INFO *pSignatureInfo,
-        SIGNER_PROVIDER_INFO *pProviderInfo,
-        LPCWSTR pwszHttpTimeStamp,
-        PCRYPT_ATTRIBUTES_ARRAY psRequest,
-        LPVOID pSipData,
-        SIGNER_CONTEXT **ppSignerContext
-);
-
-
-/*
- * Crypt32.dll
- */
-typedef HCERTSTORE (WINAPI *CertOpenStore_t)(
-	LPCSTR lpszStoreProvider,
-	DWORD dwMsgAndCertEncodingType,
-	ULONG_PTR hCryptProv,
-	DWORD dwFlags,
-	const void *pvPara
-);
-
-typedef PCCERT_CONTEXT (WINAPI *CertCreateCertificateContext_t)(
-	DWORD dwCertEncodingType,
-	const BYTE *pbCertEncoded,
-	DWORD cbCertEncoded
-);
-
-typedef PCCERT_CONTEXT (WINAPI *CertFindCertificateInStore_t)(
-	HCERTSTORE hCertStore,
-	DWORD dwCertEncodingType,
-	DWORD dwFindFlags,
-	DWORD dwFindType,
-	const void *pvFindPara,
-	PCCERT_CONTEXT pfPrevCertContext
-);
-
-typedef BOOL (WINAPI *CertAddCertificateContextToStore_t)(
-	HCERTSTORE hCertStore,
-	PCCERT_CONTEXT pCertContext,
-	DWORD dwAddDisposition,
-	PCCERT_CONTEXT *pStoreContext
-);
-
-typedef BOOL (WINAPI *CertSetCertificateContextProperty_t)(
-	PCCERT_CONTEXT pCertContext,
-	DWORD dwPropId,
-	DWORD dwFlags,
-	const void *pvData
-);
-
-typedef BOOL (WINAPI *CertDeleteCertificateFromStore_t)(
-	PCCERT_CONTEXT pCertContext
-);
-
-typedef BOOL (WINAPI *CertFreeCertificateContext_t)(
-	PCCERT_CONTEXT pCertContext
-);
-
-typedef BOOL (WINAPI *CertCloseStore_t)(
-	HCERTSTORE hCertStore,
-	DWORD dwFlags
-);
-
-typedef DWORD (WINAPI *CertGetNameStringA_t)(
-	PCCERT_CONTEXT pCertContext,
-	DWORD dwType,
-	DWORD dwFlags,
-	void *pvTypePara,
-	LPCSTR pszNameString,
-	DWORD cchNameString
-);
-
-typedef BOOL (WINAPI *CryptEncodeObject_t)(
-	DWORD dwCertEncodingType,
-	LPCSTR lpszStructType,
-	const void *pvStructInfo,
-	BYTE *pbEncoded,
-	DWORD *pcbEncoded
-);
-
-typedef BOOL (WINAPI *CryptDecodeObject_t)(
-	DWORD dwCertEncodingType,
-	LPCSTR lpszStructType,
-	const BYTE *pbEncoded,
-	DWORD cbEncoded,
-	DWORD dwFlags,
-	void *pvStructInfo,
-	DWORD *pcbStructInfo
-);
-
-typedef BOOL (WINAPI *CertStrToNameA_t)(
-	DWORD dwCertEncodingType,
-	LPCSTR pszX500,
-	DWORD dwStrType,
-	void *pvReserved,
-	BYTE *pbEncoded,
-	DWORD *pcbEncoded,
-	LPCTSTR *ppszError
-);
-
-typedef BOOL (WINAPI *CryptAcquireCertificatePrivateKey_t)(
-	PCCERT_CONTEXT pCert,
-	DWORD dwFlags,
-	void *pvReserved,
-	ULONG_PTR *phCryptProvOrNCryptKey,
-	DWORD *pdwKeySpec,
-	BOOL *pfCallerFreeProvOrNCryptKey
-);
-
-typedef BOOL (WINAPI *CertAddEncodedCertificateToStore_t)(
-	HCERTSTORE hCertStore,
-	DWORD dwCertEncodingType,
-	const BYTE *pbCertEncoded,
-	DWORD cbCertEncoded,
-	DWORD dwAddDisposition,
-	PCCERT_CONTEXT *ppCertContext
-);
-
-// MiNGW32 doesn't know CERT_EXTENSIONS => redef
-typedef struct _CERT_EXTENSIONS_ARRAY {
-	DWORD cExtension;
-	PCERT_EXTENSION rgExtension;
-} CERT_EXTENSIONS_ARRAY, *PCERT_EXTENSIONS_ARRAY;
-
-typedef PCCERT_CONTEXT (WINAPI *CertCreateSelfSignCertificate_t)(
-	ULONG_PTR hCryptProvOrNCryptKey,
-	PCERT_NAME_BLOB pSubjectIssuerBlob,
-	DWORD dwFlags,
-	PCRYPT_KEY_PROV_INFO pKeyProvInfo,
-	PCRYPT_ALGORITHM_IDENTIFIER pSignatureAlgorithm,
-	LPSYSTEMTIME pStartTime,
-	LPSYSTEMTIME pEndTime,
-	PCERT_EXTENSIONS_ARRAY pExtensions
-);
-
-// MinGW32 doesn't have these ones either
-#ifndef CERT_ALT_NAME_URL
-#define CERT_ALT_NAME_URL 7
-#endif
-#ifndef CERT_RDN_IA5_STRING
-#define CERT_RDN_IA5_STRING 7
-#endif
-#ifndef szOID_PKIX_POLICY_QUALIFIER_CPS
-#define szOID_PKIX_POLICY_QUALIFIER_CPS "1.3.6.1.5.5.7.2.1"
-#endif
-typedef struct _CERT_ALT_NAME_ENTRY_URL {
-	DWORD   dwAltNameChoice;
-	union {
-		LPWSTR  pwszURL;
-	};
-} CERT_ALT_NAME_ENTRY_URL, *PCERT_ALT_NAME_ENTRY_URL;
-
-typedef struct _CERT_ALT_NAME_INFO_URL {
-	DWORD                    cAltEntry;
-	PCERT_ALT_NAME_ENTRY_URL rgAltEntry;
-} CERT_ALT_NAME_INFO_URL, *PCERT_ALT_NAME_INFO_URL;
-
-typedef struct _CERT_POLICY_QUALIFIER_INFO_REDEF {
-	LPSTR            pszPolicyQualifierId;
-	CRYPT_OBJID_BLOB Qualifier;
-} CERT_POLICY_QUALIFIER_INFO_REDEF, *PCERT_POLICY_QUALIFIER_INFO_REDEF;
-
-typedef struct _CERT_POLICY_INFO_ALT {
-	LPSTR                             pszPolicyIdentifier;
-	DWORD                             cPolicyQualifier;
-	PCERT_POLICY_QUALIFIER_INFO_REDEF rgPolicyQualifier;
-} CERT_POLICY_INFO_REDEF, *PCERT_POLICY_INFO_REDEF;
-
-typedef struct _CERT_POLICIES_INFO_ARRAY {
-	DWORD                   cPolicyInfo;
-	PCERT_POLICY_INFO_REDEF rgPolicyInfo;
-} CERT_POLICIES_INFO_ARRAY, *PCERT_POLICIES_INFO_ARRAY;
-
 /*
  * WinTrust.dll
  */
-#define CRYPTCAT_OPEN_CREATENEW			0x00000001
-#define CRYPTCAT_OPEN_ALWAYS			0x00000002
-
-#define CRYPTCAT_ATTR_AUTHENTICATED		0x10000000
-#define CRYPTCAT_ATTR_UNAUTHENTICATED	0x20000000
-#define CRYPTCAT_ATTR_NAMEASCII			0x00000001
-#define CRYPTCAT_ATTR_NAMEOBJID			0x00000002
-#define CRYPTCAT_ATTR_DATAASCII			0x00010000
-#define CRYPTCAT_ATTR_DATABASE64		0x00020000
-#define CRYPTCAT_ATTR_DATAREPLACE		0x00040000
-
-#define SPC_UUID_LENGTH					16
-#define SPC_URL_LINK_CHOICE				1
-#define SPC_MONIKER_LINK_CHOICE			2
-#define SPC_FILE_LINK_CHOICE			3
 #define SHA1_HASH_LENGTH				20
-#define SPC_PE_IMAGE_DATA_OBJID			"1.3.6.1.4.1.311.2.1.15"
-#define SPC_CAB_DATA_OBJID				"1.3.6.1.4.1.311.2.1.25"
-
-typedef BYTE SPC_UUID[SPC_UUID_LENGTH];
-typedef struct _SPC_SERIALIZED_OBJECT {
-	SPC_UUID ClassId;
-	CRYPT_DATA_BLOB SerializedData;
-} SPC_SERIALIZED_OBJECT,*PSPC_SERIALIZED_OBJECT;
-
-typedef struct SPC_LINK_ {
-	DWORD dwLinkChoice;
-	union {
-		LPWSTR pwszUrl;
-		SPC_SERIALIZED_OBJECT Moniker;
-		LPWSTR pwszFile;
-	};
-} SPC_LINK,*PSPC_LINK;
-
-typedef struct _SPC_PE_IMAGE_DATA {
-	CRYPT_BIT_BLOB Flags;
-	PSPC_LINK pFile;
-} SPC_PE_IMAGE_DATA,*PSPC_PE_IMAGE_DATA;
-
-// MinGW32 doesn't know this one either
-typedef struct _CRYPT_ATTRIBUTE_TYPE_VALUE_REDEF {
-	LPSTR            pszObjId;
-	CRYPT_OBJID_BLOB Value;
-} CRYPT_ATTRIBUTE_TYPE_VALUE_REDEF;
-
-typedef struct SIP_INDIRECT_DATA_ {
-  CRYPT_ATTRIBUTE_TYPE_VALUE_REDEF Data;
-  CRYPT_ALGORITHM_IDENTIFIER       DigestAlgorithm;
-  CRYPT_HASH_BLOB                  Digest;
-} SIP_INDIRECT_DATA, *PSIP_INDIRECT_DATA;
-
-typedef struct CRYPTCATSTORE_ {
-	DWORD      cbStruct;
-	DWORD      dwPublicVersion;
-	LPWSTR     pwszP7File;
-	HCRYPTPROV hProv;
-	DWORD      dwEncodingType;
-	DWORD      fdwStoreFlags;
-	HANDLE     hReserved;
-	HANDLE     hAttrs;
-	HCRYPTMSG  hCryptMsg;
-	HANDLE     hSorted;
-} CRYPTCATSTORE;
-
-typedef struct CRYPTCATMEMBER_ {
-	DWORD              cbStruct;
-	LPWSTR             pwszReferenceTag;
-	LPWSTR             pwszFileName;
-	GUID               gSubjectType;
-	DWORD              fdwMemberFlags;
-	PSIP_INDIRECT_DATA pIndirectData;
-	DWORD              dwCertVersion;
-	DWORD              dwReserved;
-	HANDLE             hReserved;
-	CRYPT_ATTR_BLOB    sEncodedIndirectData;
-	CRYPT_ATTR_BLOB    sEncodedMemberInfo;
-} CRYPTCATMEMBER;
-
-typedef struct CRYPTCATATTRIBUTE_ {
-	DWORD  cbStruct;
-	LPWSTR pwszReferenceTag;
-	DWORD  dwAttrTypeAndAction;
-	DWORD  cbValue;
-	BYTE   *pbValue;
-	DWORD  dwReserved;
-} CRYPTCATATTRIBUTE;
-
-typedef HANDLE (WINAPI *CryptCATOpen_t)(
-	LPWSTR pwszFileName,
-	DWORD fdwOpenFlags,
-	ULONG_PTR hProv,
-	DWORD dwPublicVersion,
-	DWORD dwEncodingType
-);
-
-typedef BOOL (WINAPI *CryptCATClose_t)(
-	HANDLE hCatalog
-);
-
-typedef CRYPTCATSTORE* (WINAPI *CryptCATStoreFromHandle_t)(
-	HANDLE hCatalog
-);
-
-typedef CRYPTCATATTRIBUTE* (WINAPI *CryptCATEnumerateCatAttr_t)(
-	HANDLE hCatalog,
-	CRYPTCATATTRIBUTE *pPrevAttr
-);
-
-typedef CRYPTCATATTRIBUTE* (WINAPI *CryptCATPutCatAttrInfo_t)(
-	HANDLE hCatalog,
-	LPWSTR pwszReferenceTag,
-	DWORD dwAttrTypeAndAction,
-	DWORD cbData,
-	BYTE *pbData
-);
-
-typedef CRYPTCATMEMBER* (WINAPI *CryptCATEnumerateMember_t)(
-	HANDLE hCatalog,
-	CRYPTCATMEMBER *pPrevMember
-);
-
-typedef CRYPTCATMEMBER* (WINAPI *CryptCATPutMemberInfo_t)(
-	HANDLE hCatalog,
-	LPWSTR pwszFileName,
-	LPWSTR pwszReferenceTag,
-	GUID *pgSubjectType,
-	DWORD dwCertVersion,
-	DWORD cbSIPIndirectData,
-	BYTE *pbSIPIndirectData
-);
-
-typedef CRYPTCATATTRIBUTE* (WINAPI *CryptCATEnumerateAttr_t)(
-	HANDLE hCatalog,
-	CRYPTCATMEMBER *pCatMember,
-	CRYPTCATATTRIBUTE *pPrevAttr
-);
-
-typedef CRYPTCATATTRIBUTE* (WINAPI *CryptCATPutAttrInfo_t)(
-	HANDLE hCatalog,
-	CRYPTCATMEMBER *pCatMember,
-	LPWSTR pwszReferenceTag,
-	DWORD dwAttrTypeAndAction,
-	DWORD cbData,
-	BYTE *pbData
-);
-
-typedef BOOL (WINAPI *CryptCATPersistStore_t)(
-	HANDLE hCatalog
-);
-
-typedef BOOL (WINAPI *CryptCATAdminCalcHashFromFileHandle_t)(
-	HANDLE hFile,
-	DWORD *pcbHash,
-	BYTE *pbHash,
-	DWORD dwFlags
-);
 
 static char *windows_error_str(uint32_t retval)
 {
@@ -689,24 +191,12 @@ static __inline LPWSTR UTF8toWCHAR(LPCSTR szStr)
  */
 BOOL RemoveCertFromStore(LPCSTR szCertSubject, LPCSTR szStoreName)
 {
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CertOpenStore);
-	PF_DECL(CertFindCertificateInStore);
-	PF_DECL(CertDeleteCertificateFromStore);
-	PF_DECL(CertCloseStore);
-	PF_DECL(CertStrToNameA);
 	HCERTSTORE hSystemStore = NULL;
 	PCCERT_CONTEXT pCertContext;
 	CERT_NAME_BLOB certNameBlob = {0, NULL};
 	BOOL r = FALSE;
 
-	PF_INIT_OR_OUT(CertOpenStore, Crypt32);
-	PF_INIT_OR_OUT(CertFindCertificateInStore, Crypt32);
-	PF_INIT_OR_OUT(CertDeleteCertificateFromStore, Crypt32);
-	PF_INIT_OR_OUT(CertCloseStore, Crypt32);
-	PF_INIT_OR_OUT(CertStrToNameA, Crypt32);
-
-	hSystemStore = pfCertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
+	hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
 		0, CERT_SYSTEM_STORE_LOCAL_MACHINE, szStoreName);
 	if (hSystemStore == NULL) {
 		oprintf("failed to open system store '%s': %s", szStoreName, winpki_error_str(0));
@@ -714,17 +204,17 @@ BOOL RemoveCertFromStore(LPCSTR szCertSubject, LPCSTR szStoreName)
 	}
 
 	// Encode Cert Name
-	if ( (!pfCertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, NULL, &certNameBlob.cbData, NULL))
+	if ( (!CertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, NULL, &certNameBlob.cbData, NULL))
 	  || ((certNameBlob.pbData = (BYTE*)malloc(certNameBlob.cbData)) == NULL)
-	  || (!pfCertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, certNameBlob.pbData, &certNameBlob.cbData, NULL)) ) {
+	  || (!CertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, certNameBlob.pbData, &certNameBlob.cbData, NULL)) ) {
 		oprintf("failed to encode'%s': %s", szCertSubject, winpki_error_str(0));
 		goto out;
 	}
 
 	pCertContext = NULL;
-	while ((pCertContext = pfCertFindCertificateInStore(hSystemStore, X509_ASN_ENCODING, 0,
+	while ((pCertContext = CertFindCertificateInStore(hSystemStore, X509_ASN_ENCODING, 0,
 		CERT_FIND_SUBJECT_NAME, (const void*)&certNameBlob, NULL)) != NULL) {
-		pfCertDeleteCertificateFromStore(pCertContext);
+		CertDeleteCertificateFromStore(pCertContext);
 		oprintf("deleted existing certificate '%s' from '%s' store", szCertSubject, szStoreName);
 	}
 	r = TRUE;
@@ -732,8 +222,7 @@ BOOL RemoveCertFromStore(LPCSTR szCertSubject, LPCSTR szStoreName)
 out:
 	free(certNameBlob.pbData);
 	if (hSystemStore != NULL)
-		pfCertCloseStore(hSystemStore, 0);
-	PF_FREE_LIBRARY(Crypt32);
+		CertCloseStore(hSystemStore, 0);
 	return r;
 }
 
@@ -743,14 +232,6 @@ out:
  */
 BOOL AddCertToTrustedPublisher(BYTE* pbCertData, DWORD dwCertSize, BOOL bDisableWarning, HWND hWnd)
 {
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CertOpenStore);
-	PF_DECL(CertCreateCertificateContext);
-	PF_DECL(CertFindCertificateInStore);
-	PF_DECL(CertAddCertificateContextToStore);
-	PF_DECL(CertFreeCertificateContext);
-	PF_DECL(CertGetNameStringA);
-	PF_DECL(CertCloseStore);
 	BOOL r = FALSE;
 	int user_input;
 	HCERTSTORE hSystemStore = NULL;
@@ -758,15 +239,7 @@ BOOL AddCertToTrustedPublisher(BYTE* pbCertData, DWORD dwCertSize, BOOL bDisable
 	char org[MAX_PATH], org_unit[MAX_PATH];
 	char msg_string[1024];
 
-	PF_INIT_OR_OUT(CertOpenStore, Crypt32);
-	PF_INIT_OR_OUT(CertCreateCertificateContext, Crypt32);
-	PF_INIT_OR_OUT(CertFindCertificateInStore, Crypt32);
-	PF_INIT_OR_OUT(CertAddCertificateContextToStore, Crypt32);
-	PF_INIT_OR_OUT(CertFreeCertificateContext, Crypt32);
-	PF_INIT_OR_OUT(CertGetNameStringA, Crypt32);
-	PF_INIT_OR_OUT(CertCloseStore, Crypt32);
-
-	hSystemStore = pfCertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
+	hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
 		0, CERT_SYSTEM_STORE_LOCAL_MACHINE, "TrustedPublisher");
 
 	if (hSystemStore == NULL) {
@@ -778,22 +251,22 @@ BOOL AddCertToTrustedPublisher(BYTE* pbCertData, DWORD dwCertSize, BOOL bDisable
 	 * We have to do this manually, so that we can produce a warning to the user
 	 * before any certificate is added to the store (first time or update)
 	 */
-	pCertContext = pfCertCreateCertificateContext(X509_ASN_ENCODING, pbCertData, dwCertSize);
+	pCertContext = CertCreateCertificateContext(X509_ASN_ENCODING, pbCertData, dwCertSize);
 
 	if (pCertContext == NULL) {
 		oprintf("could not create context for certificate: %s", winpki_error_str(0));
-		pfCertCloseStore(hSystemStore, 0);
+		CertCloseStore(hSystemStore, 0);
 		goto out;
 	}
 
-	pStoreCertContext = pfCertFindCertificateInStore(hSystemStore, X509_ASN_ENCODING, 0,
+	pStoreCertContext = CertFindCertificateInStore(hSystemStore, X509_ASN_ENCODING, 0,
 		CERT_FIND_EXISTING, (const void*)pCertContext, NULL);
 	if (pStoreCertContext == NULL) {
 		user_input = IDOK;
 		if (!bDisableWarning) {
 			org[0] = 0; org_unit[0] = 0;
-			pfCertGetNameStringA(pCertContext, CERT_NAME_ATTR_TYPE, 0, szOID_ORGANIZATION_NAME, org, sizeof(org));
-			pfCertGetNameStringA(pCertContext, CERT_NAME_ATTR_TYPE, 0, szOID_ORGANIZATIONAL_UNIT_NAME, org_unit, sizeof(org_unit));
+			CertGetNameStringA(pCertContext, CERT_NAME_ATTR_TYPE, 0, szOID_ORGANIZATION_NAME, org, sizeof(org));
+			CertGetNameStringA(pCertContext, CERT_NAME_ATTR_TYPE, 0, szOID_ORGANIZATIONAL_UNIT_NAME, org_unit, sizeof(org_unit));
 			static_sprintf(msg_string, "Warning: this software is about to install the following organization\n"
 				"as a Trusted Publisher on your system:\n\n '%s%s%s%s'\n\n"
 				"This will allow this Publisher to run software with elevated privileges,\n"
@@ -806,7 +279,7 @@ BOOL AddCertToTrustedPublisher(BYTE* pbCertData, DWORD dwCertSize, BOOL bDisable
 		if (user_input != IDOK) {
 			oprintf("operation cancelled by the user");
 		} else {
-			if (!pfCertAddCertificateContextToStore(hSystemStore, pCertContext, CERT_STORE_ADD_NEWER, NULL)) {
+			if (!CertAddCertificateContextToStore(hSystemStore, pCertContext, CERT_STORE_ADD_NEWER, NULL)) {
 				oprintf("could not add certificate: %s", winpki_error_str(0));
 			} else {
 				r = TRUE;
@@ -818,12 +291,11 @@ BOOL AddCertToTrustedPublisher(BYTE* pbCertData, DWORD dwCertSize, BOOL bDisable
 
 out:
 	if (pCertContext != NULL)
-		pfCertFreeCertificateContext(pCertContext);
+		CertFreeCertificateContext(pCertContext);
 	if (pStoreCertContext != NULL)
-		pfCertFreeCertificateContext(pStoreCertContext);
+		CertFreeCertificateContext(pStoreCertContext);
 	if (hSystemStore)
-		pfCertCloseStore(hSystemStore, 0);
-	PF_FREE_LIBRARY(Crypt32);
+		CertCloseStore(hSystemStore, 0);
 	return r;
 }
 
@@ -832,12 +304,6 @@ out:
  */
 PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 {
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CryptEncodeObject);
-	PF_DECL(CertStrToNameA);
-	PF_DECL(CertCreateSelfSignCertificate);
-	PF_DECL(CertFreeCertificateContext);
-
 	DWORD dwSize;
 	HCRYPTPROV hCSP = 0;
 	HCRYPTKEY hKey = 0;
@@ -849,29 +315,24 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	LPBYTE pbEnhKeyUsage = NULL, pbAltNameInfo = NULL, pbCPSNotice = NULL, pbPolicyInfo = NULL;
 	SYSTEMTIME sExpirationDate = { 2029, 01, 01, 01, 00, 00, 00, 000 };
 	CERT_EXTENSION certExtension[3];
-	CERT_EXTENSIONS_ARRAY certExtensionsArray;
+	CERT_EXTENSIONS certExtensionsArray;
 	// Code Signing Enhanced Key Usage
 	LPSTR szCertPolicyElementId = "1.3.6.1.5.5.7.3.3"; // szOID_PKIX_KP_CODE_SIGNING;
 	CERT_ENHKEY_USAGE certEnhKeyUsage = { 1, &szCertPolicyElementId };
 	// Alternate Name (URL)
-	CERT_ALT_NAME_ENTRY_URL certAltNameEntry = { CERT_ALT_NAME_URL, {L"http://libwdi.akeo.ie"} };
-	CERT_ALT_NAME_INFO_URL certAltNameInfo = { 1, &certAltNameEntry };
+	CERT_ALT_NAME_ENTRY certAltNameEntry = { CERT_ALT_NAME_URL, {.pwszURL = L"http://libwdi.akeo.ie"} };
+	CERT_ALT_NAME_INFO certAltNameInfo = { 1, &certAltNameEntry };
 	// Certificate Policies
-	CERT_POLICY_QUALIFIER_INFO_REDEF certPolicyQualifier;
-	CERT_POLICY_INFO_REDEF certPolicyInfo = { "1.3.6.1.5.5.7.2.1", 1, &certPolicyQualifier };
-	CERT_POLICIES_INFO_ARRAY certPolicyInfoArray = { 1, &certPolicyInfo };
+	CERT_POLICY_QUALIFIER_INFO certPolicyQualifier;
+	CERT_POLICY_INFO certPolicyInfo = { "1.3.6.1.5.5.7.2.1", 1, &certPolicyQualifier };
+	CERT_POLICIES_INFO certPolicyInfoArray = { 1, &certPolicyInfo };
 	CHAR szCPSName[] = "http://libwdi-cps.akeo.ie";
 	CERT_NAME_VALUE certCPSValue;
 
-	PF_INIT_OR_OUT(CryptEncodeObject, Crypt32);
-	PF_INIT_OR_OUT(CertStrToNameA, Crypt32);
-	PF_INIT_OR_OUT(CertCreateSelfSignCertificate, Crypt32);
-	PF_INIT_OR_OUT(CertFreeCertificateContext, Crypt32);
-
 	// Set Enhanced Key Usage extension to Code Signing only
-	if ( (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_ENHANCED_KEY_USAGE, (LPVOID)&certEnhKeyUsage, NULL, &dwSize))
+	if ( (!CryptEncodeObject(X509_ASN_ENCODING, X509_ENHANCED_KEY_USAGE, (LPVOID)&certEnhKeyUsage, NULL, &dwSize))
 	  || ((pbEnhKeyUsage = (BYTE*)malloc(dwSize)) == NULL)
-	  || (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_ENHANCED_KEY_USAGE, (LPVOID)&certEnhKeyUsage, pbEnhKeyUsage, &dwSize)) ) {
+	  || (!CryptEncodeObject(X509_ASN_ENCODING, X509_ENHANCED_KEY_USAGE, (LPVOID)&certEnhKeyUsage, pbEnhKeyUsage, &dwSize)) ) {
 		oprintf("could not setup EKU for code signing: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -881,9 +342,9 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	certExtension[0].Value.pbData = pbEnhKeyUsage;
 
 	// Set URL as Alt Name parameter
-	if ( (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_ALTERNATE_NAME, (LPVOID)&certAltNameInfo, NULL, &dwSize))
+	if ( (!CryptEncodeObject(X509_ASN_ENCODING, X509_ALTERNATE_NAME, (LPVOID)&certAltNameInfo, NULL, &dwSize))
 	  || ((pbAltNameInfo = (BYTE*)malloc(dwSize)) == NULL)
-	  || (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_ALTERNATE_NAME, (LPVOID)&certAltNameInfo, pbAltNameInfo, &dwSize)) ) {
+	  || (!CryptEncodeObject(X509_ASN_ENCODING, X509_ALTERNATE_NAME, (LPVOID)&certAltNameInfo, pbAltNameInfo, &dwSize)) ) {
 		oprintf("could not setup URL: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -896,9 +357,9 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	certCPSValue.dwValueType = CERT_RDN_IA5_STRING;
 	certCPSValue.Value.cbData = sizeof(szCPSName);
 	certCPSValue.Value.pbData = (BYTE*)szCPSName;
-	if ( (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_NAME_VALUE, (LPVOID)&certCPSValue, NULL, &dwSize))
+	if ( (!CryptEncodeObject(X509_ASN_ENCODING, X509_NAME_VALUE, (LPVOID)&certCPSValue, NULL, &dwSize))
 		|| ((pbCPSNotice = (BYTE*)malloc(dwSize)) == NULL)
-		|| (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_NAME_VALUE, (LPVOID)&certCPSValue, pbCPSNotice, &dwSize)) ) {
+		|| (!CryptEncodeObject(X509_ASN_ENCODING, X509_NAME_VALUE, (LPVOID)&certCPSValue, pbCPSNotice, &dwSize)) ) {
 		oprintf("could not setup CPS: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -906,9 +367,9 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	certPolicyQualifier.pszPolicyQualifierId = szOID_PKIX_POLICY_QUALIFIER_CPS;
 	certPolicyQualifier.Qualifier.cbData = dwSize;
 	certPolicyQualifier.Qualifier.pbData = pbCPSNotice;
-	if ( (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_CERT_POLICIES, (LPVOID)&certPolicyInfoArray, NULL, &dwSize))
+	if ( (!CryptEncodeObject(X509_ASN_ENCODING, X509_CERT_POLICIES, (LPVOID)&certPolicyInfoArray, NULL, &dwSize))
 		|| ((pbPolicyInfo = (BYTE*)malloc(dwSize)) == NULL)
-		|| (!pfCryptEncodeObject(X509_ASN_ENCODING, X509_CERT_POLICIES, (LPVOID)&certPolicyInfoArray, pbPolicyInfo, &dwSize)) ) {
+		|| (!CryptEncodeObject(X509_ASN_ENCODING, X509_CERT_POLICIES, (LPVOID)&certPolicyInfoArray, pbPolicyInfo, &dwSize)) ) {
 		oprintf("could not setup Certificate Policies: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -940,9 +401,9 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	oprintf("generated new keypair");
 
 	// Set the subject
-	if ( (!pfCertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, NULL, &SubjectIssuerBlob.cbData, NULL))
+	if ( (!CertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, NULL, &SubjectIssuerBlob.cbData, NULL))
 	  || ((SubjectIssuerBlob.pbData = (BYTE*)malloc(SubjectIssuerBlob.cbData)) == NULL)
-	  || (!pfCertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, SubjectIssuerBlob.pbData, &SubjectIssuerBlob.cbData, NULL)) ) {
+	  || (!CertStrToNameA(X509_ASN_ENCODING, szCertSubject, CERT_X500_NAME_STR, NULL, SubjectIssuerBlob.pbData, &SubjectIssuerBlob.cbData, NULL)) ) {
 		oprintf("could not encode subject name for self signed cert: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -964,7 +425,7 @@ PCCERT_CONTEXT CreateSelfSignedCert(LPCSTR szCertSubject)
 	SignatureAlgorithm.pszObjId = szOID_RSA_SHA1RSA;
 
 	// Create self-signed certificate
-	pCertContext = pfCertCreateSelfSignCertificate((ULONG_PTR)NULL,
+	pCertContext = CertCreateSelfSignCertificate((ULONG_PTR)NULL,
 		&SubjectIssuerBlob, 0, &KeyProvInfo, &SignatureAlgorithm, NULL, &sExpirationDate, &certExtensionsArray);
 	if (pCertContext == NULL) {
 		oprintf("could not create self signed certificate: %s", winpki_error_str(0));
@@ -982,7 +443,6 @@ out:
 		CryptDestroyKey(hKey);
 	if (hCSP)
 		CryptReleaseContext(hCSP, 0);
-	PF_FREE_LIBRARY(Crypt32);
 	return pCertContext;
 }
 
@@ -991,27 +451,22 @@ out:
  */
 static BOOL CalcHash(BYTE* pbHash, LPCSTR szfilePath)
 {
-	PF_DECL_LOAD_LIBRARY(WinTrust);
-	PF_DECL(CryptCATAdminCalcHashFromFileHandle);
 	BOOL r = FALSE;
 	HANDLE hFile = NULL;
 	DWORD cbHash = SHA1_HASH_LENGTH;
 	LPWSTR wszFilePath = NULL;
 
-	PF_INIT_OR_OUT(CryptCATAdminCalcHashFromFileHandle, WinTrust);
-
 	// Compute the SHA1 hash
 	wszFilePath = UTF8toWCHAR(szfilePath);
 	hFile = CreateFileW(wszFilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) goto out;
-	if ( (!pfCryptCATAdminCalcHashFromFileHandle(hFile, &cbHash, pbHash, 0)) ) goto out;
+	if ( (!CryptCATAdminCalcHashFromFileHandle(hFile, &cbHash, pbHash, 0)) ) goto out;
 	r = TRUE;
 
 out:
 	free(wszFilePath);
 	if (hFile)
 		CloseHandle(hFile);
-	PF_FREE_LIBRARY(WinTrust);
 	return r;
 }
 
@@ -1024,12 +479,6 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	const GUID pe_guid = {0xC689AAB8, 0x8E78, 0x11D0, {0x8C, 0x47, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE}};
 	const BYTE fImageData = 0xA0;		// Flags used for the SPC_PE_IMAGE_DATA "<<<Obsolete>>>" link
 	LPCWSTR wszOSAttr = L"2:5.1,2:5.2,2:6.0,2:6.1";
-
-	PF_DECL_LOAD_LIBRARY(WinTrust);
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CryptCATPutMemberInfo);
-	PF_DECL(CryptCATPutAttrInfo);
-	PF_DECL(CryptEncodeObject);
 
 	BOOL bPEType = TRUE;
 	CRYPTCATMEMBER* pCatMember = NULL;
@@ -1044,10 +493,6 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	DWORD cbEncoded;
 	int i;
 	BOOL r= FALSE;
-
-	PF_INIT_OR_OUT(CryptCATPutMemberInfo, WinTrust);
-	PF_INIT_OR_OUT(CryptCATPutAttrInfo, WinTrust);
-	PF_INIT_OR_OUT(CryptEncodeObject, Crypt32);
 
 	// Create the required UTF-16 strings
 	for (i=0; i<SHA1_HASH_LENGTH; i++) {
@@ -1088,12 +533,12 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 		sSPCImageData.Flags.cUnusedBits = 0;
 		sSPCImageData.Flags.pbData = (BYTE*)&fImageData;
 		sSPCImageData.pFile = &sSPCLink;
-		if (!pfCryptEncodeObject(X509_ASN_ENCODING, SPC_PE_IMAGE_DATA_OBJID, &sSPCImageData, pbEncoded, &cbEncoded)) {
+		if (!CryptEncodeObject(X509_ASN_ENCODING, SPC_PE_IMAGE_DATA_OBJID, &sSPCImageData, pbEncoded, &cbEncoded)) {
 			oprintf("unable to encode SPC Image Data: %s", winpki_error_str(0));
 			goto out;
 		}
 	} else {
-		if (!pfCryptEncodeObject(X509_ASN_ENCODING, SPC_CAB_DATA_OBJID, &sSPCLink, pbEncoded, &cbEncoded)) {
+		if (!CryptEncodeObject(X509_ASN_ENCODING, SPC_CAB_DATA_OBJID, &sSPCLink, pbEncoded, &cbEncoded)) {
 			oprintf("unable to encode SPC Image Data: %s", winpki_error_str(0));
 			goto out;
 		}
@@ -1109,17 +554,17 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	sSIPData.Digest.pbData = pbFileHash;
 
 	// Create the new member
-	if ((pCatMember = pfCryptCATPutMemberInfo(hCat, NULL, wszHash, (GUID*)((bPEType)?&pe_guid:&inf_guid),
+	if ((pCatMember = CryptCATPutMemberInfo(hCat, NULL, wszHash, (GUID*)((bPEType)?&pe_guid:&inf_guid),
 		0x200, sizeof(sSIPData), (BYTE*)&sSIPData)) == NULL) {
 		oprintf("unable to create cat entry for file '%s': %s", szFileName, winpki_error_str(0));
 		goto out;
 	}
 
 	// Add the "File" and "OSAttr" attributes to the newly created member
-	if ( (pfCryptCATPutAttrInfo(hCat, pCatMember, L"File",
+	if ( (CryptCATPutAttrInfo(hCat, pCatMember, L"File",
 		  CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		  2*((DWORD)wcslen(wszFileName)+1), (BYTE*)wszFileName) == NULL)
-	  || (pfCryptCATPutAttrInfo(hCat, pCatMember, L"OSAttr",
+	  || (CryptCATPutAttrInfo(hCat, pCatMember, L"OSAttr",
 		  CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		  2*((DWORD)wcslen(wszOSAttr)+1), (BYTE*)wszOSAttr) == NULL) ) {
 		oprintf("unable to create attributes for file '%s': %s", szFileName, winpki_error_str(0));
@@ -1130,8 +575,6 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 out:
 	free(szExtCopy);
 	free(wszFileName);
-	PF_FREE_LIBRARY(WinTrust);
-	PF_FREE_LIBRARY(Crypt32);
 	return r;
 }
 
@@ -1140,33 +583,23 @@ out:
  */
 BOOL AddCertToStore(PCCERT_CONTEXT pCertContext, LPCSTR szStoreName)
 {
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CertOpenStore);
-	PF_DECL(CertSetCertificateContextProperty);
-	PF_DECL(CertAddCertificateContextToStore);
-	PF_DECL(CertCloseStore);
 	HCERTSTORE hSystemStore = NULL;
 	CRYPT_DATA_BLOB libwdiNameBlob = {14, (BYTE*)L"libwdi"};
 	BOOL r = FALSE;
 
-	PF_INIT_OR_OUT(CertOpenStore, Crypt32);
-	PF_INIT_OR_OUT(CertSetCertificateContextProperty, Crypt32);
-	PF_INIT_OR_OUT(CertAddCertificateContextToStore, Crypt32);
-	PF_INIT_OR_OUT(CertCloseStore, Crypt32);
-
-	hSystemStore = pfCertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
+	hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
 		0, CERT_SYSTEM_STORE_LOCAL_MACHINE, szStoreName);
 	if (hSystemStore == NULL) {
 		oprintf("failed to open system store '%s': %s", szStoreName, winpki_error_str(0));
 		goto out;
 	}
 
-	if (!pfCertSetCertificateContextProperty(pCertContext, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
+	if (!CertSetCertificateContextProperty(pCertContext, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
 		oprintf("coud not set friendly name: %s", winpki_error_str(0));
 		goto out;
 	}
 
-	if (!pfCertAddCertificateContextToStore(hSystemStore, pCertContext, CERT_STORE_ADD_REPLACE_EXISTING, NULL)) {
+	if (!CertAddCertificateContextToStore(hSystemStore, pCertContext, CERT_STORE_ADD_REPLACE_EXISTING, NULL)) {
 		oprintf("failed to add certificate to system store '%s': %s", szStoreName, winpki_error_str(0));
 		goto out;
 	}
@@ -1174,8 +607,7 @@ BOOL AddCertToStore(PCCERT_CONTEXT pCertContext, LPCSTR szStoreName)
 
 out:
 	if (hSystemStore != NULL)
-		pfCertCloseStore(hSystemStore, 0);
-	PF_FREE_LIBRARY(Crypt32);
+		CertCloseStore(hSystemStore, 0);
 	return r;
 }
 
@@ -1283,13 +715,6 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
  */
 BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFileList, DWORD cFileList)
 {
-	PF_DECL_LOAD_LIBRARY(WinTrust);
-	PF_DECL(CryptCATOpen);
-	PF_DECL(CryptCATClose);
-	PF_DECL(CryptCATPersistStore);
-	PF_DECL(CryptCATStoreFromHandle);
-	PF_DECL(CryptCATPutCatAttrInfo);
-
 	HCRYPTPROV hProv = 0;
 	HANDLE hCat = NULL;
 	BOOL r = FALSE;
@@ -1300,12 +725,6 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 	LPCWSTR wszOS = L"7_X86,7_X64,8_X86,8_X64,8_ARM,10_X86,10_X64,10_ARM";
 	LPSTR * szLocalFileList;
 
-	PF_INIT_OR_OUT(CryptCATOpen, WinTrust);
-	PF_INIT_OR_OUT(CryptCATClose, WinTrust);
-	PF_INIT_OR_OUT(CryptCATPersistStore, WinTrust);
-	PF_INIT_OR_OUT(CryptCATStoreFromHandle, WinTrust);
-	PF_INIT_OR_OUT(CryptCATPutCatAttrInfo, WinTrust);
-
 	if (!CryptAcquireContextW(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
 		oprintf("unable to acquire crypt context for cat creation");
 		goto out;
@@ -1313,19 +732,19 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 	wszCatPath = UTF8toWCHAR(szCatPath);
 	wszHWID = UTF8toWCHAR(szHWID);
 	_wcslwr(wszHWID);	// Most of the cat strings are converted to lowercase
-	hCat= pfCryptCATOpen(wszCatPath, CRYPTCAT_OPEN_CREATENEW, hProv, 0, 0);
+	hCat= CryptCATOpen(wszCatPath, CRYPTCAT_OPEN_CREATENEW, hProv, 0, 0);
 	if (hCat == INVALID_HANDLE_VALUE) {
 		oprintf("unable to create file '%s': %s", szCatPath, winpki_error_str(0));
 		goto out;
 	}
 
 	// Setup the general Cat attributes
-	if (pfCryptCATPutCatAttrInfo(hCat, L"HWID1", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
+	if (CryptCATPutCatAttrInfo(hCat, L"HWID1", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		2*((DWORD)wcslen(wszHWID)+1), (BYTE*)wszHWID) ==  NULL) {
 		oprintf("failed to set HWID1 cat attribute: %s", winpki_error_str(0));
 		goto out;
 	}
-	if (pfCryptCATPutCatAttrInfo(hCat, L"OS", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
+	if (CryptCATPutCatAttrInfo(hCat, L"OS", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		2*((DWORD)wcslen(wszOS)+1), (BYTE*)wszOS) == NULL) {
 		oprintf("failed to set OS cat attribute: %s", winpki_error_str(0));
 		goto out;
@@ -1354,7 +773,7 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 	}
 	free(szLocalFileList);
 	// The cat needs to be sorted before being saved
-	if (!pfCryptCATPersistStore(hCat)) {
+	if (!CryptCATPersistStore(hCat)) {
 		oprintf("unable to sort file: %s",  winpki_error_str(0));
 		goto out;
 	}
@@ -1367,8 +786,7 @@ out:
 	if (hProv)
 		(CryptReleaseContext(hProv, 0));
 	if (hCat)
-		pfCryptCATClose(hCat);
-	PF_FREE_LIBRARY(WinTrust);
+		CryptCATClose(hCat);
 	return r;
 }
 
@@ -1377,14 +795,6 @@ out:
  */
 BOOL DeletePrivateKey(PCCERT_CONTEXT pCertContext)
 {
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(CryptAcquireCertificatePrivateKey);
-	PF_DECL(CertOpenStore);
-	PF_DECL(CertCloseStore);
-	PF_DECL(CertAddEncodedCertificateToStore);
-	PF_DECL(CertSetCertificateContextProperty);
-	PF_DECL(CertFreeCertificateContext);
-
 	LPWSTR wszKeyContainer = KEY_CONTAINER;
 	HCRYPTPROV hCSP = 0;
 	DWORD dwKeySpec;
@@ -1395,14 +805,7 @@ BOOL DeletePrivateKey(PCCERT_CONTEXT pCertContext)
 	PCCERT_CONTEXT pCertContextUpdate = NULL;
 	int i;
 
-	PF_INIT_OR_OUT(CryptAcquireCertificatePrivateKey, Crypt32);
-	PF_INIT_OR_OUT(CertOpenStore, Crypt32);
-	PF_INIT_OR_OUT(CertCloseStore, Crypt32);
-	PF_INIT_OR_OUT(CertAddEncodedCertificateToStore, Crypt32);
-	PF_INIT_OR_OUT(CertSetCertificateContextProperty, Crypt32);
-	PF_INIT_OR_OUT(CertFreeCertificateContext, Crypt32);
-
-	if (!pfCryptAcquireCertificatePrivateKey(pCertContext, CRYPT_ACQUIRE_SILENT_FLAG, NULL, &hCSP, &dwKeySpec, &bFreeCSP)) {
+	if (!CryptAcquireCertificatePrivateKey(pCertContext, CRYPT_ACQUIRE_SILENT_FLAG, NULL, &hCSP, &dwKeySpec, &bFreeCSP)) {
 		oprintf("error getting CSP: %s", winpki_error_str(0));
 		goto out;
 	}
@@ -1415,21 +818,21 @@ BOOL DeletePrivateKey(PCCERT_CONTEXT pCertContext)
 	// end users will still see a "You have a private key that corresponds to this certificate" message.
 	for (i=0; i<ARRAYSIZE(szStoresToUpdate); i++)
 	{
-		hSystemStore = pfCertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
+		hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_A, X509_ASN_ENCODING,
 			0, CERT_SYSTEM_STORE_LOCAL_MACHINE, szStoresToUpdate[i]);
 		if (hSystemStore == NULL) continue;
 
-		if ( (pfCertAddEncodedCertificateToStore(hSystemStore, X509_ASN_ENCODING, pCertContext->pbCertEncoded,
+		if ( (CertAddEncodedCertificateToStore(hSystemStore, X509_ASN_ENCODING, pCertContext->pbCertEncoded,
 			pCertContext->cbCertEncoded, CERT_STORE_ADD_REPLACE_EXISTING, &pCertContextUpdate)) && (pCertContextUpdate != NULL) ) {
 			// The friendly name is lost in this operation - restore it
-			if (!pfCertSetCertificateContextProperty(pCertContextUpdate, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
+			if (!CertSetCertificateContextProperty(pCertContextUpdate, CERT_FRIENDLY_NAME_PROP_ID, 0, &libwdiNameBlob)) {
 				oprintf("coud not set friendly name: %s", winpki_error_str(0));
 			}
-			pfCertFreeCertificateContext(pCertContextUpdate);
+			CertFreeCertificateContext(pCertContextUpdate);
 		} else {
 			oprintf("failed to update '%s': %s", szStoresToUpdate[i], winpki_error_str(0));
 		}
-		pfCertCloseStore(hSystemStore, 0);
+		CertCloseStore(hSystemStore, 0);
 	}
 
 	r= TRUE;
@@ -1438,7 +841,6 @@ out:
 	if ((bFreeCSP) && (hCSP)) {
 		CryptReleaseContext(hCSP, 0);
 	}
-	PF_FREE_LIBRARY(Crypt32);
 	return r;
 }
 
@@ -1451,12 +853,6 @@ out:
  */
 BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
 {
-	PF_DECL_LOAD_LIBRARY(MSSign32);
-	PF_DECL_LOAD_LIBRARY(Crypt32);
-	PF_DECL(SignerSignEx);
-	PF_DECL(SignerFreeSignerContext);
-	PF_DECL(CertFreeCertificateContext);
-	PF_DECL(CertCloseStore);
 
 	BOOL r = FALSE;
 	LPWSTR wszFileName = NULL;
@@ -1469,16 +865,11 @@ BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
 	SIGNER_CERT signerCert;
 	SIGNER_SIGNATURE_INFO signerSignatureInfo;
 	PSIGNER_CONTEXT pSignerContext = NULL;
-	CRYPT_ATTRIBUTES_ARRAY cryptAttributesArray;
+	CRYPT_ATTRIBUTES cryptAttributesArray;
 	CRYPT_ATTRIBUTE cryptAttribute[2];
 	CRYPT_INTEGER_BLOB oidSpOpusInfoBlob, oidStatementTypeBlob;
 	BYTE pbOidSpOpusInfo[] = SP_OPUS_INFO_DATA;
 	BYTE pbOidStatementType[] = STATEMENT_TYPE_DATA;
-
-	PF_INIT_OR_OUT(SignerSignEx, MSSign32);
-	PF_INIT_OR_OUT(SignerFreeSignerContext, MSSign32);
-	PF_INIT_OR_OUT(CertFreeCertificateContext, Crypt32);
-	PF_INIT_OR_OUT(CertCloseStore, Crypt32);
 
 	// Delete any previous certificate with the same subject
 	RemoveCertFromStore(szCertSubject, "Root");
@@ -1547,7 +938,7 @@ BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
 	signerSignatureInfo.psUnauthenticated = NULL;
 
 	// Sign file with cert
-	hResult = pfSignerSignEx(0, &signerSubjectInfo, &signerCert, &signerSignatureInfo, NULL, NULL, NULL, NULL, &pSignerContext);
+	hResult = SignerSignEx(0, &signerSubjectInfo, &signerCert, &signerSignatureInfo, NULL, NULL, NULL, NULL, &pSignerContext);
 	if (hResult != S_OK) {
 		oprintf("SignerSignEx failed. hResult #%X, error %s", hResult, winpki_error_str(0));
 		goto out;
@@ -1567,11 +958,9 @@ out:
 	}
 	free((void*)wszFileName);
 	if (pSignerContext != NULL)
-		pfSignerFreeSignerContext(pSignerContext);
+		SignerFreeSignerContext(pSignerContext);
 	if (pCertContext != NULL)
-		pfCertFreeCertificateContext(pCertContext);
-	PF_FREE_LIBRARY(MSSign32);
-	PF_FREE_LIBRARY(Crypt32);
+		CertFreeCertificateContext(pCertContext);
 	return r;
 }
 
