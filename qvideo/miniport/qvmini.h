@@ -39,7 +39,7 @@
 #include "list.h"
 #include "memory.h"
 
-#define QFN "[QVMINI] " __FUNCTION__ ": "
+#define QFN(x) "[QVMINI] %s: " x, __FUNCTION__
 
 // device extension, per-adapter data
 typedef struct _QVMINI_DX
