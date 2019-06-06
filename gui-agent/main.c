@@ -795,22 +795,21 @@ static ULONG WINAPI WatchForEvents(void)
     exitLoop = FALSE;
 
     LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize(g_Vchan));
+    watchedEvents[0] = g_ShutdownEvent;
+    watchedEvents[1] = windowDamageEvent;
+    watchedEvents[2] = fullScreenOnEvent;
+    watchedEvents[3] = fullScreenOffEvent;
+    watchedEvents[4] = g_ResolutionChangeEvent;
+    watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
+    watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
+    eventCount = 7;
 
     while (TRUE)
     {
-        watchedEvents[0] = g_ShutdownEvent;
-        watchedEvents[1] = windowDamageEvent;
-        watchedEvents[2] = fullScreenOnEvent;
-        watchedEvents[3] = fullScreenOffEvent;
-        watchedEvents[4] = g_ResolutionChangeEvent;
 
         status = ERROR_SUCCESS;
 
         vchanIoInProgress = TRUE;
-
-        watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
-        watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
-        eventCount = 7;
 
         // Wait for events.
         signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
