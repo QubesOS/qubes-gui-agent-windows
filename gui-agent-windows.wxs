@@ -52,6 +52,9 @@
                         </Component>
                     </Directory>
                 </DirectoryRef>
+		
+<SetProperty Id="SignQvideoDriver" Value="&quot;[BinDir]pkihelper.exe&quot; -v -p &quot;[DriversDir]qvideo&quot;" Sequence="execute" Before="SignQvideoDriver"/>
+<CustomAction Id="SignQvideoDriver" Impersonate="no" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore"/>
 
 <Binary Id="CreateDeviceHelper" SourceFile="bin\$(env.DDK_ARCH)\create-device.exe"/>
 <Binary Id="DisableDevHelper" SourceFile="bin\$(env.DDK_ARCH)\disable-device.exe"/>
@@ -101,6 +104,7 @@ $component is future state, ?component is current state
 http://msdn.microsoft.com/en-us/library/aa368012(v=vs.85).aspx
 -->
 <InstallExecuteSequence>
+    <Custom Action="SignQvideoDriver" Before="MsiProcessDrivers"/>
     <Custom Action="RegisterVideoDevice" After="InstallFiles">
         ?qvideo=2 AND $qvideo=3
     </Custom>
