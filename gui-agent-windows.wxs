@@ -15,7 +15,7 @@
 
                 <DirectoryRef Id='BinDir'>
                     <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
-                        <File Id='qga.exe' Source='bin\$(env.DDK_ARCH)\qga.exe' KeyPath="yes"/>
+                        <File Id='qga.exe' Source='$(env.QUBES_BIN)\qga.exe' KeyPath="yes"/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]qga.exe"'/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="MaxFps" Type="integer" Value='0'/>
@@ -23,7 +23,7 @@
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="SeamlessMode" Type="integer" Value='0'/>
                     </Component>
                     <Component Id='QgaWatchdog' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
-                        <File Id='QgaWatchdog.exe' Source='bin\$(env.DDK_ARCH)\QgaWatchdog.exe' KeyPath="yes"/>
+                        <File Id='QgaWatchdog.exe' Source='$(env.QUBES_BIN)\QgaWatchdog.exe' KeyPath="yes"/>
                         <ServiceInstall
                         Id="ServiceInstaller"
                         Type="ownProcess"
@@ -44,10 +44,10 @@
                 <DirectoryRef Id='DriversDir'>
                     <Directory Id='QvideoDir' Name='qvideo'>
                         <Component Id='qvideo' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
-                            <File Id='qvideo.cat' Source='bin\$(env.DDK_ARCH)\qvideo.cat'/>
-                            <File Id='qvgdi.dll' Source='bin\$(env.DDK_ARCH)\qvgdi.dll'/>
-                            <File Id='qvmini.sys' Source='bin\$(env.DDK_ARCH)\qvmini.sys'/>
-                            <File Id='qvideo.inf' Source='bin\$(env.DDK_ARCH)\qvideo.inf'/>
+                            <File Id='qvideo.cat' Source='$(env.QUBES_BIN)\qvideo.cat'/>
+                            <File Id='qvgdi.dll' Source='$(env.QUBES_BIN)\qvgdi.dll'/>
+                            <File Id='qvmini.sys' Source='$(env.QUBES_BIN)\qvmini.sys'/>
+                            <File Id='qvideo.inf' Source='$(env.QUBES_BIN)\qvideo.inf'/>
                             <difx:Driver Sequence='10' Legacy='yes' PlugAndPlayPrompt='no' ForceInstall='yes'/>
                         </Component>
                     </Directory>
@@ -56,8 +56,8 @@
 <SetProperty Id="SignQvideoDriver" Value="&quot;[BinDir]pkihelper.exe&quot; -v -p &quot;[DriversDir]qvideo&quot;" Sequence="execute" Before="SignQvideoDriver"/>
 <CustomAction Id="SignQvideoDriver" Impersonate="no" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore"/>
 
-<Binary Id="CreateDeviceHelper" SourceFile="bin\$(env.DDK_ARCH)\create-device.exe"/>
-<Binary Id="DisableDevHelper" SourceFile="bin\$(env.DDK_ARCH)\disable-device.exe"/>
+<Binary Id="CreateDeviceHelper" SourceFile="$(env.QUBES_BIN)\create-device.exe"/>
+<Binary Id="DisableDevHelper" SourceFile="$(env.QUBES_BIN)\disable-device.exe"/>
 
 <CustomAction
 Id="RegisterVideoDevice"
