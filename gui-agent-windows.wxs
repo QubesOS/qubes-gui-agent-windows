@@ -1,124 +1,155 @@
 <?xml version='1.0' encoding='windows-1252'?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:difx="http://schemas.microsoft.com/wix/DifxAppExtension">
-
-<?if $(env.DDK_ARCH) = x64 ?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:difx="http://schemas.microsoft.com/wix/DifxAppExtension">
+     
+    <?if $(env.DDK_ARCH) = x64 ?>
     <?define PFILESDIR = ProgramFiles64Folder ?>
     <?define SYSDIR = System64Folder ?>
-<?else?>
+    <?else?>
     <?define PFILESDIR = ProgramFilesFolder ?>
     <?define SYSDIR = SystemFolder ?>
-<?endif ?>
-
-<Fragment>
-
-<!--Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" SuppressModularization="yes"/-->
-
-                <DirectoryRef Id='BinDir'>
-                    <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
-                        <File Id='qga.exe' Source='$(env.QUBES_BIN)\qga.exe' KeyPath="yes"/>
-                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]qga.exe"'/>
-                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="UseDirtyBits" Type="integer" Value='0'/>
-                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="MaxFps" Type="integer" Value='0'/>
-                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="DisableCursor" Type="integer" Value='1'/>
-                        <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools\qga" Name="SeamlessMode" Type="integer" Value='0'/>
-                    </Component>
-                    <Component Id='QgaWatchdog' Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
-                        <File Id='QgaWatchdog.exe' Source='$(env.QUBES_BIN)\QgaWatchdog.exe' KeyPath="yes"/>
-                        <ServiceInstall
-                        Id="ServiceInstaller"
-                        Type="ownProcess"
-                        Vital="yes"
-                        Name="QgaWatchdog"
-                        DisplayName="Qubes Gui Agent Watchdog"
-                        Description="Qubes Gui Agent Watchdog"
-                        Start="auto"
-                        Account="LocalSystem"
-                        ErrorControl="ignore"
-                        Interactive="no"
-                        >
-                            <ServiceDependency Id="QdbDaemon" />
-                        </ServiceInstall>
-                        <ServiceControl Id="QgaWatchdogService" Remove="uninstall" Name="QgaWatchdog" Wait="no" />
-                    </Component>
-                </DirectoryRef>
-                <DirectoryRef Id='DriversDir'>
-                    <Directory Id='QvideoDir' Name='qvideo'>
-                        <Component Id='qvideo' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
-                            <File Id='qvideo.cat' Source='$(env.QUBES_BIN)\qvideo.cat'/>
-                            <File Id='qvgdi.dll' Source='$(env.QUBES_BIN)\qvgdi.dll'/>
-                            <File Id='qvmini.sys' Source='$(env.QUBES_BIN)\qvmini.sys'/>
-                            <File Id='qvideo.inf' Source='$(env.QUBES_BIN)\qvideo.inf'/>
-                            <difx:Driver Sequence='10' Legacy='yes' PlugAndPlayPrompt='no' ForceInstall='yes'/>
-                        </Component>
-                    </Directory>
-                </DirectoryRef>
-		
-<SetProperty Id="SignQvideoDriver" Value="&quot;[BinDir]pkihelper.exe&quot; -v -p &quot;[DriversDir]qvideo&quot;" Sequence="execute" Before="SignQvideoDriver"/>
-<CustomAction Id="SignQvideoDriver" Impersonate="no" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore"/>
-
-<Binary Id="CreateDeviceHelper" SourceFile="$(env.QUBES_BIN)\create-device.exe"/>
-<Binary Id="DisableDevHelper" SourceFile="$(env.QUBES_BIN)\disable-device.exe"/>
-
-<CustomAction
-Id="RegisterVideoDevice"
-Return="check"
-Impersonate="no"
-Execute="deferred"
-BinaryKey="CreateDeviceHelper"
-ExeCommand='"[QvideoDir]qvideo.inf" ITL_QubesVideo'
-/>
-
-<!-- Disable all PCI Display devices. Our device is ROOT device -->
-<CustomAction
-Id="DisableSVGA"
-Return="ignore"
-Impersonate="no"
-Execute="deferred"
-BinaryKey="DisableDevHelper"
-ExeCommand='-d Display'
-/>
-
-<CustomAction
-Id="RollbackDisableSVGA"
-Return="ignore"
-Impersonate="no"
-Execute="rollback"
-BinaryKey="DisableDevHelper"
-ExeCommand='-e Display'
-/>
-
-<CustomAction
-Id="EnableSVGA"
-Return="ignore"
-Impersonate="no"
-Execute="deferred"
-BinaryKey="DisableDevHelper"
-ExeCommand='-e Display'
-/>
-
-<!--
+    <?endif ?>
+    <Fragment>
+        <!--Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" SuppressModularization="yes"/-->
+        <DirectoryRef Id='BinDir'>
+            <Component Id='GuiAgent'
+                       Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
+                       
+                <File Id='qga.exe'
+                      Source='$(env.QUBES_BIN)\qga.exe'
+                      KeyPath="yes" />
+                <RegistryValue Root="HKLM"
+                               Key="Software\Invisible Things Lab\Qubes Tools"
+                               Name="Autostart"
+                               Type="string"
+                               Value='"[BinDir]qga.exe"' />
+                <RegistryValue Root="HKLM"
+                               Key="Software\Invisible Things Lab\Qubes Tools"
+                               Name="UseDirtyBits"
+                               Type="integer"
+                               Value='0' />
+                <RegistryValue Root="HKLM"
+                               Key="Software\Invisible Things Lab\Qubes Tools\qga"
+                               Name="MaxFps"
+                               Type="integer"
+                               Value='0' />
+                <RegistryValue Root="HKLM"
+                               Key="Software\Invisible Things Lab\Qubes Tools\qga"
+                               Name="DisableCursor"
+                               Type="integer"
+                               Value='1' />
+                <RegistryValue Root="HKLM"
+                               Key="Software\Invisible Things Lab\Qubes Tools\qga"
+                               Name="SeamlessMode"
+                               Type="integer"
+                               Value='0' />
+            </Component>
+            <Component Id='QgaWatchdog'
+                       Guid='{5A490AD9-203D-4634-9ABA-4FB02416D0BC}'>
+                       
+                <File Id='QgaWatchdog.exe'
+                      Source='$(env.QUBES_BIN)\QgaWatchdog.exe'
+                      KeyPath="yes" />
+                <ServiceInstall Id="ServiceInstaller"
+                                Type="ownProcess"
+                                Vital="yes"
+                                Name="QgaWatchdog"
+                                DisplayName="Qubes Gui Agent Watchdog"
+                                Description="Qubes Gui Agent Watchdog"
+                                Start="auto"
+                                Account="LocalSystem"
+                                ErrorControl="ignore"
+                                Interactive="no">
+                    <ServiceDependency Id="QdbDaemon" />
+                </ServiceInstall>
+                <ServiceControl Id="QgaWatchdogService"
+                                Remove="uninstall"
+                                Name="QgaWatchdog"
+                                Wait="no" />
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id='DriversDir'>
+            <Directory Id='QvideoDir'
+                       Name='qvideo'>
+                <Component Id='qvideo'
+                           Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
+                           
+                    <File Id='qvideo.cat'
+                          Source='$(env.QUBES_BIN)\qvideo.cat' />
+                    <File Id='qvgdi.dll'
+                          Source='$(env.QUBES_BIN)\qvgdi.dll' />
+                    <File Id='qvmini.sys'
+                          Source='$(env.QUBES_BIN)\qvmini.sys' />
+                    <File Id='qvideo.inf'
+                          Source='$(env.QUBES_BIN)\qvideo.inf' />
+                    <difx:Driver Sequence='10'
+                                 Legacy='yes'
+                                 PlugAndPlayPrompt='no'
+                                 ForceInstall='yes' />
+                </Component>
+            </Directory>
+        </DirectoryRef>
+        <SetProperty Id="SignQvideoDriver"
+                     Value="&quot;[BinDir]pkihelper.exe&quot; -v -p &quot;[DriversDir]qvideo&quot;"
+                     Sequence="execute"
+                     Before="SignQvideoDriver" />
+        <CustomAction Id="SignQvideoDriver"
+                      Impersonate="no"
+                      BinaryKey="WixCA"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore" />
+        <Binary Id="CreateDeviceHelper"
+                SourceFile="$(env.QUBES_BIN)\create-device.exe" />
+        <Binary Id="DisableDevHelper"
+                SourceFile="$(env.QUBES_BIN)\disable-device.exe" />
+        <CustomAction Id="RegisterVideoDevice"
+                      Return="check"
+                      Impersonate="no"
+                      Execute="deferred"
+                      BinaryKey="CreateDeviceHelper"
+                      ExeCommand='"[QvideoDir]qvideo.inf" ITL_QubesVideo' />
+        <!-- Disable all PCI Display devices. Our device is ROOT device -->
+        <CustomAction Id="DisableSVGA"
+                      Return="ignore"
+                      Impersonate="no"
+                      Execute="deferred"
+                      BinaryKey="DisableDevHelper"
+                      ExeCommand='-d Display' />
+        <CustomAction Id="RollbackDisableSVGA"
+                      Return="ignore"
+                      Impersonate="no"
+                      Execute="rollback"
+                      BinaryKey="DisableDevHelper"
+                      ExeCommand='-e Display' />
+        <CustomAction Id="EnableSVGA"
+                      Return="ignore"
+                      Impersonate="no"
+                      Execute="deferred"
+                      BinaryKey="DisableDevHelper"
+                      ExeCommand='-e Display' />
+        <!--
 Custom actions are run whether a component is selected for install or not, by default.
 We need to add checks to each action in case this module is not being installed.
 $component is future state, ?component is current state
 2 is 'not installed', 3 is 'installed'
 http://msdn.microsoft.com/en-us/library/aa368012(v=vs.85).aspx
 -->
-<InstallExecuteSequence>
-    <Custom Action="SignQvideoDriver" Before="MsiProcessDrivers"/>
-    <Custom Action="RegisterVideoDevice" After="InstallFiles">
-        ?qvideo=2 AND $qvideo=3
-    </Custom>
-    <Custom Action="RollbackDisableSVGA" Before="DisableSVGA">
-        $qvideo=3
-    </Custom>
-    <Custom Action="DisableSVGA" Before="InstallFinalize">
-        ?qvideo=2 AND $qvideo=3
-    </Custom>
-    <!-- enable it back on uninstall -->
-    <Custom Action="EnableSVGA" Before="InstallFinalize">
-        REMOVE="ALL" AND ?qvideo=3 AND $qvideo=2
-    </Custom>
-</InstallExecuteSequence>
-
-</Fragment>
+        <InstallExecuteSequence>
+            <Custom Action="SignQvideoDriver"
+                    Before="MsiProcessDrivers" />
+            <Custom Action="RegisterVideoDevice"
+                    After="InstallFiles">?qvideo=2 AND
+                    $qvideo=3</Custom>
+            <Custom Action="RollbackDisableSVGA"
+                    Before="DisableSVGA">$qvideo=3</Custom>
+            <Custom Action="DisableSVGA"
+                    Before="InstallFinalize">?qvideo=2 AND
+                    $qvideo=3</Custom>
+            <!-- enable it back on uninstall -->
+            <Custom Action="EnableSVGA"
+                    Before="InstallFinalize">REMOVE="ALL" AND
+                    ?qvideo=3 AND $qvideo=2</Custom>
+        </InstallExecuteSequence>
+    </Fragment>
 </Wix>
