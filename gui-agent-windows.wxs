@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='windows-1252'?>
-<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:difx="http://schemas.microsoft.com/wix/DifxAppExtension">
 
 <?if $(env.DDK_ARCH) = x64 ?>
     <?define PFILESDIR = ProgramFiles64Folder ?>
@@ -9,43 +9,11 @@
     <?define SYSDIR = SystemFolder ?>
 <?endif ?>
 
-<Module
-Id='GuiAgent'
-Language='1033'
-Codepage='1252'
-Version='$(env.VERSION)'
->
-
-<Package
-Id='{99FAD33F-658E-4F04-966C-52061AC0BC45}'
-Description='Qubes GUI Agent for Windows'
-Manufacturer='Invisible Things Lab'
-InstallScope='perMachine'
-InstallerVersion='200'
-Languages='1033'
-SummaryCodepage='1252'
-InstallPrivileges='elevated'
-/>
-
-<Configuration
-Name='ProductFolder'
-Format='Key'
-Type='Identifier'
-DefaultValue='QubesProgramFilesDir'
-Description='Installation directory'
-DisplayName='Installation directory'
-/>
-
-<Substitution Table='Directory' Column='Directory_Parent' Row='BinDir' Value='[=ProductFolder]'/>
-<Substitution Table='Directory' Column='Directory_Parent' Row='DriversDir' Value='[=ProductFolder]'/>
+<Fragment>
 
 <!--Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" SuppressModularization="yes"/-->
 
-<Directory Id='TARGETDIR' Name='SourceDir'>
-    <Directory Id='$(var.PFILESDIR)'>
-        <Directory Id='ITLProgramFilesDir' Name='Invisible Things Lab'>
-            <Directory Id='QubesProgramFilesDir' Name='Qubes Tools'>
-                <Directory Id='BinDir' Name='bin'>
+                <DirectoryRef Id='BinDir'>
                     <Component Id='GuiAgent' Guid='{69131C28-618B-4662-9AFC-70767E50F05D}'>
                         <File Id='qga.exe' Source='bin\$(env.DDK_ARCH)\qga.exe' KeyPath="yes"/>
                         <RegistryValue Root="HKLM" Key="Software\Invisible Things Lab\Qubes Tools" Name="Autostart" Type="string" Value='"[BinDir]qga.exe"'/>
@@ -72,41 +40,18 @@ DisplayName='Installation directory'
                         </ServiceInstall>
                         <ServiceControl Id="QgaWatchdogService" Remove="uninstall" Name="QgaWatchdog" Wait="no" />
                     </Component>
-                </Directory>
-                <Directory Id='DriversDir' Name='drivers'>
+                </DirectoryRef>
+                <DirectoryRef Id='DriversDir'>
                     <Directory Id='QvideoDir' Name='qvideo'>
                         <Component Id='qvideo' Guid='{EC90C049-0025-4815-9106-6ABC438470A4}'>
                             <File Id='qvideo.cat' Source='bin\$(env.DDK_ARCH)\qvideo.cat'/>
                             <File Id='qvgdi.dll' Source='bin\$(env.DDK_ARCH)\qvgdi.dll'/>
                             <File Id='qvmini.sys' Source='bin\$(env.DDK_ARCH)\qvmini.sys'/>
                             <File Id='qvideo.inf' Source='bin\$(env.DDK_ARCH)\qvideo.inf'/>
-                            <!-- moved to custom table below -->
-                            <!-- <difx:Driver Sequence='10' Legacy='yes' PlugAndPlayPrompt='no' ForceInstall='yes'/>-->
+                            <difx:Driver Sequence='10' Legacy='yes' PlugAndPlayPrompt='no' ForceInstall='yes'/>
                         </Component>
                     </Directory>
-                </Directory>
-            </Directory>
-        </Directory>
-    </Directory>
-</Directory>
-<!-- cannot use difx:Drive element because it requires difx lib linked with
-this module, which causes conflict with vmm-xen-windows-drivers (which also
-uses DIFx extension). This basically means that only one merge module
-can use DIFx extention (see http://sourceforge.net/p/wix/feature-requests/432/).
-But this also means that final MSI will already have all necesary steps to
-install the drivers. So just append our driver to the MsiDriverPackage
-table, to be also installed. -->
-<!-- Table schema here: http://msdn.microsoft.com/en-us/library/windows/hardware/ff549362%28v=vs.85%29.aspx -->
-<CustomTable Id="MsiDriverPackages">
-    <Column Id="Component" Modularize="Column" Nullable="no" Type="string" Width="255" Description="An identifier that represents a driver package" PrimaryKey="yes"/>
-    <Column Id="Flags" Nullable="no" Type="int" Width="4" Description="DIFxApp configuration flags"/>
-    <Column Id="Sequence" Nullable="yes" Type="int" Width="4" Description="Installation sequence number"/>
-    <Row>
-        <Data Column="Component">qvideo</Data>
-        <Data Column="Flags">15</Data>
-        <Data Column="Sequence">10</Data>
-    </Row>
-</CustomTable>
+                </DirectoryRef>
 
 <Binary Id="CreateDeviceHelper" SourceFile="bin\$(env.DDK_ARCH)\create-device.exe"/>
 <Binary Id="DisableDevHelper" SourceFile="bin\$(env.DDK_ARCH)\disable-device.exe"/>
@@ -171,5 +116,5 @@ http://msdn.microsoft.com/en-us/library/aa368012(v=vs.85).aspx
     </Custom>
 </InstallExecuteSequence>
 
-</Module>
+</Fragment>
 </Wix>
