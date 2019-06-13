@@ -7,25 +7,24 @@
 #include <wintrust.h>
 #include <mssign32.h>
 #include <mscat.h>
+#include <shlwapi.h>
+#include <stringapiset.h>
 #ifdef __MINGW32__
 #include <mscat_ext.h>
 #endif
 #include <stdint.h>
 #include <ctype.h>
+#include <strsafe.h>
 
 static int opt_silent = 1;
 
+#define size_t SIZE_T
+#define ssize_t SSIZE_T
+
 #define oprintf(...) do {if (!opt_silent) { printf(__VA_ARGS__); printf("\n"); }} while(0)
 
-#define safe_sprintf(dst, count, ...) do {_snprintf(dst, count, __VA_ARGS__); (dst)[(count)-1] = 0; } while(0)
 #define safe_strlen(str) ((((char*)str)==NULL)?0:strlen(str))
-#define static_sprintf(dest, format, ...) safe_sprintf(dest, sizeof(dest), format, __VA_ARGS__)
-#define safe_min(a, b) min((size_t)(a), (size_t)(b))
-#define safe_strcp(dst, dst_max, src, count) do {memcpy(dst, src, safe_min(count, dst_max)); \
-        ((char*)dst)[safe_min(count, dst_max)-1] = 0;} while(0)
-#define safe_strcpy(dst, dst_max, src) safe_strcp(dst, dst_max, src, safe_strlen(src)+1)
-#define safe_strncat(dst, dst_max, src, count) strncat(dst, src, safe_min(count, dst_max - safe_strlen(dst) - 1))
-#define safe_strcat(dst, dst_max, src) safe_strncat(dst, dst_max, src, safe_strlen(src)+1)
+#define static_sprintf(dest, format, ...) StringCbPrintfA(dest, sizeof(dest), format, __VA_ARGS__)
 
 #define STR_BUFFER_SIZE             256
 
@@ -53,7 +52,7 @@ static char *windows_error_str(uint32_t retval)
 
         error_code = retval?retval:GetLastError();
 
-        safe_sprintf(err_string, STR_BUFFER_SIZE, "[%u] ", error_code);
+        StringCchPrintfA(err_string, STR_BUFFER_SIZE, "[%u] ", error_code);
 
         // Translate codes returned by SetupAPI. The ones we are dealing with are either
         // in 0x0000xxxx or 0xE000xxxx and can be distinguished from standard error codes.
@@ -75,13 +74,13 @@ static char *windows_error_str(uint32_t retval)
         if (size == 0) {
                 format_error = GetLastError();
                 if (format_error)
-                        safe_sprintf(err_string, STR_BUFFER_SIZE,
+                        StringCchPrintfA(err_string, STR_BUFFER_SIZE,
                                 "Windows error code %u (FormatMessage error code %u)", error_code, format_error);
                 else
-                        safe_sprintf(err_string, STR_BUFFER_SIZE, "Unknown error code %u", error_code);
+                        StringCchPrintfA(err_string, STR_BUFFER_SIZE, "Unknown error code %u", error_code);
         } else {
                 // Remove CR/LF terminators
-                for (i=safe_strlen(err_string)-1; (i>=0) && ((err_string[i]==0x0A) || (err_string[i]==0x0D)); i--) {
+                for (i=(ssize_t)safe_strlen(err_string)-1; (i>=0) && ((err_string[i]==0x0A) || (err_string[i]==0x0D)); i--) {
                         err_string[i] = 0;
                 }
         }
@@ -161,29 +160,6 @@ char* winpki_error_str(uint32_t retval)
 		static_sprintf(error_string, "Unknown PKI error 0x%08X", error_code);
 		return error_string;
 	}
-}
-
-/*
- * Convert an UTF8 string to UTF-16 (allocate returned string)
- * Return NULL on error
- */
-static __inline LPWSTR UTF8toWCHAR(LPCSTR szStr)
-{
-	int size = 0;
-	LPWSTR wszStr = NULL;
-
-	// Find out the size we need to allocate for our converted string
-	size = MultiByteToWideChar(CP_UTF8, 0, szStr, -1, NULL, 0);
-	if (size <= 1)	// An empty string would be size 1
-		return NULL;
-
-	if ((wszStr = (wchar_t*)calloc(size, sizeof(wchar_t))) == NULL)
-		return NULL;
-	if (MultiByteToWideChar(CP_UTF8, 0, szStr, -1, wszStr, size) != size) {
-		free(wszStr);
-		return NULL;
-	}
-	return wszStr;
 }
 
 /*
@@ -449,22 +425,19 @@ out:
 /*
  * Opens a file and computes the SHA1 Authenticode Hash
  */
-static BOOL CalcHash(BYTE* pbHash, LPCSTR szfilePath)
+static BOOL CalcHash(BYTE* pbHash, LPCWSTR wszFilePath)
 {
 	BOOL r = FALSE;
 	HANDLE hFile = NULL;
 	DWORD cbHash = SHA1_HASH_LENGTH;
-	LPWSTR wszFilePath = NULL;
 
 	// Compute the SHA1 hash
-	wszFilePath = UTF8toWCHAR(szfilePath);
 	hFile = CreateFileW(wszFilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) goto out;
 	if ( (!CryptCATAdminCalcHashFromFileHandle(hFile, &cbHash, pbHash, 0)) ) goto out;
 	r = TRUE;
 
 out:
-	free(wszFilePath);
 	if (hFile)
 		CloseHandle(hFile);
 	return r;
@@ -473,7 +446,7 @@ out:
 /*
  * Add a new member to a cat file, containing the hash for the relevant file
  */
-static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
+static BOOL AddFileHash(HANDLE hCat, LPWSTR wszFileName, BYTE* pbFileHash)
 {
 	const GUID inf_guid = {0xDE351A42, 0x8E59, 0x11D0, {0x8C, 0x47, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE}};
 	const GUID pe_guid = {0xC689AAB8, 0x8E78, 0x11D0, {0x8C, 0x47, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE}};
@@ -486,9 +459,7 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	SPC_LINK sSPCLink;
 	SPC_PE_IMAGE_DATA sSPCImageData;
 	WCHAR wszHash[2*SHA1_HASH_LENGTH+1];
-	LPWSTR wszFileName = NULL;
-	LPCSTR szExt;
-	LPSTR szExtCopy = NULL;
+	LPCWSTR wszExt;
 	BYTE pbEncoded[64];
 	DWORD cbEncoded;
 	int i;
@@ -496,30 +467,21 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 
 	// Create the required UTF-16 strings
 	for (i=0; i<SHA1_HASH_LENGTH; i++) {
-		_snwprintf((wchar_t*)(&wszHash[2*i]), 3, L"%02X", pbFileHash[i]);
+		StringCchPrintfW(&wszHash[2*i], 3, L"%02X", pbFileHash[i]);
 	}
-	wszFileName = UTF8toWCHAR(szFileName);
-	if (wszFileName == NULL) {
-		goto out;
-	}
-	_wcslwr(wszFileName);	// All cat filenames seem to be lowercases
+	_wcslwr_s(wszFileName, wcslen(wszFileName)+1);	// All cat filenames seem to be lowercases
 
 	// Set the PE or CAB/INF type according to the extension
-	for (szExt = &szFileName[strlen(szFileName)]; (szExt > szFileName) && (*szExt!='.'); szExt--);
-	if (szExt == szFileName) {
-		oprintf("unhandled file type: '%s' - ignoring", szFileName);
-		goto out;
-	}
-	szExt++;
-	szExtCopy = _strdup(szExt);
-	_strlwr((char*)szExtCopy);
-	if ( (strcmp(szExtCopy, "dll") == 0) || (strcmp(szExtCopy, "sys") == 0) || (strcmp(szExtCopy, "exe") == 0) ) {
-		oprintf("'%s': PE type", szFileName);
-	} else if (strcmp(szExtCopy, "inf") == 0) {
-		oprintf("'%s': INF type", szFileName);
+    wszExt = PathFindExtensionW(wszFileName);
+	if ( CompareStringOrdinal(wszExt, -1, L".dll", -1, TRUE) == CSTR_EQUAL
+        || CompareStringOrdinal(wszExt, -1, L".sys", -1, TRUE) == CSTR_EQUAL
+        || CompareStringOrdinal(wszExt, -1, L".exe", -1, TRUE) == CSTR_EQUAL) {
+		oprintf("'%S': PE type", wszFileName);
+	} else if (CompareStringOrdinal(wszExt, -1, L".inf", -1, TRUE) == CSTR_EQUAL) {
+		oprintf("'%S': INF type", wszFileName);
 		bPEType = FALSE;
 	} else {
-		oprintf("unhandled file type: '%s' - ignoring", szFileName);
+		oprintf("unhandled file type: '%S' - ignoring", wszFileName);
 		goto out;
 	}
 
@@ -556,7 +518,7 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	// Create the new member
 	if ((pCatMember = CryptCATPutMemberInfo(hCat, NULL, wszHash, (GUID*)((bPEType)?&pe_guid:&inf_guid),
 		0x200, sizeof(sSIPData), (BYTE*)&sSIPData)) == NULL) {
-		oprintf("unable to create cat entry for file '%s': %s", szFileName, winpki_error_str(0));
+		oprintf("unable to create cat entry for file '%S': %s", wszFileName, winpki_error_str(0));
 		goto out;
 	}
 
@@ -567,14 +529,12 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 	  || (CryptCATPutAttrInfo(hCat, pCatMember, L"OSAttr",
 		  CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		  2*((DWORD)wcslen(wszOSAttr)+1), (BYTE*)wszOSAttr) == NULL) ) {
-		oprintf("unable to create attributes for file '%s': %s", szFileName, winpki_error_str(0));
+		oprintf("unable to create attributes for file '%S': %s", wszFileName, winpki_error_str(0));
 		goto out;
 	}
 	r = TRUE;
 
 out:
-	free(szExtCopy);
-	free(wszFileName);
 	return r;
 }
 
@@ -614,45 +574,44 @@ out:
 /*
  * Path and directory manipulation
  */
-static void __inline HandleSeparators(LPSTR szPath)
+static void __inline HandleSeparators(LPWSTR wszPath)
 {
 	size_t i;
-	if (szPath == NULL) return;
-	for (i=0; i<strlen(szPath); i++) {
-		if (szPath[i] == '/') {
-			szPath[i] = '\\';
+	if (wszPath == NULL) return;
+	for (i=0; i<wcslen(wszPath); i++) {
+		if (wszPath[i] == L'/') {
+			wszPath[i] = L'\\';
 		}
 	}
 }
 
-static BOOL GetFullPath(LPCSTR szSrc, LPSTR szDst, DWORD dwDstSize)
+static BOOL GetFullPath(LPCWSTR wszSrc, LPWSTR wszDst, DWORD nDstSize)
 {
 	DWORD r;
-	LPSTR szSrcCopy = NULL;
+	LPWSTR wszSrcCopy = NULL;
+    size_t nSrcSize;
 
-	if ((szSrc == NULL) || (szDst == NULL) || (dwDstSize == 0)) {
+	if ((wszSrc == NULL) || (wszDst == NULL) || (nDstSize == 0)) {
 		return FALSE;
 	}
-	if ((szSrcCopy = (LPSTR)malloc(strlen(szSrc) + 1)) == NULL) return 1;
-	memcpy(szSrcCopy, szSrc, strlen(szSrc) + 1);
-	HandleSeparators(szSrcCopy);
-	r = GetFullPathNameA(szSrcCopy, (DWORD)dwDstSize, szDst, NULL);
-	free(szSrcCopy);
-	if ((r != 0) && (r <= dwDstSize)) {
+    nSrcSize = wcslen(wszSrc) + 1;
+	if ((wszSrcCopy = (LPWSTR)malloc(sizeof(*wszSrc) * nSrcSize)) == NULL) return 1;
+    StringCchCopy(wszSrcCopy, nSrcSize, wszSrc);
+	HandleSeparators(wszSrcCopy);
+	r = GetFullPathNameW(wszSrcCopy, nDstSize, wszDst, NULL);
+	free(wszSrcCopy);
+	if ((r != 0) && (r <= nDstSize)) {
 		return TRUE;
 	}
-	fprintf(stderr, "Unable to get full path for '%s'.\n", szSrc);
+	fprintf(stderr, "Unable to get full path for '%S'.\n", wszSrc);
 	return FALSE;
 }
 
 // Modified from http://www.zemris.fer.hr/predmeti/os1/misc/Unix2Win.htm
-static CHAR szInitialDir[MAX_PATH];		// We need a global variable
-static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWORD cFileList)
+static void ScanDirAndHash(HANDLE hCat, LPCWSTR wszInitialDir, LPCWSTR wszDirName, LPCWSTR* wszFileList, DWORD cFileList)
 {
-	CHAR szDir[MAX_PATH+1];
-	CHAR szSubDir[MAX_PATH+1];
-	CHAR szEntry[MAX_PATH];
-	CHAR szFilePath[MAX_PATH];
+	WCHAR wszSubDir[MAX_PATH+1];
+	WCHAR wszFilePath[MAX_PATH];
 	WCHAR wszDir[MAX_PATH+1];
 	HANDLE hList;
 	WIN32_FIND_DATAW FileData;
@@ -660,44 +619,46 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
 	BYTE pbHash[SHA1_HASH_LENGTH];
 
 	// Get the proper directory path
-	if ( (strlen(szInitialDir) + strlen(szDirName) + 4) > sizeof(szDir) ) {
+    if (FAILED(StringCbPrintfW(wszDir, sizeof(wszDir), L"%s%c%s", wszInitialDir, L'\\', wszDirName))) {
 		oprintf("path overflow");
 		return;
 	}
-	static_sprintf(szDir, "%s%c%s", szInitialDir, '\\', szDirName);
 
 	// Get the first file
-	strcat(szDir, "\\*");
-	MultiByteToWideChar(CP_UTF8, 0, szDir, -1, wszDir, MAX_PATH);
+	StringCbCat(wszDir, sizeof(wszDir), L"\\*");
 	hList = FindFirstFileW(wszDir, &FileData);
 	if (hList == INVALID_HANDLE_VALUE) return;
 
 	// Traverse through the directory structure
 	do {
 		// Check the object is a directory or not
-		WideCharToMultiByte(CP_UTF8, 0, FileData.cFileName, -1, szEntry, MAX_PATH, NULL, NULL);
 		if (FileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if ( (strcmp(szEntry, ".") != 0)
-			  && (strcmp(szEntry, "..") != 0)) {
+			if ( (CompareStringOrdinal(FileData.cFileName, -1, L".", -1, FALSE) != CSTR_EQUAL)
+			  && (CompareStringOrdinal(FileData.cFileName, -1, L"..", -1, FALSE) != CSTR_EQUAL)) {
 				// Get the full path for sub directory
-				if ( (strlen(szDirName) + strlen(szEntry) + 2) > sizeof(szSubDir) ) {
+                if (FAILED(StringCbPrintfW(wszSubDir, sizeof(wszSubDir),
+                                L"%s%c%s", wszDirName, L'\\', FileData.cFileName))) {
 					oprintf("path overflow");
 					FindClose(hList);
 					return;
-				}
-				static_sprintf(szSubDir, "%s%c%s", szDirName, '\\', szEntry);
-				ScanDirAndHash(hCat, szSubDir, szFileList, cFileList);
+                }
+				ScanDirAndHash(hCat, wszInitialDir, wszSubDir, wszFileList, cFileList);
 			}
 		} else {
 			for (i=0; i<cFileList; i++) {
-				_strlwr(szEntry);	// must be lowercase for comparison
-				if (strcmp(szEntry, szFileList[i]) == 0) {
-					static_sprintf(szFilePath, "%s%s%c%s", szInitialDir, szDirName, '\\', szEntry);
+				if (CompareStringOrdinal(FileData.cFileName, -1, wszFileList[i], -1, TRUE) == CSTR_EQUAL) {
+					if (FAILED(StringCbPrintfW(wszFilePath, sizeof(wszFilePath),
+                            L"%s%s%c%s", wszInitialDir, wszDirName, L'\\', FileData.cFileName))) {
+                        oprintf("path overflow");
+                        FindClose(hList);
+                        return;
+                    }
 					// TODO: check return value
-					if ( (CalcHash(pbHash, szFilePath)) && AddFileHash(hCat, szEntry, pbHash) ) {
-						oprintf("added hash for '%s'",  szFilePath);
+					if ( (CalcHash(pbHash, wszFilePath)) && 
+                            AddFileHash(hCat, FileData.cFileName, pbHash) ) {
+						oprintf("added hash for '%S'",  wszFilePath);
 					} else {
-						oprintf("could not add hash for '%s' - ignored", szFilePath);
+						oprintf("could not add hash for '%S' - ignored", wszFilePath);
 					}
 					break;
 				}
@@ -711,30 +672,26 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
 
 /*
  * Create a cat file for driver package signing, and add any listed matching file found in the
- * szSearchDir directory
+ * wszSearchDir directory
  */
-BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFileList, DWORD cFileList)
+BOOL CreateCat(LPWSTR wszCatPath, LPCWSTR wszHWID, LPCWSTR wszSearchDir, LPCWSTR* wszFileList, DWORD cFileList)
 {
 	HCRYPTPROV hProv = 0;
 	HANDLE hCat = NULL;
 	BOOL r = FALSE;
 	DWORD i;
-	LPWSTR wszCatPath = NULL;
-	LPWSTR wszHWID = NULL;
 	// From the inf2cat /os parameter - doesn't seem to be used by the OS though...
 	LPCWSTR wszOS = L"7_X86,7_X64,8_X86,8_X64,8_ARM,10_X86,10_X64,10_ARM";
-	LPSTR * szLocalFileList;
+	LPWSTR * wszLocalFileList;
+    WCHAR wszInitialDir[MAX_PATH];
 
 	if (!CryptAcquireContextW(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
 		oprintf("unable to acquire crypt context for cat creation");
 		goto out;
 	}
-	wszCatPath = UTF8toWCHAR(szCatPath);
-	wszHWID = UTF8toWCHAR(szHWID);
-	_wcslwr(wszHWID);	// Most of the cat strings are converted to lowercase
 	hCat= CryptCATOpen(wszCatPath, CRYPTCAT_OPEN_CREATENEW, hProv, 0, 0);
 	if (hCat == INVALID_HANDLE_VALUE) {
-		oprintf("unable to create file '%s': %s", szCatPath, winpki_error_str(0));
+		oprintf("unable to create file '%S': %s", wszCatPath, winpki_error_str(0));
 		goto out;
 	}
 
@@ -751,38 +708,36 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 	}
 
 	// Setup the hash file members
-	if (!GetFullPath(szSearchDir, szInitialDir, sizeof(szInitialDir))) {
+	if (!GetFullPath(wszSearchDir, wszInitialDir, MAX_PATH)) {
 		goto out;
 	}
 	// Make sure the list entries are all lowercase
-	szLocalFileList = (LPSTR *)malloc(cFileList*sizeof(LPSTR));
-	if (szLocalFileList == NULL) {
+	wszLocalFileList = (LPWSTR *)malloc(cFileList*sizeof(LPWSTR));
+	if (wszLocalFileList == NULL) {
 		oprintf("unable allocate local file list");
 		goto out;
 	}
 	for (i=0; i<cFileList; i++){
-		szLocalFileList[i] = _strdup(szFileList[i]);
-		if (szLocalFileList[i] == NULL)
-			oprintf("'%s' could not be duplicated and will be ignored", szFileList[i]);
+		wszLocalFileList[i] = _wcsdup(wszFileList[i]);
+		if (wszLocalFileList[i] == NULL)
+			oprintf("'%S' could not be duplicated and will be ignored", wszFileList[i]);
 		else
-			_strlwr(szLocalFileList[i]);
+			_wcslwr_s(wszLocalFileList[i], wcslen(wszLocalFileList[i])+1);
 	}
-	ScanDirAndHash(hCat, "", szLocalFileList, cFileList);
+	ScanDirAndHash(hCat, wszInitialDir, L"", wszLocalFileList, cFileList);
 	for (i=0; i<cFileList; i++){
-		free(szLocalFileList[i]);
+		free(wszLocalFileList[i]);
 	}
-	free(szLocalFileList);
+	free(wszLocalFileList);
 	// The cat needs to be sorted before being saved
 	if (!CryptCATPersistStore(hCat)) {
 		oprintf("unable to sort file: %s",  winpki_error_str(0));
 		goto out;
 	}
-	oprintf("successfully created file '%s'", szCatPath);
+	oprintf("successfully created file '%S'", wszCatPath);
 	r = TRUE;
 
 out:
-	free(wszCatPath);
-	free(wszHWID);
 	if (hProv)
 		(CryptReleaseContext(hProv, 0));
 	if (hCat)
@@ -851,11 +806,10 @@ out:
  * - signing the file provided
  * - deleting the self signed certificate private key so that it cannot be reused
  */
-BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
+BOOL SelfSignFile(LPCWSTR wszFileName, LPCSTR szCertSubject)
 {
 
 	BOOL r = FALSE;
-	LPWSTR wszFileName = NULL;
 	HRESULT hResult = S_OK;
 	PCCERT_CONTEXT pCertContext = NULL;
 	DWORD dwIndex;
@@ -888,11 +842,6 @@ BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
 
 	// Setup SIGNER_FILE_INFO struct
 	signerFileInfo.cbSize = sizeof(SIGNER_FILE_INFO);
-	wszFileName = UTF8toWCHAR(szFileName);
-	if (wszFileName == NULL) {
-		oprintf("unable to convert '%s' to UTF16");
-		goto out;
-	}
 	signerFileInfo.pwszFileName = wszFileName;
 	signerFileInfo.hFile = NULL;
 
@@ -944,7 +893,7 @@ BOOL SelfSignFile(LPCSTR szFileName, LPCSTR szCertSubject)
 		goto out;
 	}
 	r = TRUE;
-	oprintf("successfully signed file '%s'", szFileName);
+	oprintf("successfully signed file '%S'", wszFileName);
 
 	// Clean up
 out:
@@ -956,7 +905,6 @@ out:
 	if ((pCertContext != NULL) && (DeletePrivateKey(pCertContext))) {
 		oprintf("successfully deleted private key");
 	}
-	free((void*)wszFileName);
 	if (pSignerContext != NULL)
 		SignerFreeSignerContext(pSignerContext);
 	if (pCertContext != NULL)
@@ -973,19 +921,19 @@ void usage(void)
         printf("\n");
 }
 
-#define DEFAULT_DIR "C:\\Program Files\\Invisible Things Lab\\Qubes Tools\\Drivers\\qvideo"
+#define DEFAULT_DIR L"C:\\Program Files\\Invisible Things Lab\\Qubes Tools\\Drivers\\qvideo"
 
-int __cdecl main(int argc, char** argv)
+int __cdecl wmain(int argc, WCHAR* argv[])
 {
-	static char* hw_id = "ITL_QubesVideo";
+	static WCHAR* hw_id = L"itl_qubesvideo"; // keep it lowercase for cat file
 	static char* cert_subject = "CN=QUBES-AUTOGENERATED-CERT";
-	static const char* cat_list[3] = {"qvmini.sys", "qvideo.inf", "qvgdi.dll"};
-	static char* cat_filename = "qvideo.cat";
-	char* drv_path = DEFAULT_DIR;
-        char cat_path[MAX_PATH];
-	char opt;
+	static const WCHAR* cat_list[3] = {L"qvmini.sys", L"qvideo.inf", L"qvgdi.dll"};
+	static WCHAR* cat_filename = L"qvideo.cat";
+	WCHAR* drv_path = DEFAULT_DIR;
+        WCHAR cat_path[MAX_PATH];
+	WCHAR opt;
 
-    	while ((opt = getopt(argc, argv, "p:v")) != 0)
+    	while ((opt = getopt(argc, argv, TEXT("p:v"))) != 0)
     	{
         	switch (opt) {
                 case 'p': 
@@ -999,9 +947,9 @@ int __cdecl main(int argc, char** argv)
                         exit(0);
                 }
         }
-	safe_strcpy(cat_path, sizeof(cat_path), drv_path);
-        safe_strcat(cat_path, sizeof(cat_path), "\\");
-        safe_strcat(cat_path, sizeof(cat_path), cat_filename);
+	StringCbCopyW(cat_path, sizeof(cat_path), drv_path);
+        StringCbCatW(cat_path, sizeof(cat_path), L"\\");
+        StringCbCatW(cat_path, sizeof(cat_path), cat_filename);
 
         if (!CreateCat(cat_path, hw_id, drv_path, cat_list, 3))
         	oprintf("could not create cat file");

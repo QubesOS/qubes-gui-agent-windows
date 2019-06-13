@@ -34,7 +34,7 @@ $(OUTDIR)/create-device.exe $(OUTDIR)/disable-device.exe: $(OUTDIR)/%.exe:
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lsetupapi -mconsole -municode -o $@
 
 $(OUTDIR)/pkihelper.exe: install-helper/pkihelper/pkihelper.c
-	$(CC) $^ $(CFLAGS) $(LDFLAGS) -UUNICODE -U_UNICODE -lcrypt32 -lwintrust -lmscat32 -lmssign32 -mconsole -o $@
+	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lshlwapi -lcrypt32 -lwintrust -lmscat32 -lmssign32 -mconsole -municode -o $@
 
 $(OUTDIR)/qvgdi.dll: LDFLAGS = -L$(OUTDIR) -lwin32k -lntoskrnl -lhal -lwmilib -nostdlib -Wl,--subsystem,native -Wl,--no-insert-timestamp -e DrvEnableDriver -shared -D__INTRINSIC_DEFINED__InterlockedAdd64
 $(OUTDIR)/qvgdi.dll: CFLAGS = $(INCLUDES) -I$(DDK_PATH) -DUNICODE -D_UNICODE
