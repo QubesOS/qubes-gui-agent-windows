@@ -199,19 +199,19 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     {
         status = SendWindowCreate(entry);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "SendWindowCreate");
+            return win_perror2(status, "SendWindowCreate");
 
         // map (show) the window if it's visible and not minimized
         if (!entry->IsIconic)
         {
             status = SendWindowMap(entry);
             if (ERROR_SUCCESS != status)
-                return perror2(status, "SendWindowMap");
+                return win_perror2(status, "SendWindowMap");
         }
 
         status = SendWindowName(window, entry->Caption);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "SendWindowName");
+            return win_perror2(status, "SendWindowName");
     }
 
     if (windowEntry)
@@ -236,13 +236,13 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
     {
         status = SendWindowUnmap(entry->WindowHandle);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "SendWindowUnmap");
+            return win_perror2(status, "SendWindowUnmap");
 
         if (entry->WindowHandle) // never destroy screen "window"
         {
             status = SendWindowDestroy(entry->WindowHandle);
             if (ERROR_SUCCESS != status)
-                return perror2(status, "SendWindowDestroy");
+                return win_perror2(status, "SendWindowDestroy");
         }
     }
 
@@ -262,7 +262,7 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
     wi.cbSize = sizeof(wi);
     if (!GetWindowInfo(window, &wi))
     {
-        perror("GetWindowInfo");
+        win_perror("GetWindowInfo");
         LogWarning("Skipping window %x", window);
         return TRUE;
     }
@@ -273,7 +273,7 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
     status = AddWindowWithInfo(window, &wi, NULL);
     if (ERROR_SUCCESS != status)
     {
-        perror2(status, "AddWindowWithInfo");
+        win_perror2(status, "AddWindowWithInfo");
         return FALSE; // stop enumeration, fatal error occurred (should probably exit process at this point)
     }
 
@@ -306,7 +306,7 @@ static ULONG AddAllWindows(void)
 
     // Enum top-level windows and add all that are not filtered.
     if (!EnumWindows(AddWindowsProc, 0))
-        return perror("EnumWindows");
+        return win_perror("EnumWindows");
 
     return ERROR_SUCCESS;
 }
@@ -335,7 +335,7 @@ static ULONG ResetWatch(BOOL seamlessMode)
         if (ERROR_SUCCESS != status)
         {
             LeaveCriticalSection(&g_csWatchedWindows);
-            return perror2(status, "RemoveWindow");
+            return win_perror2(status, "RemoveWindow");
         }
 
         entry = nextEntry;
@@ -385,7 +385,7 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
         // show the screen window
         status = SendWindowMap(NULL);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "SendWindowMap(NULL)");
+            return win_perror2(status, "SendWindowMap(NULL)");
     }
     else // seamless mode
     {
@@ -399,14 +399,14 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
         // hide the screen window
         status = SendWindowUnmap(NULL);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "SendWindowUnmap(NULL)");
+            return win_perror2(status, "SendWindowUnmap(NULL)");
     }
 
     // ResetWatch removes all watched windows.
     // If seamless mode is on, top-level windows are added to watch list.
     status = ResetWatch(seamlessMode);
     if (ERROR_SUCCESS != status)
-        return perror2(status, "ResetWatch");
+        return win_perror2(status, "ResetWatch");
 
     g_SeamlessMode = seamlessMode;
 
@@ -445,7 +445,7 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     {
         if (!GetWindowInfo(window, &wi))
         {
-            perror("GetWindowInfo");
+            win_perror("GetWindowInfo");
             return FALSE;
         }
         windowInfo = &wi;
@@ -600,11 +600,11 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
                 modalWindow->ModalParent = wd->WindowHandle;
                 status = SendWindowUnmap(modalWindow->WindowHandle);
                 if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowUnmap");
+                    return win_perror2(status, "SendWindowUnmap");
 
                 status = SendWindowMap(modalWindow);
                 if (ERROR_SUCCESS != status)
-                    return perror2(status, "SendWindowMap");
+                    return win_perror2(status, "SendWindowMap");
             }
         }
     }
@@ -715,7 +715,7 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
 
                 if (ERROR_SUCCESS != status)
                 {
-                    perror2(status, "SendWindowDamageEvent");
+                    win_perror2(status, "SendWindowDamageEvent");
                     goto cleanup;
                 }
             }
@@ -728,7 +728,7 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
 
             if (ERROR_SUCCESS != status)
             {
-                perror2(status, "SendWindowDamageEvent");
+                win_perror2(status, "SendWindowDamageEvent");
                 goto cleanup;
             }
         }
@@ -816,7 +816,7 @@ static ULONG WINAPI WatchForEvents(void)
         signaledEvent = WaitForMultipleObjects(eventCount, watchedEvents, FALSE, INFINITE);
         if (signaledEvent >= MAXIMUM_WAIT_OBJECTS)
         {
-            status = perror("WaitForMultipleObjects");
+            status = win_perror("WaitForMultipleObjects");
             break;
         }
 
@@ -862,7 +862,7 @@ static ULONG WINAPI WatchForEvents(void)
                             updatePending = TRUE;
                             // fire a delayed damage event to ensure we won't miss anything in case no damages follow
                             if (!timeSetEvent(1000 / g_MaxFps, 0, (LPTIMECALLBACK)watchedEvents[6], 0, TIME_ONESHOT | TIME_CALLBACK_EVENT_SET))
-                                perror("timeSetEvent");
+                                win_perror("timeSetEvent");
                         }
                         continue;
                     }
@@ -881,7 +881,7 @@ static ULONG WINAPI WatchForEvents(void)
             status = SetSeamlessMode(FALSE, FALSE);
             if (ERROR_SUCCESS != status)
             {
-                perror2(status, "SetSeamlessMode(FALSE)");
+                win_perror2(status, "SetSeamlessMode(FALSE)");
                 exitLoop = TRUE;
             }
             break;
@@ -890,7 +890,7 @@ static ULONG WINAPI WatchForEvents(void)
             status = SetSeamlessMode(TRUE, FALSE);
             if (ERROR_SUCCESS != status)
             {
-                perror2(status, "SetSeamlessMode(TRUE)");
+                win_perror2(status, "SetSeamlessMode(TRUE)");
                 exitLoop = TRUE;
             }
             break;
@@ -900,7 +900,7 @@ static ULONG WINAPI WatchForEvents(void)
             status = ChangeResolution(&screenDC, windowDamageEvent);
             if (ERROR_SUCCESS != status)
             {
-                perror2(status, "ChangeResolution");
+                win_perror2(status, "ChangeResolution");
                 exitLoop = TRUE;
             }
             break;
@@ -936,7 +936,7 @@ static ULONG WINAPI WatchForEvents(void)
                 status = QvRegisterWatchedDC(screenDC, windowDamageEvent);
                 if (ERROR_SUCCESS != status)
                 {
-                    perror2(status, "QvRegisterWatchedDC");
+                    win_perror2(status, "QvRegisterWatchedDC");
                     exitLoop = TRUE;
                     break;
                 }
@@ -945,7 +945,7 @@ static ULONG WINAPI WatchForEvents(void)
                 status = SendWindowCreate(NULL);
                 if (ERROR_SUCCESS != status)
                 {
-                    perror2(status, "SendWindowCreate(NULL)");
+                    win_perror2(status, "SendWindowCreate(NULL)");
                     exitLoop = TRUE;
                     break;
                 }
@@ -953,7 +953,7 @@ static ULONG WINAPI WatchForEvents(void)
                 status = SendScreenMfns();
                 if (ERROR_SUCCESS != status)
                 {
-                    perror2(status, "SendScreenMfns");
+                    win_perror2(status, "SendScreenMfns");
                     exitLoop = TRUE;
                     break;
                 }
@@ -962,7 +962,7 @@ static ULONG WINAPI WatchForEvents(void)
                 status = SetSeamlessMode(g_SeamlessMode, TRUE);
                 if (ERROR_SUCCESS != status)
                 {
-                    perror2(status, "SetSeamlessMode");
+                    win_perror2(status, "SetSeamlessMode");
                     exitLoop = TRUE;
                     break;
                 }
@@ -1022,7 +1022,7 @@ static DWORD GetDomainName(OUT char *nameBuffer, IN DWORD nameLength)
 
     qdb = qdb_open(NULL);
     if (!qdb)
-        return perror("qdb_open");
+        return win_perror("qdb_open");
 
     domainName = qdb_read(qdb, "/name", NULL);
     if (!domainName)
@@ -1035,7 +1035,7 @@ static DWORD GetDomainName(OUT char *nameBuffer, IN DWORD nameLength)
     LogDebug("%S", domainName);
     status = StringCchCopyA(nameBuffer, nameLength, domainName);
     if (FAILED(status))
-        perror2(status, "StringCchCopyA");
+        win_perror2(status, "StringCchCopyA");
 
 cleanup:
     qdb_free(domainName);
@@ -1099,7 +1099,7 @@ static ULONG Init(void)
     status = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
     if (ERROR_SUCCESS != status)
     {
-        perror("IncreaseProcessWorkingSetSize");
+        win_perror("IncreaseProcessWorkingSetSize");
         // try to continue
     }
 
@@ -1139,13 +1139,13 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 #endif
 {
     if (ERROR_SUCCESS != Init())
-        return perror("Init");
+        return win_perror("Init");
 
     InitializeCriticalSection(&g_VchanCriticalSection);
 
     // Call the thread proc directly.
     if (ERROR_SUCCESS != WatchForEvents())
-        return perror("WatchForEvents");
+        return win_perror("WatchForEvents");
 
     DeleteCriticalSection(&g_VchanCriticalSection);
 

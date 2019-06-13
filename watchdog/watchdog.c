@@ -83,7 +83,7 @@ BOOL IsProcessRunning(IN const WCHAR *exeName, OUT DWORD *processId OPTIONAL, OU
 
     if (!WTSEnumerateProcesses(WTS_CURRENT_SERVER, 0, 1, &processInfo, &count))
     {
-        perror("WTSEnumerateProcesses");
+        win_perror("WTSEnumerateProcesses");
         goto cleanup;
     }
 
@@ -119,7 +119,7 @@ DWORD TerminateTargetProcess(IN const WCHAR *exeName)
     shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SHUTDOWN_EVENT_NAME);
     if (!shutdownEvent)
     {
-        perror("OpenEvent");
+        win_perror("OpenEvent");
         LogInfo("Shutdown event '%s' not found, making sure it's not running", QGA_SHUTDOWN_EVENT_NAME);
     }
     else
@@ -140,7 +140,7 @@ DWORD TerminateTargetProcess(IN const WCHAR *exeName)
 
         if (!targetProcess)
         {
-            return perror("OpenProcess");
+            return win_perror("OpenProcess");
         }
 
         // wait for exit
@@ -182,7 +182,7 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
     // We need to create a primary token for CreateProcessAsUser.
     if (!DuplicateTokenEx(currentToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &newToken))
     {
-        return perror("DuplicateTokenEx");
+        return win_perror("DuplicateTokenEx");
     }
     CloseHandle(currentProcess);
 
@@ -190,7 +190,7 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
     // This requires SeTcbPrivilege, but we're running as SYSTEM and have it.
     if (!SetTokenInformation(newToken, TokenSessionId, &consoleSessionId, sizeof(consoleSessionId)))
     {
-        return perror("SetTokenInformation(TokenSessionId)");
+        return win_perror("SetTokenInformation(TokenSessionId)");
     }
 
     LogInfo("Running process '%s' in session %d", exePath, consoleSessionId);
@@ -202,7 +202,7 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
     // and hardcodint this to winlogon is wrong.
     if (!CreateProcessAsUser(newToken, NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
     {
-        return perror("CreateProcessAsUser");
+        return win_perror("CreateProcessAsUser");
     }
 
     CloseHandle(pi.hProcess);
@@ -303,7 +303,7 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     status = CfgReadString(moduleName, REG_CONFIG_AUTOSTART_VALUE, cmdline1, RTL_NUMBER_OF(cmdline1), NULL);
     if (ERROR_SUCCESS != status)
     {
-        perror("RegQueryValueEx(Autostart)");
+        win_perror("RegQueryValueEx(Autostart)");
         goto cleanup;
     }
 
@@ -334,7 +334,7 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     g_StatusHandle = RegisterServiceCtrlHandlerEx(SERVICE_NAME, ControlHandlerEx, NULL);
     if (g_StatusHandle == 0)
     {
-        perror("RegisterServiceCtrlHandlerEx");
+        win_perror("RegisterServiceCtrlHandlerEx");
         goto cleanup;
     }
 
@@ -349,7 +349,7 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     workerHandle = CreateThread(NULL, 0, SessionChangeThread, cmdline1, 0, NULL);
     if (!workerHandle)
     {
-        perror("CreateThread");
+        win_perror("CreateThread");
         goto cleanup;
     }
 
@@ -357,7 +357,7 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     watchdogHandle = CreateThread(NULL, 0, WatchdogThread, cmdline2, 0, NULL);
     if (!watchdogHandle)
     {
-        perror("CreateThread");
+        win_perror("CreateThread");
         goto cleanup;
     }
 
