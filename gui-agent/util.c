@@ -38,7 +38,7 @@ static SID *BuildLocalSid(void)
     SID *sid = NULL;
     if (!AllocateAndInitializeSid(&sia, 1, SECURITY_AUTHENTICATED_USER_RID, 0, 0, 0, 0, 0, 0, 0, &sid))
     {
-        perror("AllocateAndInitializeSid");
+        win_perror("AllocateAndInitializeSid");
     }
     return sid;
 }
@@ -63,26 +63,26 @@ static ULONG CreatePublicAcl(IN DWORD accessMask, OUT SECURITY_ATTRIBUTES **sa)
     status = SetEntriesInAcl(1, &ea, NULL, &acl);
     if (status != ERROR_SUCCESS)
     {
-        perror2(status, "SetEntriesInAcl");
+        win_perror2(status, "SetEntriesInAcl");
         goto cleanup;
     }
 
     sd = (SECURITY_DESCRIPTOR *) LocalAlloc(LMEM_ZEROINIT, sizeof(SECURITY_DESCRIPTOR));
     if (!sd)
     {
-        status = perror("LocalAlloc");
+        status = win_perror("LocalAlloc");
         goto cleanup;
     }
 
     if (!InitializeSecurityDescriptor(sd, SECURITY_DESCRIPTOR_REVISION))
     {
-        status = perror("InitializeSecurityDescriptor");
+        status = win_perror("InitializeSecurityDescriptor");
         goto cleanup;
     }
 
     if (!SetSecurityDescriptorDacl(sd, TRUE, acl, FALSE))
     {
-        perror("SetSecurityDescriptorDacl");
+        win_perror("SetSecurityDescriptorDacl");
         goto cleanup;
     }
 
@@ -121,7 +121,7 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     status = CreatePublicAcl(EVENT_MODIFY_STATE | READ_CONTROL | SYNCHRONIZE, &sa);
     if (ERROR_SUCCESS != status)
     {
-        perror2(status, "CreatePublicAcl");
+        win_perror2(status, "CreatePublicAcl");
         return NULL;
     }
 
@@ -135,7 +135,7 @@ HANDLE CreateNamedEvent(IN const WCHAR *name)
     LocalFree(sa);
 
     if (!event)
-        perror2(status, "CreateEvent");
+        win_perror2(status, "CreateEvent");
 
     return event;
 }
@@ -152,7 +152,7 @@ HANDLE CreateNamedMailslot(IN const WCHAR *name)
     status = CreatePublicAcl(GENERIC_READ | GENERIC_WRITE | READ_CONTROL | SYNCHRONIZE, &sa);
     if (ERROR_SUCCESS != status)
     {
-        perror2(status, "CreatePublicAcl");
+        win_perror2(status, "CreatePublicAcl");
         return NULL;
     }
 
@@ -165,7 +165,7 @@ HANDLE CreateNamedMailslot(IN const WCHAR *name)
     LocalFree(sa);
 
     if (!slot)
-        perror2(status, "CreateMailslot");
+        win_perror2(status, "CreateMailslot");
 
     return slot;
 }
@@ -184,7 +184,7 @@ ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
     //si.wShowWindow = SW_HIDE;
     //si.dwFlags = STARTF_USESHOWWINDOW;
     if (!CreateProcess(NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-        return perror("CreateProcess");
+        return win_perror("CreateProcess");
     CloseHandle(pi.hThread);
     *processHandle = pi.hProcess;
 
@@ -196,10 +196,10 @@ ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
 ULONG IncreaseProcessWorkingSetSize(IN SIZE_T minimumSize, IN SIZE_T maximumSize)
 {
     if (!SetProcessWorkingSetSize(GetCurrentProcess(), minimumSize, maximumSize))
-        return perror("SetProcessWorkingSetSize");
+        return win_perror("SetProcessWorkingSetSize");
 
     if (!GetProcessWorkingSetSize(GetCurrentProcess(), &minimumSize, &maximumSize))
-        return perror("GetProcessWorkingSetSize");
+        return win_perror("GetProcessWorkingSetSize");
 
     LogDebug("New working set size: %d pages\n", maximumSize >> 12);
 
@@ -236,7 +236,7 @@ ULONG HideCursors(void)
 
     blankCursor = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_BLANK), IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
     if (!blankCursor)
-        return perror("LoadImage");
+        return win_perror("LoadImage");
 
     for (i = 0; i < RTL_NUMBER_OF(cursorsToHide); i++)
     {
@@ -246,14 +246,14 @@ ULONG HideCursors(void)
         // the CopyCursor function, then pass the copy to SetSystemCursor.
         blankCursorCopy = CopyCursor(blankCursor);
         if (!blankCursorCopy)
-            return perror("CopyCursor");
+            return win_perror("CopyCursor");
 
         if (!SetSystemCursor(blankCursorCopy, cursorsToHide[i]))
-            return perror("SetSystemCursor");
+            return win_perror("SetSystemCursor");
     }
 
     if (!DestroyCursor(blankCursor))
-        return perror("DestroyCursor");
+        return win_perror("DestroyCursor");
 
     return ERROR_SUCCESS;
 }
@@ -264,13 +264,13 @@ ULONG DisableEffects(void)
 
     LogDebug("start");
     if (!SystemParametersInfo(SPI_SETDROPSHADOW, 0, (void *) FALSE, SPIF_UPDATEINIFILE))
-        return perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
+        return win_perror("SystemParametersInfo(SPI_SETDROPSHADOW)");
 
     animationInfo.cbSize = sizeof(animationInfo);
     animationInfo.iMinAnimate = FALSE;
 
     if (!SystemParametersInfo(SPI_SETANIMATION, sizeof(animationInfo), &animationInfo, SPIF_UPDATEINIFILE))
-        return perror("SystemParametersInfo(SPI_SETANIMATION)");
+        return win_perror("SystemParametersInfo(SPI_SETANIMATION)");
 
     return ERROR_SUCCESS;
 }
@@ -296,14 +296,14 @@ ULONG AttachToInputDesktop(void)
 
     if (!desktop)
     {
-        status = perror("OpenInputDesktop");
+        status = win_perror("OpenInputDesktop");
         goto cleanup;
     }
 
 #ifdef DEBUG
     if (!GetUserObjectInformation(desktop, UOI_NAME, name, sizeof(name), &needed))
     {
-        perror("GetUserObjectInformation");
+        win_perror("GetUserObjectInformation");
     }
     else
     {
@@ -321,7 +321,7 @@ ULONG AttachToInputDesktop(void)
     oldDesktop = GetThreadDesktop(GetCurrentThreadId());
     if (!SetThreadDesktop(desktop))
     {
-        status = perror("SetThreadDesktop");
+        status = win_perror("SetThreadDesktop");
         goto cleanup;
     }
 
@@ -330,7 +330,7 @@ ULONG AttachToInputDesktop(void)
 cleanup:
     if (oldDesktop)
         if (!CloseDesktop(oldDesktop))
-            perror("CloseDesktop(previous)");
+            win_perror("CloseDesktop(previous)");
     return status;
 }
 

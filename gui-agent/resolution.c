@@ -70,7 +70,7 @@ static DWORD WINAPI ResolutionChangeThread(void *param)
         // We can change the resolution now.
         LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
         if (!SetEvent(g_ResolutionChangeEvent)) // handled in WatchForEvents, actual resolution change
-            return perror("SetEvent");
+            return win_perror("SetEvent");
     }
     return ERROR_SUCCESS;
 }
@@ -92,7 +92,7 @@ void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG bpp, IN LONG
     g_ResolutionChangeParams.X = x;
     g_ResolutionChangeParams.Y = y;
     if (!SetEvent(g_ResolutionChangeRequestedEvent))
-        perror("SetEvent");
+        win_perror("SetEvent");
 }
 
 // Actually set video mode through qvideo calls.
@@ -113,17 +113,17 @@ static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height, IN ULONG bpp)
     AttachToInputDesktop();
 
     if (ERROR_SUCCESS != QvFindQubesDisplayDevice(&device))
-        return perror("QvFindQubesDisplayDevice");
+        return win_perror("QvFindQubesDisplayDevice");
 
     deviceName = (WCHAR *)&device.DeviceName[0];
 
     LogDebug("DeviceName: %s", deviceName);
 
     if (ERROR_SUCCESS != QvSupportVideoMode(deviceName, width, height, bpp))
-        return perror("QvSupportVideoMode");
+        return win_perror("QvSupportVideoMode");
 
     if (ERROR_SUCCESS != ChangeVideoMode(deviceName, width, height, bpp))
-        return perror("ChangeVideoMode");
+        return win_perror("ChangeVideoMode");
 
     return ERROR_SUCCESS;
 }

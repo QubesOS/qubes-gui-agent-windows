@@ -23,7 +23,7 @@
 #include <ntstrsafe.h>
 #include "memory.h"
 
-#define QFN "[QVMINI] " __FUNCTION__ ": "
+#define QFN(x) "[QVMINI] %s: " x, __FUNCTION__
 
 /**
  * @brief Initialize PFN array for the specified buffer.
@@ -41,7 +41,7 @@ static NTSTATUS GetBufferPfnArray(
     mdl = IoAllocateMdl(Buffer->KernelVa, Buffer->AlignedSize, FALSE, FALSE, NULL);
     if (!mdl)
     {
-        VideoDebugPrint((0, QFN "IoAllocateMdl(buffer) failed\n"));
+        VideoDebugPrint((0, QFN("IoAllocateMdl(buffer) failed\n")));
         goto cleanup;
     }
 
@@ -49,7 +49,7 @@ static NTSTATUS GetBufferPfnArray(
 
     numberPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Buffer->KernelVa, MmGetMdlByteCount(mdl));
     Buffer->PfnArraySize = numberPages*sizeof(PFN_NUMBER) + sizeof(ULONG);
-    VideoDebugPrint((0, QFN "buffer %p, PfnArraySize: %lu, aligned: %lu, number pages: %lu\n",
+    VideoDebugPrint((0, QFN("buffer %p, PfnArraySize: %lu, aligned: %lu, number pages: %lu\n"),
         Buffer, Buffer->PfnArraySize, ALIGN(Buffer->PfnArraySize, PAGE_SIZE), numberPages));
 
     // align to page size because it'll be mapped to user mode
@@ -58,7 +58,7 @@ static NTSTATUS GetBufferPfnArray(
 
     if (!Buffer->PfnArray)
     {
-        VideoDebugPrint((0, QFN "pfn array allocation failed\n"));
+        VideoDebugPrint((0, QFN("pfn array allocation failed\n")));
         goto cleanup;
     }
 
@@ -72,7 +72,7 @@ static NTSTATUS GetBufferPfnArray(
     Buffer->PfnMdl = IoAllocateMdl(Buffer->PfnArray, Buffer->PfnArraySize, FALSE, FALSE, NULL);
     if (!Buffer->PfnMdl)
     {
-        VideoDebugPrint((0, QFN "IoAllocateMdl(pfns) failed\n"));
+        VideoDebugPrint((0, QFN("IoAllocateMdl(pfns) failed\n")));
         goto cleanup;
     }
 
@@ -107,7 +107,7 @@ PQVM_BUFFER QvmAllocateBuffer(
     buffer = ExAllocatePoolWithTag(NonPagedPool, sizeof(QVM_BUFFER), QVMINI_TAG);
     if (!buffer)
     {
-        VideoDebugPrint((0, QFN "allocate buffer failed\n"));
+        VideoDebugPrint((0, QFN("allocate buffer failed\n")));
         goto cleanup;
     }
 
@@ -121,18 +121,18 @@ PQVM_BUFFER QvmAllocateBuffer(
     buffer->KernelVa = ExAllocatePoolWithTag(NonPagedPool, buffer->AlignedSize, QVMINI_TAG);
     if (!buffer->KernelVa)
     {
-        VideoDebugPrint((0, QFN "allocate buffer data (%lu) failed\n", buffer->AlignedSize));
+        VideoDebugPrint((0, QFN("allocate buffer data (%lu) failed\n"), buffer->AlignedSize));
         goto cleanup;
     }
 
     status = GetBufferPfnArray(buffer);
     if (!NT_SUCCESS(status))
     {
-        VideoDebugPrint((0, QFN "GetBufferPfnArray (%p) failed: 0x%x\n", buffer, status));
+        VideoDebugPrint((0, QFN("GetBufferPfnArray (%p) failed: 0x%x\n"), buffer, status));
         goto cleanup;
     }
 
-    VideoDebugPrint((0, QFN "buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n",
+    VideoDebugPrint((0, QFN("buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n"),
         buffer, buffer->KernelVa, buffer->AlignedSize, buffer->PfnArray, buffer->PfnArraySize));
 
     status = STATUS_SUCCESS;
@@ -155,7 +155,7 @@ VOID QvmFreeBuffer(
     __inout PQVM_BUFFER Buffer
     )
 {
-    VideoDebugPrint((0, QFN "buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n",
+    VideoDebugPrint((0, QFN("buffer %p, kva %p, aligned size %lu, pfn array %p, pfn array size %lu\n"),
         Buffer, Buffer->KernelVa, Buffer->AlignedSize, Buffer->PfnArray, Buffer->PfnArraySize));
 
     if (Buffer->PfnUserVa)
@@ -182,7 +182,7 @@ ULONG QvmMapBufferPfns(
     ASSERT(!Buffer->Process);
     ASSERT(!Buffer->PfnUserVa);
 
-    VideoDebugPrint((0, QFN "mapping pfns of buffer %p, kva %p\n", Buffer, Buffer->KernelVa));
+    VideoDebugPrint((0, QFN("mapping pfns of buffer %p, kva %p\n"), Buffer, Buffer->KernelVa));
 #pragma prefast(suppress: 6320) // we want to catch all exceptions
     __try
     {
@@ -193,12 +193,12 @@ ULONG QvmMapBufferPfns(
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         status = GetExceptionCode();
-        VideoDebugPrint((0, QFN "exception 0x%x\n", status));
+        VideoDebugPrint((0, QFN("exception 0x%x\n"), status));
         goto cleanup;
     }
 
     Buffer->Process = PsGetCurrentProcess();
-    VideoDebugPrint((0, QFN "PfnUserVa %p, process %p\n", Buffer->PfnUserVa, Buffer->Process));
+    VideoDebugPrint((0, QFN("PfnUserVa %p, process %p\n"), Buffer->PfnUserVa, Buffer->Process));
     status = STATUS_SUCCESS;
 
 cleanup:
@@ -219,7 +219,7 @@ ULONG QvmUnmapBufferPfns(
     ASSERT(Buffer->PfnUserVa && Buffer->Process);
     ASSERT(Buffer->Process == PsGetCurrentProcess());
 
-    VideoDebugPrint((0, QFN "unmapping pfns of buffer %p, kva %p\n", Buffer, Buffer->KernelVa));
+    VideoDebugPrint((0, QFN("unmapping pfns of buffer %p, kva %p\n"), Buffer, Buffer->KernelVa));
 #pragma prefast(suppress: 6320) // we want to catch all exceptions
     __try
     {
@@ -228,7 +228,7 @@ ULONG QvmUnmapBufferPfns(
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         status = GetExceptionCode();
-        VideoDebugPrint((0, QFN "exception 0x%x\n", status));
+        VideoDebugPrint((0, QFN("exception 0x%x\n"), status));
         goto cleanup;
     }
 

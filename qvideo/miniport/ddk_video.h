@@ -20,6 +20,14 @@
  */
 
 #include <ntddk.h>
+#ifdef __MINGW32__
+#include <driverspecs.h>
+
+/* FIXME: gcc doesn't support exceptions */
+#define __try if (1)
+#define __except(x) if (0)
+
+#endif
 
 //
 // Debugging statements. This will remove all the debug information from the

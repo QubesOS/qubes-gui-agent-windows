@@ -3,7 +3,7 @@
 
 // version.h is generated during build by set_version.ps1
 // it defines version macros
-#include "..\version.h"
+#include "../version.h"
 
 // QTW_FILETYPE must be defined (VFT_*)
 

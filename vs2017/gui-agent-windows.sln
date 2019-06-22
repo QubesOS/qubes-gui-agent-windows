@@ -25,6 +25,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "create-device", "create-dev
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "disable-device", "disable-device\disable-device.vcxproj", "{B3A4588F-0A32-4DB7-BB26-E28FF81FD5C5}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pkihelper", "pkihelper\pkihelper.vcxproj", "{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test-window", "test-window\test-window.vcxproj", "{D17ACE2E-2C83-4C96-A094-08C20A1B0488}"
 EndProject
 #Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pattern-generator", "pattern-generator\pattern-generator.csproj", "{0B85DB56-7E6C-4E57-8990-683FFBBE6B0E}"
@@ -85,6 +87,14 @@ Global
 		{DC944026-262A-4045-B677-6C8A1504C20C}.Release|Win32.Build.0 = Release|Win32
 		{DC944026-262A-4045-B677-6C8A1504C20C}.Release|x64.ActiveCfg = Release|x64
 		{DC944026-262A-4045-B677-6C8A1504C20C}.Release|x64.Build.0 = Release|x64
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Debug|Win32.ActiveCfg = Debug|Win32
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Debug|Win32.Build.0 = Debug|Win32
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Debug|x64.ActiveCfg = Debug|x64
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Debug|x64.Build.0 = Debug|x64
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Release|Win32.ActiveCfg = Release|Win32
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Release|Win32.Build.0 = Release|Win32
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Release|x64.ActiveCfg = Release|x64
+		{36D09F9F-CEA5-42B2-B3BB-DE2562DC4190}.Release|x64.Build.0 = Release|x64
 		{B3A4588F-0A32-4DB7-BB26-E28FF81FD5C5}.Debug|Win32.ActiveCfg = Debug|Win32
 		{B3A4588F-0A32-4DB7-BB26-E28FF81FD5C5}.Debug|Win32.Build.0 = Debug|Win32
 		{B3A4588F-0A32-4DB7-BB26-E28FF81FD5C5}.Debug|x64.ActiveCfg = Debug|x64

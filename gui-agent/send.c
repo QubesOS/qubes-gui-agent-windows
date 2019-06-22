@@ -56,7 +56,7 @@ static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
     // this will map driver-managed pfn list into the process, user address is in the response struct
     status = QvGetWindowData(NULL, &surfaceData);
     if (ERROR_SUCCESS != status)
-        return perror2(status, "QvGetWindowData");
+        return win_perror2(status, "QvGetWindowData");
 
     width = surfaceData.Width;
     height = surfaceData.Height;
@@ -90,7 +90,7 @@ static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
     // unmap the pfn array
     status = QvReleaseWindowData(NULL);
     if (ERROR_SUCCESS != status)
-        perror2(status, "QvReleaseWindowData");
+        win_perror2(status, "QvReleaseWindowData");
 
     return status;
 }
@@ -106,7 +106,7 @@ ULONG SendScreenMfns(void)
 
     status = PrepareShmCmd(&shmCmd);
     if (ERROR_SUCCESS != status)
-        return perror2(status, "PrepareShmCmd");
+        return win_perror2(status, "PrepareShmCmd");
 
     if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
     {
@@ -125,13 +125,13 @@ ULONG SendScreenMfns(void)
     if (!VCHAN_SEND(header, L"MSG_MFNDUMP"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
-        return perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
+        return win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
     }
 
     status = VchanSendBuffer(g_Vchan, shmCmd, sizeof(struct shm_cmd) + size, L"shm_cmd");
     LeaveCriticalSection(&g_VchanCriticalSection);
     if (!status)
-        return perror2(status, "VchanSendBuffer");
+        return win_perror2(status, "VchanSendBuffer");
 
     free(shmCmd);
 
@@ -161,7 +161,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 
         status = QvGetWindowData(NULL, &surfaceData);
         if (ERROR_SUCCESS != status)
-            return perror2(status, "QvGetWindowData");
+            return win_perror2(status, "QvGetWindowData");
 
         wi.rcWindow.right = surfaceData.Width;
         wi.rcWindow.bottom = surfaceData.Height;
@@ -527,7 +527,7 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
         {
             if (0 == GetWindowTextA(window, nameMsg.data, RTL_NUMBER_OF(nameMsg.data)))
             {
-                perror("GetWindowTextA");
+                win_perror("GetWindowTextA");
                 return ERROR_SUCCESS; // whatever
             }
         }

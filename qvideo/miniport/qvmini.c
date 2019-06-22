@@ -23,7 +23,7 @@
 
 #if DBG
 VOID QubesVideoNotImplemented(
-    __in char *s
+    __in const char *s
     )
 {
     VideoDebugPrint((0, "[QVMINI] Not implemented: %s\n", s));
@@ -123,7 +123,7 @@ BOOLEAN HwVidInitialize(
 {
     PQVMINI_DX dx = (PQVMINI_DX)DeviceExtension;
 
-    VideoDebugPrint((0, QFN "start\n"));
+    VideoDebugPrint((0, QFN("start\n")));
     // FIXME: when to perform cleanup? video miniport drivers don't have any "unload" callbacks... set power state most likely.
     VideoPortCreateSpinLock(DeviceExtension, &dx->BufferListLock);
     InitializeListHead(&dx->BufferList);
@@ -144,7 +144,7 @@ BOOLEAN HwVidStartIO(
     Vrp->StatusBlock->Status = 0;
     Vrp->StatusBlock->Information = 0;
 
-    VideoDebugPrint((0, QFN "code 0x%x\n", Vrp->IoControlCode));
+    VideoDebugPrint((0, QFN("code 0x%x\n"), Vrp->IoControlCode));
 
     switch (Vrp->IoControlCode)
     {
@@ -174,7 +174,7 @@ BOOLEAN HwVidStartIO(
 
         if (!buffer)
         {
-            VideoDebugPrint((0, QFN "QvmAllocateBuffer(%lu) failed\n", input->Size));
+            VideoDebugPrint((0, QFN("QvmAllocateBuffer(%lu) failed\n"), input->Size));
 
             Vrp->StatusBlock->Status = ERROR_NOT_ENOUGH_MEMORY;
             Vrp->StatusBlock->Information = 0;
@@ -187,7 +187,7 @@ BOOLEAN HwVidStartIO(
             VideoPortAcquireSpinLock(dx, dx->BufferListLock, &oldIrql);
             InsertTailList(&dx->BufferList, &buffer->ListEntry);
             VideoPortReleaseSpinLock(dx, dx->BufferListLock, oldIrql);
-            VideoDebugPrint((0, QFN "Added buffer %p, kva %p\n", buffer, buffer->KernelVa));
+            VideoDebugPrint((0, QFN("Added buffer %p, kva %p\n"), buffer, buffer->KernelVa));
 
             Vrp->StatusBlock->Status = NO_ERROR;
             Vrp->StatusBlock->Information = sizeof(QVMINI_ALLOCATE_MEMORY_RESPONSE);
@@ -227,7 +227,7 @@ BOOLEAN HwVidStartIO(
 
         if (buffer && buffer->KernelVa == input->KernelVa)
         {
-            VideoDebugPrint((0, QFN "freeing buffer %p, kva %p\n", buffer, buffer->KernelVa));
+            VideoDebugPrint((0, QFN("freeing buffer %p, kva %p\n"), buffer, buffer->KernelVa));
             VideoPortAcquireSpinLock(dx, dx->BufferListLock, &oldIrql);
             RemoveEntryList(&buffer->ListEntry);
             VideoPortReleaseSpinLock(dx, dx->BufferListLock, oldIrql);
@@ -236,7 +236,7 @@ BOOLEAN HwVidStartIO(
         }
         else
         {
-            VideoDebugPrint((0, QFN "buffer for kva %p not found\n", input->KernelVa));
+            VideoDebugPrint((0, QFN("buffer for kva %p not found\n"), input->KernelVa));
             Vrp->StatusBlock->Status = ERROR_INVALID_PARAMETER;
         }
 
@@ -278,14 +278,14 @@ BOOLEAN HwVidStartIO(
 
         if (buffer && buffer->KernelVa == input->KernelVa)
         {
-            VideoDebugPrint((0, QFN "mapping pfns %p of buffer %p, kva %p\n", buffer->PfnArray, buffer, buffer->KernelVa));
+            VideoDebugPrint((0, QFN("mapping pfns %p of buffer %p, kva %p\n"), buffer->PfnArray, buffer, buffer->KernelVa));
             Vrp->StatusBlock->Status = QvmMapBufferPfns(buffer);
             output->UserVa = buffer->PfnUserVa;
             Vrp->StatusBlock->Information = sizeof(QVMINI_MAP_PFNS_RESPONSE);
         }
         else
         {
-            VideoDebugPrint((0, QFN "buffer for kva %p not found\n", input->KernelVa));
+            VideoDebugPrint((0, QFN("buffer for kva %p not found\n"), input->KernelVa));
             Vrp->StatusBlock->Status = ERROR_INVALID_PARAMETER;
             Vrp->StatusBlock->Information = 0;
         }
@@ -325,12 +325,12 @@ BOOLEAN HwVidStartIO(
 
         if (buffer && buffer->KernelVa == input->KernelVa)
         {
-            VideoDebugPrint((0, QFN "unmapping pfns %p of buffer %p, kva %p\n", buffer->PfnArray, buffer, buffer->KernelVa));
+            VideoDebugPrint((0, QFN("unmapping pfns %p of buffer %p, kva %p\n"), buffer->PfnArray, buffer, buffer->KernelVa));
             Vrp->StatusBlock->Status = QvmUnmapBufferPfns(buffer);
         }
         else
         {
-            VideoDebugPrint((0, QFN "buffer for kva %p not found\n", input->KernelVa));
+            VideoDebugPrint((0, QFN("buffer for kva %p not found\n"), input->KernelVa));
             Vrp->StatusBlock->Status = ERROR_INVALID_PARAMETER;
         }
 
@@ -354,7 +354,7 @@ ULONG DriverEntry(
     VIDEO_HW_INITIALIZATION_DATA hwInitData;
     ULONG status;
 
-    VideoDebugPrint((0, QFN "start\n"));
+    VideoDebugPrint((0, QFN("start\n")));
 
     // Zero out structure.
     VideoPortZeroMemory(&hwInitData, sizeof(VIDEO_HW_INITIALIZATION_DATA));

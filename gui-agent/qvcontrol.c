@@ -93,7 +93,7 @@ ULONG QvSupportVideoMode(
 
     qvideoDc = CreateDC(NULL, qubesDisplayDeviceName, NULL, NULL);
     if (!qvideoDc)
-        return perror("CreateDC");
+        return win_perror("CreateDC");
 
     input.Magic = QVIDEO_MAGIC;
     input.Width = width;
@@ -128,7 +128,7 @@ ULONG QvGetWindowData(
 
     qvideoDc = GetDC(window);
     if (!qvideoDc)
-        return perror("GetDC");
+        return win_perror("GetDC");
 
     input.Magic = QVIDEO_MAGIC;
 
@@ -171,7 +171,7 @@ ULONG QvReleaseWindowData(
 
     qvideoDc = GetDC(window);
     if (!qvideoDc)
-        return perror("GetDC");
+        return win_perror("GetDC");
 
     input.Magic = QVIDEO_MAGIC;
 

@@ -41,7 +41,7 @@ static void SignalSASEvent(void)
     {
         sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SAS_EVENT_NAME);
         if (!sasEvent)
-            perror("OpenEvent");
+            win_perror("OpenEvent");
     }
 
     if (sasEvent)
@@ -118,7 +118,7 @@ static DWORD HandleKeymapNotify(void)
 
             if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
             {
-                return perror("SendInput");
+                return win_perror("SendInput");
             }
             LogDebug("unsetting key VK=0x%x (keycode=0x%x)", virtualKey, modifierKeys[i]);
         }
@@ -156,7 +156,7 @@ static DWORD SynthesizeKeycode(IN UINT keycode, IN BOOL release)
 
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
-        return perror("SendInput");
+        return win_perror("SendInput");
     }
 
     return ERROR_SUCCESS;
@@ -194,12 +194,12 @@ static DWORD HandleKeypress(IN HWND window)
         inputEvent.ki.dwFlags = 0;
         if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
         {
-            return perror("SendInput(VK_CAPITAL)");
+            return win_perror("SendInput(VK_CAPITAL)");
         }
         inputEvent.ki.dwFlags = KEYEVENTF_KEYUP;
         if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
         {
-            return perror("SendInput(KEYEVENTF_KEYUP)");
+            return win_perror("SendInput(KEYEVENTF_KEYUP)");
         }
     }
 
@@ -267,7 +267,7 @@ static DWORD HandleButton(IN HWND window)
     LogDebug("window 0x%x, (%d,%d), flags 0x%x", window, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
-        return perror("SendInput");
+        return win_perror("SendInput");
     }
 
     return ERROR_SUCCESS;
@@ -301,7 +301,7 @@ static DWORD HandleMotion(IN HWND window)
 
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
-        return perror("SendInput");
+        return win_perror("SendInput");
     }
 
     return ERROR_SUCCESS;
