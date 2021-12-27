@@ -949,6 +949,16 @@ int __cdecl wmain(int argc, WCHAR* argv[])
         }
 	StringCbCopyW(cat_path, sizeof(cat_path), drv_path);
         StringCbCatW(cat_path, sizeof(cat_path), L"\\");
+        StringCbCatW(cat_path, sizeof(cat_path), "qvmini.sys");
+        SelfSignFile(cat_path, cert_subject);
+
+        StringCbCopyW(cat_path, sizeof(cat_path), drv_path);
+        StringCbCatW(cat_path, sizeof(cat_path), L"\\");
+        StringCbCatW(cat_path, sizeof(cat_path), "qvgdi.dll");
+        SelfSignFile(cat_path, cert_subject);
+
+	StringCbCopyW(cat_path, sizeof(cat_path), drv_path);
+        StringCbCatW(cat_path, sizeof(cat_path), L"\\");
         StringCbCatW(cat_path, sizeof(cat_path), cat_filename);
 
         if (!CreateCat(cat_path, hw_id, drv_path, cat_list, 3))
