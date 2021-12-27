@@ -1005,8 +1005,8 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         libvchan_close(g_Vchan);
 
-    CloseHandle(windowDamageEvent);
     QvUnregisterWatchedDC(screenDC);
+    CloseHandle(windowDamageEvent);
     ReleaseDC(NULL, screenDC);
     LogInfo("exiting");
 
