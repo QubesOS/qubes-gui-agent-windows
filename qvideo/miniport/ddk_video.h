@@ -22,6 +22,7 @@
 #include <ntddk.h>
 #ifdef __MINGW32__
 #include <driverspecs.h>
+#include "specstrings.h"
 
 /* FIXME: gcc doesn't support exceptions */
 #define __try if (1)
