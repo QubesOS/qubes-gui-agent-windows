@@ -20,14 +20,17 @@
  */
 
 #pragma once
+#include <driverspecs.h>
 
 // List macros from Windows kernel headers
 
+#ifndef __MINGW32__
 typedef struct _LIST_ENTRY
 {
     struct _LIST_ENTRY *Flink;
     struct _LIST_ENTRY *Blink;
 } LIST_ENTRY, *PLIST_ENTRY, *RESTRICTED_POINTER PRLIST_ENTRY;
+#endif
 
 FORCEINLINE
 VOID
@@ -42,7 +45,7 @@ InitializeListHead(
 
 _Must_inspect_result_
 BOOLEAN
-CFORCEINLINE
+FORCEINLINE
 IsListEmpty(
     _In_ const LIST_ENTRY * ListHead
     )

@@ -20,17 +20,26 @@
  */
 
 #pragma warning(disable: 4201)
+#ifdef __MINGW32__
+#include <ntdef.h>
+#endif
 #include <dderror.h>
 #include <devioctl.h>
 #include <miniport.h>
 #include <ntddvdeo.h>
 #include <video.h>
 
+#ifdef __MINGW32__
+#include <windows.h>
+#include <specstrings.h>
+#define __inout_bcount SAL__inout_bcount
+#endif
+
 // miniport headers don't include list macros for some ungodly reason...
 #include "list.h"
 #include "memory.h"
 
-#define QFN "[QVMINI] " __FUNCTION__ ": "
+#define QFN(x) "[QVMINI] %s: " x, __FUNCTION__
 
 // device extension, per-adapter data
 typedef struct _QVMINI_DX

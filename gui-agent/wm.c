@@ -19,7 +19,7 @@
  *
  */
 
-#include <Windows.h>
+#include <windows.h>
 
 // Debug helper functions
 
