@@ -48,7 +48,7 @@ CRYPTCATATTRIBUTE* WINAPI CryptCATPutAttrInfo(
     BYTE *pbData
 );
 
-BOOL WINAPI *CryptCATPersistStore(
+BOOL WINAPI CryptCATPersistStore(
     HANDLE hCatalog
 );
 
