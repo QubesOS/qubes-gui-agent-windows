@@ -22,8 +22,6 @@
 #pragma once
 #include <windows.h>
 
-#include "qvcontrol.h"
-
 #include <list.h>
 
 #define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)

@@ -24,6 +24,7 @@
 #include <aclapi.h>
 #include <strsafe.h>
 
+#include "common.h"
 #include "main.h"
 #include "resource.h"
 

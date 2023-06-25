@@ -21,9 +21,9 @@
 
 #include <windows.h>
 
-#include "resolution.h"
+#include "common.h"
 #include "main.h"
-#include "qvcontrol.h"
+#include "resolution.h"
 #include "send.h"
 #include "util.h"
 
@@ -48,7 +48,7 @@ static RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = { 0 };
 // This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
 // after last screen resize message received from gui daemon.
 // This is to not change resolution on every such message (multiple times per second).
-// This thread is created in handle_configure().
+// This thread is created in RequestResolutionChange().
 static DWORD WINAPI ResolutionChangeThread(void *param)
 {
     DWORD waitResult;
@@ -76,7 +76,7 @@ static DWORD WINAPI ResolutionChangeThread(void *param)
 }
 
 // Signals g_ResolutionChangeRequestedEvent
-void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG bpp, IN LONG x, IN LONG y)
+void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG x, IN LONG y)
 {
     // Create trigger event for the throttling thread if not yet created.
     if (!g_ResolutionChangeRequestedEvent)
@@ -88,56 +88,60 @@ void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG bpp, IN LONG
 
     g_ResolutionChangeParams.Width = width;
     g_ResolutionChangeParams.Height = height;
-    g_ResolutionChangeParams.Bpp = bpp;
     g_ResolutionChangeParams.X = x;
     g_ResolutionChangeParams.Y = y;
     if (!SetEvent(g_ResolutionChangeRequestedEvent))
         win_perror("SetEvent");
+
+    // ACK the daemon
+    // XXX needed for every configure msg received or only the last one in case of throttling?
+    SendScreenConfigure(x, y, width, height);
 }
 
 // Actually set video mode through qvideo calls.
-static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height, IN ULONG bpp)
+static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height)
 {
-    WCHAR *deviceName = NULL;
-    DISPLAY_DEVICE device;
-
     if (!IS_RESOLUTION_VALID(width, height))
     {
-        LogError("Resolution is invalid: %lux%lu", width, height);
+        LogError("Resolution is invalid: %lu x %lu", width, height);
         return ERROR_INVALID_PARAMETER;
     }
 
-    LogInfo("New resolution: %lux%lu@%lu", width, height, bpp);
+    LogInfo("New resolution: %lu x %lu", width, height);
     // ChangeDisplaySettings fails if thread's desktop != input desktop...
     // This can happen on "quick user switch".
     AttachToInputDesktop();
 
-    if (ERROR_SUCCESS != QvFindQubesDisplayDevice(&device))
-        return win_perror("QvFindQubesDisplayDevice");
+    DEVMODE devMode;
+    ZeroMemory(&devMode, sizeof(DEVMODE));
+    devMode.dmSize = sizeof(DEVMODE);
+    devMode.dmPelsWidth = width;
+    devMode.dmPelsHeight = height;
+    devMode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
 
-    deviceName = (WCHAR *)&device.DeviceName[0];
+    ULONG status = ChangeDisplaySettings(&devMode, 0);
+    if (DISP_CHANGE_SUCCESSFUL != status)
+    {
+        LogError("ChangeDisplaySettings failed: 0x%x", status);
+    }
 
-    LogDebug("DeviceName: %s", deviceName);
-
-    if (ERROR_SUCCESS != QvSupportVideoMode(deviceName, width, height, bpp))
-        return win_perror("QvSupportVideoMode");
-
-    if (ERROR_SUCCESS != ChangeVideoMode(deviceName, width, height, bpp))
-        return win_perror("ChangeVideoMode");
-
-    return ERROR_SUCCESS;
+    SetLastError(status);
+    return status;
 }
 
 // set video mode
-ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
+ULONG SetVideoMode(IN ULONG width, IN ULONG height)
 {
-    ULONG status = SetVideoModeInternal(width, height, bpp);
+    // TODO: MS basic display driver has a hardcoded list of supported resolutions, use only those
+    LogVerbose("%lu x %lu", width, height);
+
+    ULONG status = SetVideoModeInternal(width, height);
 
     if (ERROR_SUCCESS != status)
     {
         g_SeamlessMode = FALSE;
 
-        LogDebug("SetVideoModeInternal failed: %lu, keeping original resolution %lux%lu", status, g_ScreenWidth, g_ScreenHeight);
+        LogDebug("SetVideoModeInternal failed: 0x%x, keeping original resolution %lux%lu", status, g_ScreenWidth, g_ScreenHeight);
     }
     else
     {
@@ -148,49 +152,8 @@ ULONG SetVideoMode(IN ULONG width, IN ULONG height, IN ULONG bpp)
     return status;
 }
 
-// Reinitialize everything, change resolution (params in g_ResolutionChangeParams).
-ULONG ChangeResolution(IN OUT HDC *screenDC, IN HANDLE damageEvent)
+// change screen resolution (params in g_ResolutionChangeParams).
+ULONG ChangeResolution()
 {
-    ULONG status;
-
-    LogDebug("deinitializing");
-
-    if (ERROR_SUCCESS != (status = QvUnregisterWatchedDC(*screenDC)))
-        return status;
-    if (!ReleaseDC(NULL, *screenDC))
-        return GetLastError();
-
-    LogDebug("reinitializing");
-    status = SetVideoMode(g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height, g_ResolutionChangeParams.Bpp);
-
-    if (ERROR_SUCCESS != status)
-        return status;
-
-    *screenDC = GetDC(NULL);
-    if (!(*screenDC))
-        return GetLastError();
-    if (ERROR_SUCCESS != (status = QvRegisterWatchedDC(*screenDC, damageEvent)))
-        return status;
-
-    status = SendScreenMfns(); // update screen framebuffer
-    if (ERROR_SUCCESS != status)
-        return status;
-
-    // is it possible to have VM resolution bigger than host set by user?
-    if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
-        g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
-
-    status = SetSeamlessMode(g_SeamlessMode, TRUE);
-    if (ERROR_SUCCESS != status)
-        return status;
-
-    LogDebug("done");
-
-    // Reply to the daemon's request (with just the same data).
-    // Otherwise daemon won't send screen resize requests again.
-    status = SendScreenConfigure(g_ResolutionChangeParams.X, g_ResolutionChangeParams.Y, g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
-    if (ERROR_SUCCESS != status)
-        return status;
-
-    return ERROR_SUCCESS;
+    return SetVideoMode(g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
 }

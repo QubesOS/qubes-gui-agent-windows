@@ -64,7 +64,7 @@ DWORD HandleXconf(void)
     LogInfo("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
-    return SetVideoMode(xconf.w, xconf.h, 32 /*xconf.depth*/); // 32bpp is still hardcoded all over the place (mainly in qvideo)
+    return SetVideoMode(xconf.w, xconf.h);
 }
 
 static int BitSet(IN OUT BYTE *keys, IN int num)
@@ -344,7 +344,7 @@ static DWORD HandleConfigure(IN HWND window)
         // XY coords are used to reply with the same message to the daemon.
         // It's useless for fullscreen but the daemon needs such ACK...
         // Signal the trigger event so the throttling thread evaluates the resize request.
-        RequestResolutionChange(configureMsg.width, configureMsg.height, 32, configureMsg.x, configureMsg.y);
+        RequestResolutionChange(configureMsg.width, configureMsg.height, configureMsg.x, configureMsg.y);
     }
 
     return ERROR_SUCCESS;

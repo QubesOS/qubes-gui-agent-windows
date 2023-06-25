@@ -23,12 +23,14 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <mmsystem.h>
+#include <Psapi.h>
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "capture.h"
+#include "common.h"
 #include "main.h"
 #include "vchan.h"
-#include "qvcontrol.h"
 #include "resolution.h"
 #include "send.h"
 #include "vchan-handlers.h"
@@ -46,9 +48,6 @@
 
 extern struct libvchan *g_Vchan;
 
-// If set, only invalidate parts of the screen that changed according to
-// qvideo's dirty page scan of surface memory buffer.
-BOOL g_UseDirtyBits = FALSE; // this should be always disabled for now, driver doesn't support it after memory sharing code change
 DWORD g_MaxFps = 0; // max refresh event batches per second that are sent to guid (0 = disabled)
 
 LONG g_ScreenHeight;
@@ -72,9 +71,7 @@ HWND g_DesktopWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
-static ULONG ProcessUpdatedWindows(IN HDC screenDC);
-
-#ifdef DEBUG
+#if defined(_DEBUG) || defined(DEBUG)
 // diagnostic: dump all watched windows
 void DumpWindows(void)
 {
@@ -312,7 +309,6 @@ static ULONG AddAllWindows(void)
 }
 
 // Reinitialize watched windows, called after a seamless/fullscreen switch or resolution change.
-// NOTE: this function doesn't close/reopen qvideo's screen section
 static ULONG ResetWatch(BOOL seamlessMode)
 {
     WINDOW_DATA *entry;
@@ -393,7 +389,7 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
         if (g_ScreenWidth != g_HostScreenWidth || g_ScreenHeight != g_HostScreenHeight)
         {
             LogDebug("Changing resolution to match host's");
-            RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 32, 0, 0);
+            RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 0, 0);
             // FIXME: wait until the resolution actually changes?
         }
         // hide the screen window
@@ -612,46 +608,14 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
     return ERROR_SUCCESS;
 }
 
-// Called after receiving screen damage event from qvideo.
-static ULONG ProcessUpdatedWindows(IN HDC screenDC)
+// Called after receiving new frame.
+static ULONG ProcessUpdatedWindows()
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
     HWND oldDesktopWindow = g_DesktopWindow;
-    ULONG totalPages, page, dirtyPages = 0;
-    RECT dirtyArea, currentArea;
     BOOL first = TRUE;
     ULONG status = ERROR_SUCCESS;
-
-    if (g_UseDirtyBits)
-    {
-        totalPages = g_ScreenHeight * g_ScreenWidth * 4 / PAGE_SIZE;
-        // create a damage rectangle from changed pages
-        for (page = 0; page < totalPages; page++)
-        {
-            if (BIT_GET(g_DirtyPages->DirtyBits, page))
-            {
-                dirtyPages++;
-                PageToRect(page, &currentArea);
-                if (first)
-                {
-                    dirtyArea = currentArea;
-                    first = FALSE;
-                }
-                else
-                    UnionRect(&dirtyArea, &dirtyArea, &currentArea);
-            }
-        }
-
-        // tell qvideo that we're done reading dirty bits
-        QvSynchronizeDirtyBits(screenDC);
-
-        LogDebug("DIRTY %d/%d (%d,%d)-(%d,%d)", dirtyPages, totalPages,
-                 dirtyArea.left, dirtyArea.top, dirtyArea.right, dirtyArea.bottom);
-
-        if (dirtyPages == 0) // nothing changed according to qvideo
-            return ERROR_SUCCESS;
-    }
 
     AttachToInputDesktop();
     if (oldDesktopWindow != g_DesktopWindow)
@@ -666,12 +630,14 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
 
     if (!g_SeamlessMode)
     {
+        /* XXX dirty bits - use dirty rects from DXGI here
         // just send damage event with the dirty area
         if (g_UseDirtyBits)
             SendWindowDamageEvent(0, dirtyArea.left, dirtyArea.top,
             dirtyArea.right - dirtyArea.left,
             dirtyArea.bottom - dirtyArea.top);
         else
+        */
             SendWindowDamageEvent(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
         // TODO? if we're not using dirty bits we could narrow the damage area
         // by checking all windows... but it's probably not worth it.
@@ -699,7 +665,7 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
             entry = nextEntry;
             continue;
         }
-
+        /* XXX dirty bits
         if (g_UseDirtyBits)
         {
             RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
@@ -721,6 +687,7 @@ static ULONG ProcessUpdatedWindows(IN HDC screenDC)
             }
         }
         else
+        */
         {
             // assume the whole window area changed
             status = SendWindowDamageEvent(entry->WindowHandle,
@@ -742,9 +709,53 @@ cleanup:
     return status;
 }
 
+ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent, OUT CAPTURE_CONTEXT** capture)
+{
+    LogVerbose("start");
+    // Initialize capture interfaces, this also initializes framebuffer PFNs
+    *capture = CaptureInitialize(newFrameEvent, captureErrorEvent);
+    if (!*capture)
+        return win_perror("CaptureInitialize");
+
+    ULONG status;
+    if (!g_SeamlessMode)
+    {
+        // send whole screen window
+        status = SendWindowCreate(NULL);
+        if (ERROR_SUCCESS != status)
+            return win_perror2(status, "SendWindowCreate(NULL)");
+    }
+
+    // send the whole screen framebuffer map
+    status = SendScreenMfns((*capture)->framebuffer_pfns->NumberOfPages, &(*capture)->framebuffer_pfns->Pfn[0]);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "SendScreenMfns");
+
+    // this (re)initializes watched windows list
+    status = SetSeamlessMode(g_SeamlessMode, TRUE);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "SetSeamlessMode");
+
+    status = CaptureStart(*capture);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "CaptureStart");
+
+    LogVerbose("end");
+    return ERROR_SUCCESS;
+}
+
+void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
+{
+    if (!g_SeamlessMode)
+        SendWindowDestroy(NULL);
+
+    CaptureTeardown(*capture);
+    *capture = NULL;
+}
+
 // main event loop
 // TODO: refactor into smaller parts
-static ULONG WINAPI WatchForEvents(void)
+static ULONG WINAPI WatchForEvents  (void)
 {
     ULONG eventCount;
     DWORD signaledEvent;
@@ -752,17 +763,16 @@ static ULONG WINAPI WatchForEvents(void)
     ULONG status;
     BOOL exitLoop;
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
-    HANDLE windowDamageEvent, fullScreenOnEvent, fullScreenOffEvent;
-    HDC screenDC = NULL;
     LARGE_INTEGER maxInterval, time1, time2;
     BOOL updatePending = FALSE;
-#ifdef DEBUG
+#if defined(_DEBUG) || defined(DEBUG)
     DWORD dumpLastTime = GetTickCount();
-    UINT64 damageCount = 0, damageCountOld = 0;
+    //UINT64 damageCount = 0, damageCountOld = 0;
 #endif
 
     LogDebug("start");
-    windowDamageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    HANDLE newFrameEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    HANDLE captureErrorEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
     if (!VchanInit(6000))
@@ -771,10 +781,10 @@ static ULONG WINAPI WatchForEvents(void)
         return GetLastError();
     }
 
-    fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
+    HANDLE fullScreenOnEvent = CreateNamedEvent(FULLSCREEN_ON_EVENT_NAME);
     if (!fullScreenOnEvent)
         return GetLastError();
-    fullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
+    HANDLE fullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
     if (!fullScreenOffEvent)
         return GetLastError();
     g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -796,17 +806,19 @@ static ULONG WINAPI WatchForEvents(void)
 
     LogInfo("Awaiting for a vchan client, write buffer size: %d", VchanGetWriteBufferSize(g_Vchan));
     watchedEvents[0] = g_ShutdownEvent;
-    watchedEvents[1] = windowDamageEvent;
+    watchedEvents[1] = newFrameEvent;
     watchedEvents[2] = fullScreenOnEvent;
     watchedEvents[3] = fullScreenOffEvent;
     watchedEvents[4] = g_ResolutionChangeEvent;
     watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
     watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
-    eventCount = 7;
+    watchedEvents[7] = captureErrorEvent;
+    eventCount = 8;
+
+    CAPTURE_CONTEXT* capture = NULL;
 
     while (TRUE)
     {
-
         status = ERROR_SUCCESS;
 
         vchanIoInProgress = TRUE;
@@ -819,16 +831,16 @@ static ULONG WINAPI WatchForEvents(void)
             break;
         }
 
-#ifdef DEBUG
+#if defined(_DEBUG) || defined(DEBUG)
         // dump watched windows every second
         if (GetTickCount() - dumpLastTime > 1000)
         {
             DumpWindows();
             dumpLastTime = GetTickCount();
 
-            // dump performance counters
-            LogDebug("last second damages: %llu", damageCount - damageCountOld);
-            damageCountOld = damageCount;
+            // XXX dump performance counters
+            //LogDebug("last second damages: %llu", damageCount - damageCountOld);
+            //damageCountOld = damageCount;
         }
 #endif
 
@@ -842,13 +854,8 @@ static ULONG WINAPI WatchForEvents(void)
 
         switch (signaledEvent)
         {
-        case 6:
-            LogVerbose("forced update");
-            QueryPerformanceCounter(&time2);
-            goto force_update;
-            break;
-
-        case 1: // damage event
+        case 1: // new frame available
+            LogVerbose("new frame");
             if (g_VchanClientConnected)
             {
                 if (g_MaxFps > 0)
@@ -856,6 +863,7 @@ static ULONG WINAPI WatchForEvents(void)
                     QueryPerformanceCounter(&time2);
                     if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
                     {
+                        // XXX accumulate damage rects
                         if (!updatePending)
                         {
                             updatePending = TRUE;
@@ -869,14 +877,15 @@ static ULONG WINAPI WatchForEvents(void)
                     time1 = time2;
                     updatePending = FALSE;
                 }
-#ifdef DEBUG
-                LogVerbose("Damage %llu", damageCount++);
-#endif
-                ProcessUpdatedWindows(screenDC);
+                ProcessUpdatedWindows(); // XXX damage rects
             }
+
+            if (capture)
+                SetEvent(capture->ready_event); // frame processed
             break;
 
         case 2: // seamless off event
+            LogVerbose("seamless off");
             status = SetSeamlessMode(FALSE, FALSE);
             if (ERROR_SUCCESS != status)
             {
@@ -886,6 +895,7 @@ static ULONG WINAPI WatchForEvents(void)
             break;
 
         case 3: // seamless on event
+            LogVerbose("seamless on");
             status = SetSeamlessMode(TRUE, FALSE);
             if (ERROR_SUCCESS != status)
             {
@@ -895,16 +905,39 @@ static ULONG WINAPI WatchForEvents(void)
             break;
 
         case 4: // resolution change event, signaled by ResolutionChangeThread
-            // Params are in g_ResolutionChangeParams
-            status = ChangeResolution(&screenDC, windowDamageEvent);
+            LogVerbose("resolution change");
+            // don't explicitly reinitialize capture here
+            // if it gets invalidated it'll signal us
+            //StopFrameProcessing(&capture);
+
+            // Params are in g_ResolutionChangeParams in resolution.c
+            status = ChangeResolution();
             if (ERROR_SUCCESS != status)
             {
                 win_perror2(status, "ChangeResolution");
-                exitLoop = TRUE;
+                // XXX don't totally fail on resolution change, this will cause qga to
+                // be constantly respawned by watchdog and not doing anything constructive
+                //exitLoop = TRUE;
+                //break;
             }
+
+            // is it possible to have VM resolution bigger than host set by user?
+            if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
+                g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
+            /*
+            status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
+            if (ERROR_SUCCESS != status)
+            {
+                win_perror2(status, "StartCapture");
+                exitLoop = TRUE;
+                break;
+            }
+            */
+
             break;
 
         case 5: // vchan receive
+            LogVerbose("vchan receive");
             if (!g_VchanClientConnected)
             {
                 vchanIoInProgress = FALSE;
@@ -930,38 +963,10 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
-                // The screen DC should be opened only after the resolution changes.
-                screenDC = GetDC(NULL);
-                status = QvRegisterWatchedDC(screenDC, windowDamageEvent);
+                status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
                 if (ERROR_SUCCESS != status)
                 {
-                    win_perror2(status, "QvRegisterWatchedDC");
-                    exitLoop = TRUE;
-                    break;
-                }
-
-                // send the whole screen framebuffer map
-                status = SendWindowCreate(NULL);
-                if (ERROR_SUCCESS != status)
-                {
-                    win_perror2(status, "SendWindowCreate(NULL)");
-                    exitLoop = TRUE;
-                    break;
-                }
-
-                status = SendScreenMfns();
-                if (ERROR_SUCCESS != status)
-                {
-                    win_perror2(status, "SendScreenMfns");
-                    exitLoop = TRUE;
-                    break;
-                }
-
-                // This initializes watched windows list.
-                status = SetSeamlessMode(g_SeamlessMode, TRUE);
-                if (ERROR_SUCCESS != status)
-                {
-                    win_perror2(status, "SetSeamlessMode");
+                    win_perror2(status, "StartCapture");
                     exitLoop = TRUE;
                     break;
                 }
@@ -992,7 +997,27 @@ static ULONG WINAPI WatchForEvents(void)
                 }
             }
             LeaveCriticalSection(&g_VchanCriticalSection);
+            break;
 
+        case 6:
+            LogVerbose("forced update");
+            QueryPerformanceCounter(&time2);
+            // XXX what about capture (ready) events?
+            goto force_update;
+            break;
+
+        case 7: // capture error, can be due to a desktop switch or resolution change
+            LogDebug("capture error, reinitializing");
+
+            StopFrameProcessing(&capture);
+
+            status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
+            if (ERROR_SUCCESS != status)
+            {
+                win_perror2(status, "StartCapture");
+                exitLoop = TRUE;
+                break;
+            }
             break;
         }
 
@@ -1005,10 +1030,9 @@ static ULONG WINAPI WatchForEvents(void)
     if (g_VchanClientConnected)
         libvchan_close(g_Vchan);
 
-    QvUnregisterWatchedDC(screenDC);
-    CloseHandle(windowDamageEvent);
-    ReleaseDC(NULL, screenDC);
+    StopFrameProcessing(&capture);
     LogInfo("exiting");
+    // all handles will be closed on exit anyway
 
     return exitLoop ? ERROR_INVALID_FUNCTION : ERROR_SUCCESS;
 }
@@ -1060,6 +1084,7 @@ static ULONG Init(void)
     }
 
     status = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
+    // XXX dirty bits
     /* disabled for now because driver lacks interface for it
     status = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_UseDirtyBits, NULL);
     if (ERROR_SUCCESS != status)
@@ -1095,6 +1120,7 @@ static ULONG Init(void)
     HideCursors();
     DisableEffects();
 
+    // XXX needed?
     status = IncreaseProcessWorkingSetSize(1024 * 1024 * 100, 1024 * 1024 * 1024);
     if (ERROR_SUCCESS != status)
     {

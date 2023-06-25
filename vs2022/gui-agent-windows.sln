@@ -1,0 +1,58 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.6.33723.286
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gui-agent", "gui-agent\gui-agent.vcxproj", "{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}"
+	ProjectSection(ProjectDependencies) = postProject
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90} = {97FCED4E-4C99-4D3E-B070-1A7429012C90}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "watchdog", "watchdog\watchdog.vcxproj", "{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MemoryLock", "..\MemoryLock\MemoryLock.vcxproj", "{97FCED4E-4C99-4D3E-B070-1A7429012C90}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM64 = Debug|ARM64
+		Debug|x64 = Debug|x64
+		Release|ARM64 = Release|ARM64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Debug|ARM64.ActiveCfg = Debug|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Debug|ARM64.Build.0 = Debug|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Debug|x64.ActiveCfg = Debug|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Debug|x64.Build.0 = Debug|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Release|ARM64.ActiveCfg = Release|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Release|ARM64.Build.0 = Release|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Release|x64.ActiveCfg = Release|x64
+		{DCFA7C97-579A-4BC9-9A42-3D70BE069AF7}.Release|x64.Build.0 = Release|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Debug|ARM64.ActiveCfg = Debug|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Debug|ARM64.Build.0 = Debug|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Debug|x64.ActiveCfg = Debug|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Debug|x64.Build.0 = Debug|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Release|ARM64.ActiveCfg = Release|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Release|ARM64.Build.0 = Release|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Release|x64.ActiveCfg = Release|x64
+		{EEB889D7-C6A4-49A7-824E-C7FFC6C558BC}.Release|x64.Build.0 = Release|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|ARM64.Build.0 = Debug|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|ARM64.Deploy.0 = Debug|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|x64.ActiveCfg = Debug|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|x64.Build.0 = Debug|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Debug|x64.Deploy.0 = Debug|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|ARM64.ActiveCfg = Release|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|ARM64.Build.0 = Release|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|ARM64.Deploy.0 = Release|ARM64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|x64.ActiveCfg = Release|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|x64.Build.0 = Release|x64
+		{97FCED4E-4C99-4D3E-B070-1A7429012C90}.Release|x64.Deploy.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {CADF1BDC-5E7F-4B50-9CBF-0A5D90A96087}
+	EndGlobalSection
+EndGlobal

@@ -27,7 +27,6 @@
 #include "common.h"
 #include "send.h"
 #include "main.h"
-#include "qvcontrol.h"
 #include "vchan.h"
 
 #include <qubes-gui-protocol.h>
@@ -35,67 +34,54 @@
 
 #include <strsafe.h>
 
-// Get PFNs of the screen from QVideo driver and prepare relevant shm_cmd struct.
-static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd)
+// prepare relevant shm_cmd struct from array of PFNs
+static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd, IN size_t numPages, IN PFN_NUMBER* pfns)
 {
-    QV_GET_SURFACE_DATA_RESPONSE surfaceData;
-    ULONG status;
-    ULONG shmCmdSize = 0;
-    ULONG width;
-    ULONG height;
-    ULONG bpp;
-    ULONG i;
+    ULONG status = ERROR_INVALID_PARAMETER;
 
     if (!shmCmd)
-        return ERROR_INVALID_PARAMETER;
+        goto end;
+
+    if (numPages > UINT32_MAX)
+    {
+        LogError("number of pages (%llu) > UINT32_MAX", numPages);
+        status = ERROR_NOT_SUPPORTED;
+        goto end;
+    }
 
     *shmCmd = NULL;
 
-    LogDebug("fullcreen capture");
-
-    // this will map driver-managed pfn list into the process, user address is in the response struct
-    status = QvGetWindowData(NULL, &surfaceData);
-    if (ERROR_SUCCESS != status)
-        return win_perror2(status, "QvGetWindowData");
-
-    width = surfaceData.Width;
-    height = surfaceData.Height;
-    bpp = surfaceData.Bpp;
-
-    LogDebug("screen %dx%d @ %d bpp, number of pfns: %lu", width, height, bpp, surfaceData.PfnArray->NumberOf4kPages);
-
-    shmCmdSize = sizeof(struct shm_cmd) + surfaceData.PfnArray->NumberOf4kPages * sizeof(uint32_t);
+    //LogDebug("fullcreen capture");
+    size_t shmCmdSize = sizeof(struct shm_cmd) + numPages * sizeof(uint32_t);
 
     *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
     if (*shmCmd == NULL)
     {
-        LogError("Failed to allocate %d bytes for shm_cmd", shmCmdSize);
-        return ERROR_NOT_ENOUGH_MEMORY;
+        LogError("Failed to allocate %llu bytes for shm_cmd", shmCmdSize);
+        status = ERROR_NOT_ENOUGH_MEMORY;
+        goto end;
     }
 
     (*shmCmd)->shmid = 0;
-    (*shmCmd)->width = width;
-    (*shmCmd)->height = height;
-    (*shmCmd)->bpp = bpp;
+    (*shmCmd)->width = g_ScreenWidth;
+    (*shmCmd)->height = g_ScreenHeight;
+    (*shmCmd)->bpp = 32;
     (*shmCmd)->off = 0;
-    (*shmCmd)->num_mfn = surfaceData.PfnArray->NumberOf4kPages;
+    (*shmCmd)->num_mfn = (uint32_t)numPages;
     (*shmCmd)->domid = 0;
 
-    for (i = 0; i < surfaceData.PfnArray->NumberOf4kPages; i++)
+    for (size_t i = 0; i < numPages; i++)
     {
-        assert(surfaceData.PfnArray->Pfn[i] == (uint32_t)surfaceData.PfnArray->Pfn[i]);
-        (*shmCmd)->mfns[i] = (uint32_t)surfaceData.PfnArray->Pfn[i]; // on x64 pfn numbers are 64bit
+        assert(pfns[i] == (uint32_t)pfns[i]);
+        (*shmCmd)->mfns[i] = (uint32_t)pfns[i]; // on x64 pfn numbers are 64bit
     }
+    status = ERROR_SUCCESS;
 
-    // unmap the pfn array
-    status = QvReleaseWindowData(NULL);
-    if (ERROR_SUCCESS != status)
-        win_perror2(status, "QvReleaseWindowData");
-
+end:
     return status;
 }
 
-ULONG SendScreenMfns(void)
+ULONG SendScreenMfns(IN size_t numPages, IN PFN_NUMBER* pfns)
 {
     ULONG status;
     struct shm_cmd *shmCmd = NULL;
@@ -104,16 +90,15 @@ ULONG SendScreenMfns(void)
 
     LogVerbose("start");
 
-    status = PrepareShmCmd(&shmCmd);
-    if (ERROR_SUCCESS != status)
-        return win_perror2(status, "PrepareShmCmd");
-
-    if (shmCmd->num_mfn == 0 || shmCmd->num_mfn > MAX_MFN_COUNT)
+    if (numPages == 0 || numPages > MAX_MFN_COUNT)
     {
-        LogError("invalid pfn count: %lu", shmCmd->num_mfn);
-        free(shmCmd);
+        LogError("invalid pfn count: %lu", numPages);
         return ERROR_INSUFFICIENT_BUFFER;
     }
+
+    status = PrepareShmCmd(&shmCmd, numPages, pfns);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "PrepareShmCmd");
 
     size = shmCmd->num_mfn * sizeof(uint32_t);
 
@@ -149,24 +134,16 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
         return ERROR_SUCCESS;
 
     wi.cbSize = sizeof(wi);
-    /* special case for full screen */
+    // special case for full screen
     if (windowData == NULL)
     {
-        QV_GET_SURFACE_DATA_RESPONSE surfaceData;
-
         LogDebug("fullscreen");
-        /* TODO: multiple screens? */
+        // TODO: multiple screens?
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
 
-        status = QvGetWindowData(NULL, &surfaceData);
-        if (ERROR_SUCCESS != status)
-            return win_perror2(status, "QvGetWindowData");
-
-        wi.rcWindow.right = surfaceData.Width;
-        wi.rcWindow.bottom = surfaceData.Height;
-
-        QvReleaseWindowData(NULL); // unmap the pfn array (TODO: make the mapping optional since it's not used here)
+        wi.rcWindow.right = GetSystemMetrics(SM_CXSCREEN) - 1;
+        wi.rcWindow.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
 
         header.window = 0;
     }
@@ -188,12 +165,12 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 
     createMsg.x = wi.rcWindow.left;
     createMsg.y = wi.rcWindow.top;
-    createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
-    createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
+    createMsg.width = wi.rcWindow.right - wi.rcWindow.left + 1;
+    createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top + 1;
 #pragma warning(suppress:4311)
     createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
-    LogDebug("(%d,%d) %dx%d", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
+    LogDebug("(%u,%u) %ux%u", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 
     EnterCriticalSection(&g_VchanCriticalSection);
     if (!VCHAN_SEND_MSG(header, createMsg, L"MSG_CREATE"))

@@ -1,0 +1,4 @@
+The win10 branch can be only built by vs2022 from qubes-windows-tools-cross/vs2022 solution for now.
+MemoryLock driver must be manually installed from the INF file (or by `devcon.exe MemoryLock.inf Root\MemoryLock`).
+Win10 also requires patched xenbus to install in Qubes (github.com/omeg/xenbus/tree/omeg/win10-qubes-fix) + upstream xeniface (latest version).
+NOTE: seamless mode doesn't work yet because there seems to be a bug in pvdrivers affecting gnttab operations on win10/qubes. This also affects qvm-run and other things.
