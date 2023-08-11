@@ -119,6 +119,7 @@ ULONG SendScreenMfns(IN size_t numPages, IN PFN_NUMBER* pfns)
         return win_perror2(status, "VchanSendBuffer");
 
     free(shmCmd);
+    LogVerbose("end");
 
     return ERROR_SUCCESS;
 }

@@ -30,7 +30,7 @@
 
 BOOL g_CaptureThreadEnable = FALSE;
 
-static CAPTURE_FRAME* GetFrame(IN CAPTURE_CONTEXT* ctx, IN UINT timeout);
+static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout);
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx);
 static DWORD WINAPI CaptureThread(void* param);
 static HANDLE OpenDriverDevice(const GUID* dev_guid);
@@ -69,7 +69,6 @@ static IDXGIAdapter* GetAdapter(void)
     }
 
     IDXGIFactory1_Release(factory);
-    //LogDebug("IDXGIAdapter: %p", ret_adapter);
 end:
     LogVerbose("end");
     return ret_adapter;
@@ -99,7 +98,6 @@ static ID3D11Device* GetDevice(IN IDXGIAdapter* adapter)
         return NULL;
     }
 
-    //LogDebug("ID3D11Device: %p", device);
     LogVerbose("end");
     return device;
 }
@@ -164,7 +162,6 @@ static IDXGIOutputDuplication* GetDuplication(IN IDXGIOutput1* output, IN ID3D11
         goto fail;
     }
 
-    LogDebug("IDXGIOutputDuplication: %p", duplication);
     DXGI_OUTDUPL_DESC desc;
     IDXGIOutputDuplication_GetDesc(duplication, &desc);
     LogDebug("Got output duplication. Surface dimensions = %ux%u %.2f fps, "
@@ -176,7 +173,7 @@ static IDXGIOutputDuplication* GetDuplication(IN IDXGIOutput1* output, IN ID3D11
 
     if (!desc.DesktopImageInSystemMemory)
     {
-        // this should never happen in a VM
+        // this should never happen with the basic display driver
         IDXGIOutputDuplication_Release(duplication);
         LogError("TODO: desktop is not in system memory");
         SetLastError(DXGI_ERROR_UNSUPPORTED);
@@ -226,11 +223,10 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
         goto fail;
 
     // get one frame to acquire framebuffer map
-    ctx->frame = GetFrame(ctx, 1000);
-    if (!ctx->frame)
+    if (FAILED(GetFrame(ctx, 5000)))
         goto fail;
 
-    if (ReleaseFrame(ctx) != ERROR_SUCCESS)
+    if (FAILED(ReleaseFrame(ctx)))
         goto fail;
 
     ctx->frame_event = frame_event;
@@ -276,6 +272,9 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
     if (ctx->mlock)
         CloseHandle(ctx->mlock); // locked pages are unlocked here
 
+    if (ctx->frame.texture)
+        ReleaseFrame(ctx);
+
     free(ctx->framebuffer_pfns);
     free(ctx);
     LogVerbose("end");
@@ -298,42 +297,42 @@ HRESULT CaptureStart(IN OUT CAPTURE_CONTEXT* ctx)
     return status;
 }
 
-static CAPTURE_FRAME* GetFrame(IN CAPTURE_CONTEXT* ctx, IN UINT timeout)
+static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
 {
     LogVerbose("start");
+    assert(!ctx->frame.texture);
 
-    HRESULT status = ERROR_UNIDENTIFIED_ERROR;
-
-    CAPTURE_FRAME* frame = (CAPTURE_FRAME*)calloc(1, sizeof(*frame));
-    if (!frame)
-    {
-        LogError("no memory");
-        status = ERROR_OUTOFMEMORY;
-        goto fail1;
-    }
-
-    status = IDXGIOutputDuplication_AcquireNextFrame(ctx->duplication, timeout, &frame->info, &frame->texture);
+    HRESULT status = IDXGIOutputDuplication_AcquireNextFrame(ctx->duplication,
+        timeout, &ctx->frame.info, &ctx->frame.texture);
     if (FAILED(status))
     {
         win_perror2(status, "duplication->AcquireNextFrame()");
         goto fail1;
     }
 
-    //LogVerbose("frame(IDXGIResource): %p", frame->texture);
-
-    status = IDXGIOutputDuplication_MapDesktopSurface(ctx->duplication, &frame->rect);
-    if (FAILED(status))
+    if (ctx->frame.info.LastPresentTime.QuadPart == 0 && ctx->framebuffer_pfns)
     {
-        win_perror2(status, "duplication->MapDesktopSurface()");
-        goto fail2;
+        // only skip here after we mapped the PFNs
+        LogVerbose("framebuffer unchanged");
+        ctx->frame.mapped = FALSE;
+        goto end;
     }
 
-    LogDebug("mapped ptr: %p", frame->rect.pBits);
-
+    // we only really need to map the framebuffer to get PFNs
     if (!ctx->framebuffer_pfns)
     {
         LogDebug("1st frame, locking framebuffer");
-        ctx->framebuffer_pfns = LockMemory(ctx->mlock, frame->rect.pBits, 4 * ctx->width * ctx->height);
+
+        status = IDXGIOutputDuplication_MapDesktopSurface(ctx->duplication, &ctx->frame.rect);
+        if (FAILED(status))
+        {
+            win_perror2(status, "duplication->MapDesktopSurface()");
+            goto fail2;
+        }
+
+        ctx->frame.mapped = TRUE;
+
+        ctx->framebuffer_pfns = LockMemory(ctx->mlock, ctx->frame.rect.pBits, 4 * ctx->width * ctx->height);
         if (!ctx->framebuffer_pfns)
         {
             win_perror("LockMemory");
@@ -342,37 +341,79 @@ static CAPTURE_FRAME* GetFrame(IN CAPTURE_CONTEXT* ctx, IN UINT timeout)
         assert(ctx->framebuffer_pfns->NumberOfPages == FRAMEBUFFER_PAGE_COUNT(ctx->width, ctx->height));
     }
 
-    LogVerbose("end");
-    return frame;
+    // dirty rects
+    UINT dr_size = 1; // initial buffer can't be empty
+    RECT temp_rect;
 
+    // query required size
+    ctx->frame.dirty_rects = NULL;
+    status = IDXGIOutputDuplication_GetFrameDirtyRects(ctx->duplication, dr_size, &temp_rect, &dr_size);
+    if (FAILED(status) && status != DXGI_ERROR_MORE_DATA)
+    {
+        win_perror2(status, "initial GetFrameDirtyRects");
+        goto fail4;
+    }
+
+    ctx->frame.dirty_rects = (RECT*)malloc(dr_size);
+    if (!ctx->frame.dirty_rects)
+    {
+        win_perror2(ERROR_OUTOFMEMORY, "allocating dirty rects buffer");
+        goto fail4;
+    }
+
+    status = IDXGIOutputDuplication_GetFrameDirtyRects(ctx->duplication, dr_size, ctx->frame.dirty_rects, &dr_size);
+    if (FAILED(status))
+    {
+        win_perror2(status, "GetFrameDirtyRects");
+        goto fail4;
+    }
+
+    ctx->frame.dirty_rects_count = dr_size / sizeof(RECT);
+    LogDebug("%u dirty rects", ctx->frame.dirty_rects_count);
+
+    // TODO: GetFrameMoveRects (they seem to always be empty when testing)
+    // MSDN note: To produce a visually accurate copy of the desktop,
+    // an application must first process all move RECTs before it processes dirty RECTs.
+
+end:
+    LogVerbose("end");
+    return 0;
+
+fail4:
+    free(ctx->frame.dirty_rects);
+    ctx->frame.dirty_rects = NULL;
+    ctx->frame.dirty_rects_count = 0;
 fail3:
-    IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
+    if (ctx->frame.mapped)
+        IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
 fail2:
     IDXGIOutputDuplication_ReleaseFrame(ctx->duplication);
 fail1:
-    free(frame);
     LogVerbose("end (%x)", status);
+    ctx->frame.texture = NULL;
     SetLastError(status);
-    return NULL;
+    return status;
 }
 
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
 {
-    // if this fails we're tearing down the whole capture interface
-
     LogVerbose("start");
     HRESULT status = ERROR_INVALID_PARAMETER;
-    if (!ctx->frame)
+    if (!ctx->frame.texture)
         goto end;
 
-    status = IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
-    if (FAILED(status))
+    if (ctx->frame.mapped)
     {
-        win_perror2(status, "duplication->UnMapDesktopSurface");
-        goto end;
+        status = IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
+        if (FAILED(status))
+        {
+            win_perror2(status, "duplication->UnMapDesktopSurface");
+            goto end;
+        }
+        ctx->frame.mapped = FALSE;
     }
 
-    status = IDXGIResource_Release(ctx->frame->texture);
+    status = IDXGIResource_Release(ctx->frame.texture);
     if (FAILED(status))
     {
         win_perror2(status, "frame->Release");
@@ -386,8 +427,11 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
         goto end;
     }
 
-    free(ctx->frame);
-    ctx->frame = NULL;
+    ctx->frame.texture = NULL;
+
+    free(ctx->frame.dirty_rects);
+    ctx->frame.dirty_rects = NULL;
+    ctx->frame.dirty_rects_count = 0;
     status = ERROR_SUCCESS;
 end:
     LogVerbose("end (%x)", status);
@@ -409,10 +453,9 @@ static DWORD WINAPI CaptureThread(void* param)
             break;
         }
 
-        capture->frame = GetFrame(capture, 100);
-        if (!capture->frame)
+        status = GetFrame(capture, 1000);
+        if (FAILED(status))
         {
-            status = GetLastError();
             if (status == DXGI_ERROR_WAIT_TIMEOUT)
             {
                 LogVerbose("frame timeout");
@@ -428,18 +471,24 @@ static DWORD WINAPI CaptureThread(void* param)
             break;
         }
 
+        if (capture->frame.dirty_rects_count == 0)
+            goto end_frame; // framebuffer contents not changed
+
         // notify main loop that there's a new frame
         SetEvent(capture->frame_event);
+
         // wait until main loop processes the frame
         if (WaitForSingleObject(capture->ready_event, 1000) != WAIT_OBJECT_0)
         {
             LogWarning("error/timeout waiting for frame processing");
             // probably something bad happened, exit
             status = ERROR_TIMEOUT;
+            ReleaseFrame(capture);
             SetEvent(capture->error_event);
             break;
         }
 
+end_frame:
         status = ReleaseFrame(capture);
         if (FAILED(status))
         {

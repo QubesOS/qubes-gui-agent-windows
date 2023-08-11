@@ -40,7 +40,10 @@ typedef struct _CAPTURE_FRAME
 {
 	IDXGIResource* texture;
 	DXGI_OUTDUPL_FRAME_INFO info;
+	BOOL mapped;
 	DXGI_MAPPED_RECT rect;
+	UINT dirty_rects_count;
+	RECT* dirty_rects;
 } CAPTURE_FRAME;
 
 typedef struct _CAPTURE_CONTEXT
@@ -59,7 +62,7 @@ typedef struct _CAPTURE_CONTEXT
 	HANDLE frame_event; // capture thread -> main loop: new frame
 	HANDLE ready_event; // main loop -> capture thread: frame processed
 	HANDLE error_event; // capture thread -> main loop: capture error
-	CAPTURE_FRAME* frame; // current frame data
+	CAPTURE_FRAME frame; // current frame data
 } CAPTURE_CONTEXT;
 
 // initialize capture interfaces and map framebuffer

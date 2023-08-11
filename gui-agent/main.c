@@ -26,6 +26,7 @@
 #include <Psapi.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "capture.h"
 #include "common.h"
@@ -609,7 +610,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
 }
 
 // Called after receiving new frame.
-static ULONG ProcessUpdatedWindows()
+static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
@@ -617,35 +618,31 @@ static ULONG ProcessUpdatedWindows()
     BOOL first = TRUE;
     ULONG status = ERROR_SUCCESS;
 
-    AttachToInputDesktop();
-    if (oldDesktopWindow != g_DesktopWindow)
-    {
-        LogDebug("desktop changed (old 0x%x), refreshing all windows", oldDesktopWindow);
-        oldDesktopWindow = g_DesktopWindow; // remember current desktop, ResetWatch clears it
-        ResetWatch(g_SeamlessMode);
-        g_DesktopWindow = oldDesktopWindow;
-        HideCursors();
-        DisableEffects();
-    }
-
+    LogVerbose("start");
     if (!g_SeamlessMode)
     {
-        /* XXX dirty bits - use dirty rects from DXGI here
-        // just send damage event with the dirty area
-        if (g_UseDirtyBits)
-            SendWindowDamageEvent(0, dirtyArea.left, dirtyArea.top,
-            dirtyArea.right - dirtyArea.left,
-            dirtyArea.bottom - dirtyArea.top);
+        if (frame->dirty_rects_count == 0)
+        {
+            // normally we don't get frames with 0 dirty rects unless it's the 1st one
+            // then refresh everything
+            LogVerbose("no dirty rects, updating whole screen");
+            SendWindowDamageEvent(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
+        }
         else
-        */
-            SendWindowDamageEvent(0, 0, 0, g_ScreenWidth, g_ScreenHeight);
-        // TODO? if we're not using dirty bits we could narrow the damage area
-        // by checking all windows... but it's probably not worth it.
+        {
+            for (UINT i = 0; i < frame->dirty_rects_count; i++)
+            {
+                RECT rect = frame->dirty_rects[i];
+                SendWindowDamageEvent(NULL, rect.left, rect.top,
+                    rect.right - rect.left, rect.bottom - rect.top);
+            }
+        }
 
         return ERROR_SUCCESS;
     }
 
     // Update the window list - check for new/destroyed windows.
+    // TODO: don't enumerate all windows every time, use window hooks to monitor for changes
     AddAllWindows();
 
     // Update all watched windows.
@@ -665,19 +662,20 @@ static ULONG ProcessUpdatedWindows()
             entry = nextEntry;
             continue;
         }
-        /* XXX dirty bits
-        if (g_UseDirtyBits)
-        {
-            RECT entryRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
 
-            // skip windows that aren't in the changed area
-            if (IntersectRect(&currentArea, &dirtyArea, &entryRect))
+        RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+        RECT changedArea; // intersection of damage rect with window rect
+
+        // skip windows that aren't in the changed area
+        for (UINT i = 0; i < frame->dirty_rects_count; i++)
+        {
+            if (IntersectRect(&changedArea, &frame->dirty_rects[i], &windowRect))
             {
                 status = SendWindowDamageEvent(entry->WindowHandle,
-                                               currentArea.left - entry->X, // TODO: verify
-                                               currentArea.top - entry->Y,
-                                               currentArea.right - entry->X,
-                                               currentArea.bottom - entry->Y);
+                    changedArea.left - entry->X, // TODO: verify
+                    changedArea.top - entry->Y,
+                    changedArea.right - entry->X,
+                    changedArea.bottom - entry->Y);
 
                 if (ERROR_SUCCESS != status)
                 {
@@ -686,20 +684,6 @@ static ULONG ProcessUpdatedWindows()
                 }
             }
         }
-        else
-        */
-        {
-            // assume the whole window area changed
-            status = SendWindowDamageEvent(entry->WindowHandle,
-                                           0, 0, entry->Width, entry->Height);
-
-            if (ERROR_SUCCESS != status)
-            {
-                win_perror2(status, "SendWindowDamageEvent");
-                goto cleanup;
-            }
-        }
-
         entry = nextEntry;
     }
 
@@ -712,19 +696,17 @@ cleanup:
 ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent, OUT CAPTURE_CONTEXT** capture)
 {
     LogVerbose("start");
+    AttachToInputDesktop();
     // Initialize capture interfaces, this also initializes framebuffer PFNs
     *capture = CaptureInitialize(newFrameEvent, captureErrorEvent);
     if (!*capture)
         return win_perror("CaptureInitialize");
 
     ULONG status;
-    if (!g_SeamlessMode)
-    {
-        // send whole screen window
-        status = SendWindowCreate(NULL);
-        if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowCreate(NULL)");
-    }
+    // send whole screen window, needed even in seamless mode
+    status = SendWindowCreate(NULL);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "SendWindowCreate(NULL)");
 
     // send the whole screen framebuffer map
     status = SendScreenMfns((*capture)->framebuffer_pfns->NumberOfPages, &(*capture)->framebuffer_pfns->Pfn[0]);
@@ -746,8 +728,10 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
 
 void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
 {
-    if (!g_SeamlessMode)
-        SendWindowDestroy(NULL);
+    if (!capture)
+        return;
+
+    SendWindowDestroy(NULL);
 
     CaptureTeardown(*capture);
     *capture = NULL;
@@ -858,7 +842,7 @@ static ULONG WINAPI WatchForEvents  (void)
             LogVerbose("new frame");
             if (g_VchanClientConnected)
             {
-                if (g_MaxFps > 0)
+                if (g_MaxFps > 0) // TODO: remove this (fps throttling)
                 {
                     QueryPerformanceCounter(&time2);
                     if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
@@ -877,7 +861,9 @@ static ULONG WINAPI WatchForEvents  (void)
                     time1 = time2;
                     updatePending = FALSE;
                 }
-                ProcessUpdatedWindows(); // XXX damage rects
+
+                assert(capture);
+                ProcessUpdatedWindows(&capture->frame);
             }
 
             if (capture)
@@ -908,7 +894,6 @@ static ULONG WINAPI WatchForEvents  (void)
             LogVerbose("resolution change");
             // don't explicitly reinitialize capture here
             // if it gets invalidated it'll signal us
-            //StopFrameProcessing(&capture);
 
             // Params are in g_ResolutionChangeParams in resolution.c
             status = ChangeResolution();
@@ -917,6 +902,7 @@ static ULONG WINAPI WatchForEvents  (void)
                 win_perror2(status, "ChangeResolution");
                 // XXX don't totally fail on resolution change, this will cause qga to
                 // be constantly respawned by watchdog and not doing anything constructive
+                // TODO: handle MS basic display driver's fixed list of supported resolutions
                 //exitLoop = TRUE;
                 //break;
             }
@@ -924,20 +910,10 @@ static ULONG WINAPI WatchForEvents  (void)
             // is it possible to have VM resolution bigger than host set by user?
             if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
                 g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
-            /*
-            status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
-            if (ERROR_SUCCESS != status)
-            {
-                win_perror2(status, "StartCapture");
-                exitLoop = TRUE;
-                break;
-            }
-            */
 
             break;
 
         case 5: // vchan receive
-            LogVerbose("vchan receive");
             if (!g_VchanClientConnected)
             {
                 vchanIoInProgress = FALSE;
@@ -975,6 +951,7 @@ static ULONG WINAPI WatchForEvents  (void)
             }
 
             EnterCriticalSection(&g_VchanCriticalSection);
+            LogVerbose("vchan receive, %d bytes", VchanGetReadBufferSize(g_Vchan));
 
             vchanIoInProgress = FALSE;
 
@@ -1003,6 +980,7 @@ static ULONG WINAPI WatchForEvents  (void)
             LogVerbose("forced update");
             QueryPerformanceCounter(&time2);
             // XXX what about capture (ready) events?
+            // remove this, seems only used for FPS throttling
             goto force_update;
             break;
 
@@ -1010,6 +988,7 @@ static ULONG WINAPI WatchForEvents  (void)
             LogDebug("capture error, reinitializing");
 
             StopFrameProcessing(&capture);
+            capture = NULL;
 
             status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
             if (ERROR_SUCCESS != status)
@@ -1030,7 +1009,8 @@ static ULONG WINAPI WatchForEvents  (void)
     if (g_VchanClientConnected)
         libvchan_close(g_Vchan);
 
-    StopFrameProcessing(&capture);
+    if (capture)
+        StopFrameProcessing(&capture);
     LogInfo("exiting");
     // all handles will be closed on exit anyway
 
