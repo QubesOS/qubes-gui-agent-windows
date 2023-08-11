@@ -22,7 +22,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
-#include <mmsystem.h>
 #include <Psapi.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -48,8 +47,6 @@
 #define FULLSCREEN_OFF_EVENT_NAME L"QUBES_GUI_AGENT_FULLSCREEN_OFF"
 
 extern struct libvchan *g_Vchan;
-
-DWORD g_MaxFps = 0; // max refresh event batches per second that are sent to guid (0 = disabled)
 
 LONG g_ScreenHeight;
 LONG g_ScreenWidth;
@@ -747,8 +744,6 @@ static ULONG WINAPI WatchForEvents  (void)
     ULONG status;
     BOOL exitLoop;
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
-    LARGE_INTEGER maxInterval, time1, time2;
-    BOOL updatePending = FALSE;
 #if defined(_DEBUG) || defined(DEBUG)
     DWORD dumpLastTime = GetTickCount();
     //UINT64 damageCount = 0, damageCountOld = 0;
@@ -774,15 +769,6 @@ static ULONG WINAPI WatchForEvents  (void)
     g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!g_ResolutionChangeEvent)
         return GetLastError();
-
-    if (g_MaxFps > 0)
-    {
-        QueryPerformanceFrequency(&maxInterval);
-        LogDebug("frequency: %llu", maxInterval.QuadPart);
-        maxInterval.QuadPart /= g_MaxFps;
-        LogDebug("MaxFps: %lu, maxInterval: %llu", g_MaxFps, maxInterval.QuadPart);
-        QueryPerformanceCounter(&time1);
-    }
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
@@ -842,26 +828,6 @@ static ULONG WINAPI WatchForEvents  (void)
             LogVerbose("new frame");
             if (g_VchanClientConnected)
             {
-                if (g_MaxFps > 0) // TODO: remove this (fps throttling)
-                {
-                    QueryPerformanceCounter(&time2);
-                    if (time2.QuadPart - time1.QuadPart < maxInterval.QuadPart) // fps throttling
-                    {
-                        // XXX accumulate damage rects
-                        if (!updatePending)
-                        {
-                            updatePending = TRUE;
-                            // fire a delayed damage event to ensure we won't miss anything in case no damages follow
-                            if (!timeSetEvent(1000 / g_MaxFps, 0, (LPTIMECALLBACK)watchedEvents[6], 0, TIME_ONESHOT | TIME_CALLBACK_EVENT_SET))
-                                win_perror("timeSetEvent");
-                        }
-                        continue;
-                    }
-                force_update:
-                    time1 = time2;
-                    updatePending = FALSE;
-                }
-
                 assert(capture);
                 ProcessUpdatedWindows(&capture->frame);
             }
@@ -976,15 +942,7 @@ static ULONG WINAPI WatchForEvents  (void)
             LeaveCriticalSection(&g_VchanCriticalSection);
             break;
 
-        case 6:
-            LogVerbose("forced update");
-            QueryPerformanceCounter(&time2);
-            // XXX what about capture (ready) events?
-            // remove this, seems only used for FPS throttling
-            goto force_update;
-            break;
-
-        case 7: // capture error, can be due to a desktop switch or resolution change
+        case 6: // capture error, can be due to a desktop switch or resolution change
             LogDebug("capture error, reinitializing");
 
             StopFrameProcessing(&capture);
@@ -1086,14 +1044,6 @@ static ULONG Init(void)
         LogWarning("Failed to read '%s' config value, using default (FALSE)", REG_CONFIG_SEAMLESS_VALUE);
         g_SeamlessMode = FALSE;
     }
-
-    status = CfgReadDword(moduleName, REG_CONFIG_FPS_VALUE, &g_MaxFps, NULL);
-    if (ERROR_SUCCESS != status)
-    {
-        LogWarning("Failed to read '%s' config value, using default (0)", REG_CONFIG_FPS_VALUE);
-        g_MaxFps = 0;
-    }
-    LogInfo("MaxFps: %lu", g_MaxFps);
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
 
