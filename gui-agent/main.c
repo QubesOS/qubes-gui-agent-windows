@@ -22,6 +22,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
+#include <dwmapi.h>
 #include <Psapi.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -60,6 +61,7 @@ LONG g_HostScreenWidth = 0;
 LONG g_HostScreenHeight = 0;
 
 char g_DomainName[256] = "<unknown>";
+USHORT g_GuiDomainId = 0;
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
@@ -109,6 +111,51 @@ void DumpWindows(void)
 }
 #endif
 
+// When DWM compositing is enabled (normally always on), most windows are actually smaller
+// than their size reported by winuser functions. This is because their edges contain
+// invisible grip handles managed by DWM. This function returns actual visible window size.
+ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
+{
+    RECT dwmRect;
+    // get real rect of the window as managed by DWM
+    HRESULT hresult = DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &dwmRect, sizeof(RECT));
+    if (hresult != S_OK)
+        return hresult;
+
+    // TODO: remove excessive logging after confirming this works correctly
+    LogVerbose("%x: DWM rect (%d,%d)-(%d,%d)", window, dwmRect.left, dwmRect.top, dwmRect.right, dwmRect.bottom);
+
+    // monitor info is needed to adjust for DPI scaling
+    HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFOEX monInfo;
+    monInfo.cbSize = sizeof(monInfo);
+#pragma warning(push)
+#pragma warning(disable:4133) // incompatible types - from 'MONITORINFOEX *' to 'LPMONITORINFO' (the function accepts both)
+    if (!GetMonitorInfo(monitor, &monInfo))
+        return win_perror("GetMonitorInfo failed");
+#pragma warning(pop)
+
+    LogVerbose("monitor name: %s", monInfo.szDevice);
+    LogVerbose("monitor rect: (%d,%d)-(%d,%d)", monInfo.rcMonitor.left, monInfo.rcMonitor.top, monInfo.rcMonitor.right, monInfo.rcMonitor.bottom);
+    LogVerbose("work rect: (%d,%d)-(%d,%d)", monInfo.rcWork.left, monInfo.rcWork.top, monInfo.rcWork.right, monInfo.rcWork.bottom);
+
+    DEVMODE devMode;
+    devMode.dmSize = sizeof(DEVMODE);
+    EnumDisplaySettings(monInfo.szDevice, ENUM_CURRENT_SETTINGS, &devMode);
+
+    // adjust for DPI scaling
+    double scale = (monInfo.rcMonitor.right - monInfo.rcMonitor.left) / (double)devMode.dmPelsWidth;
+    LogVerbose("Pel width: %d, scale: %lf", devMode.dmPelsWidth, scale);
+
+    rect->left = (LONG)((dwmRect.left - devMode.dmPosition.x) * scale) + monInfo.rcMonitor.left;
+    rect->right = (LONG)((dwmRect.right - devMode.dmPosition.x) * scale) + monInfo.rcMonitor.left;
+    rect->top = (LONG)((dwmRect.top - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
+    rect->bottom = (LONG)((dwmRect.bottom - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
+    LogVerbose("final rect: (%d,%d)-(%d,%d)", rect->left, rect->top, rect->right, rect->bottom);
+
+    return ERROR_SUCCESS;
+}
+
 // watched windows list critical section must be entered
 // Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULL if ignored).
 // Other errors mean fatal conditions.
@@ -120,8 +167,14 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if (!windowInfo)
         return ERROR_INVALID_PARAMETER;
 
+    RECT dwmRect = windowInfo->rcWindow;
+    // TODO: this calls should always succeed so we don't need to get the window size by winuser functions earlier
+    status = GetWindowRectFromDwm(window, &dwmRect);
+    if (!SUCCEEDED(status))
+        LogWarning("GetWindowRectFromDwm failed");
+
     LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
-             window, windowInfo->rcWindow.left, windowInfo->rcWindow.top, windowInfo->rcWindow.right, windowInfo->rcWindow.bottom,
+             window, dwmRect.left, dwmRect.top, dwmRect.right, dwmRect.bottom,
              windowInfo->dwStyle, windowInfo->dwExStyle, IsWindowVisible(window));
 
     entry = FindWindowByHandle(window);
@@ -142,10 +195,10 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     ZeroMemory(entry, sizeof(WINDOW_DATA));
 
     entry->WindowHandle = window;
-    entry->X = windowInfo->rcWindow.left;
-    entry->Y = windowInfo->rcWindow.top;
-    entry->Width = windowInfo->rcWindow.right - windowInfo->rcWindow.left;
-    entry->Height = windowInfo->rcWindow.bottom - windowInfo->rcWindow.top;
+    entry->X = dwmRect.left;
+    entry->Y = dwmRect.top;
+    entry->Width = dwmRect.right - dwmRect.left;
+    entry->Height = dwmRect.bottom - dwmRect.top;
     entry->IsIconic = IsIconic(window);
     GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
     GetClassName(window, entry->Class, RTL_NUMBER_OF(entry->Class));
@@ -182,9 +235,9 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     if (entry->IsOverrideRedirect)
     {
         LogDebug("popup: %dx%d, screen %dx%d",
-                 windowInfo->rcWindow.right - windowInfo->rcWindow.left,
-                 windowInfo->rcWindow.bottom - windowInfo->rcWindow.top,
-                 g_ScreenWidth, g_ScreenHeight);
+            dwmRect.right - dwmRect.left,
+            dwmRect.bottom - dwmRect.top,
+            g_ScreenWidth, g_ScreenHeight);
     }
 
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
@@ -474,6 +527,11 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     if (windowInfo->dwExStyle == (WS_EX_LAYERED | WS_EX_TOOLWINDOW | 0x800))
         return FALSE;
 
+    // undocumented styles, seem to be used by helper windows that have "visible" style but really aren't
+    // TODO more robust detection
+    if (windowInfo->dwExStyle & 0xc0000000)
+        return FALSE;
+
     return TRUE;
 }
 
@@ -706,9 +764,9 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
         return win_perror2(status, "SendWindowCreate(NULL)");
 
     // send the whole screen framebuffer map
-    status = SendScreenMfns((*capture)->framebuffer_pfns->NumberOfPages, &(*capture)->framebuffer_pfns->Pfn[0]);
+    status = SendScreenGrants(FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight), (*capture)->grant_refs);
     if (ERROR_SUCCESS != status)
-        return win_perror2(status, "SendScreenMfns");
+        return win_perror2(status, "SendScreenGrants");
 
     // this (re)initializes watched windows list
     status = SetSeamlessMode(g_SeamlessMode, TRUE);
@@ -1006,6 +1064,46 @@ cleanup:
     return status;
 }
 
+static DWORD GetGuiDomainId(OUT USHORT* gid)
+{
+    DWORD status = ERROR_SUCCESS;
+    qdb_handle_t qdb = NULL;
+    char *string_id = NULL;
+    int id = 0;
+
+    qdb = qdb_open(NULL);
+    if (!qdb)
+        return win_perror("qdb_open");
+
+    string_id = qdb_read(qdb, "/qubes-gui-domain-xid", NULL);
+    if (!string_id)
+    {
+        LogError("Failed to read GUI domain id");
+        status = ERROR_NOT_FOUND;
+        goto cleanup;
+    }
+
+    LogDebug("GUI domain id: %S", string_id);
+
+    id = atoi(string_id);
+    if (errno == ERANGE || id < 0 || id > USHRT_MAX)
+    {
+        LogError("GUI domain id is invalid (%S)", string_id);
+        status = ERROR_INVALID_DATA;
+        goto cleanup;
+    }
+
+    status = ERROR_SUCCESS;
+    *gid = (USHORT)id;
+
+cleanup:
+    qdb_free(string_id);
+    if (qdb)
+        qdb_close(qdb);
+
+    return status;
+}
+
 static ULONG Init(void)
 {
     ULONG status;
@@ -1058,7 +1156,6 @@ static ULONG Init(void)
         // try to continue
     }
 
-    // Read domain name.
     status = GetDomainName(g_DomainName, RTL_NUMBER_OF(g_DomainName));
     if (ERROR_SUCCESS != status)
     {
@@ -1080,6 +1177,10 @@ static ULONG Init(void)
         }
     }
 
+    status = GetGuiDomainId(&g_GuiDomainId);
+    if (status != ERROR_SUCCESS)
+        return status;
+
     LogInfo("Fullscreen desktop name: %S", g_DomainName);
 
     InitializeListHead(&g_WatchedWindowsList);
@@ -1087,11 +1188,7 @@ static ULONG Init(void)
     return ERROR_SUCCESS;
 }
 
-#ifdef __MINGW32__
-int CALLBACK wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, WCHAR *lpCmdLine, int nCmdShow)
-#else
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
-#endif
 {
     if (ERROR_SUCCESS != Init())
         return win_perror("Init");

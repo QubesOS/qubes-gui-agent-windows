@@ -1,5 +1,0 @@
-#define QTW_FILETYPE                VFT_DRV
-#define QTW_FILESUBTYPE             VFT2_DRV_DISPLAY
-#define QTW_FILEDESCRIPTION_STR     "Qubes Video Miniport Driver"
-
-#include "version_common.rc"

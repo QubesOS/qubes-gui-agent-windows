@@ -1,4 +1,2 @@
-#define QTW_FILEDESCRIPTION_STR "Qubes GUI Agent Watchdog"
-#define QTW_FILETYPE VFT_APP
-#include "..\version.h"
+#define QWT_FILEDESCRIPTION_STR "Qubes GUI Agent Watchdog"
 #include "version_common.rc"

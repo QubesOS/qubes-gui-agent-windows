@@ -199,7 +199,7 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
     si.cb = sizeof(si);
 
     // No need to set desktop here, gui agent attaches to the input desktop anyway,
-    // and hardcodint this to winlogon is wrong.
+    // and hardcoding this to winlogon is wrong.
     if (!CreateProcessAsUser(newToken, NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
     {
         return win_perror("CreateProcessAsUser");
@@ -300,10 +300,10 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
 
     // Read the registry configuration.
     CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
-    status = CfgReadString(moduleName, REG_CONFIG_AUTOSTART_VALUE, cmdline1, RTL_NUMBER_OF(cmdline1), NULL);
+    status = CfgReadString(moduleName, REG_CONFIG_AGENT_PATH_VALUE, cmdline1, RTL_NUMBER_OF(cmdline1), NULL);
     if (ERROR_SUCCESS != status)
     {
-        win_perror("RegQueryValueEx(Autostart)");
+        win_perror("CfgReadString(" REG_CONFIG_AGENT_PATH_VALUE L")");
         goto cleanup;
     }
 

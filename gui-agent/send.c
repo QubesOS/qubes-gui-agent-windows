@@ -34,94 +34,62 @@
 
 #include <strsafe.h>
 
-// prepare relevant shm_cmd struct from array of PFNs
-static ULONG PrepareShmCmd(OUT struct shm_cmd **shmCmd, IN size_t numPages, IN PFN_NUMBER* pfns)
-{
-    ULONG status = ERROR_INVALID_PARAMETER;
+static_assert(sizeof(ULONG) == sizeof(uint32_t), "ULONG has a different size than uint32_t");
 
-    if (!shmCmd)
-        goto end;
-
-    if (numPages > UINT32_MAX)
-    {
-        LogError("number of pages (%llu) > UINT32_MAX", numPages);
-        status = ERROR_NOT_SUPPORTED;
-        goto end;
-    }
-
-    *shmCmd = NULL;
-
-    //LogDebug("fullcreen capture");
-    size_t shmCmdSize = sizeof(struct shm_cmd) + numPages * sizeof(uint32_t);
-
-    *shmCmd = (struct shm_cmd*) malloc(shmCmdSize);
-    if (*shmCmd == NULL)
-    {
-        LogError("Failed to allocate %llu bytes for shm_cmd", shmCmdSize);
-        status = ERROR_NOT_ENOUGH_MEMORY;
-        goto end;
-    }
-
-    (*shmCmd)->shmid = 0;
-    (*shmCmd)->width = g_ScreenWidth;
-    (*shmCmd)->height = g_ScreenHeight;
-    (*shmCmd)->bpp = 32;
-    (*shmCmd)->off = 0;
-    (*shmCmd)->num_mfn = (uint32_t)numPages;
-    (*shmCmd)->domid = 0;
-
-    for (size_t i = 0; i < numPages; i++)
-    {
-        assert(pfns[i] == (uint32_t)pfns[i]);
-        (*shmCmd)->mfns[i] = (uint32_t)pfns[i]; // on x64 pfn numbers are 64bit
-    }
-    status = ERROR_SUCCESS;
-
-end:
-    return status;
-}
-
-ULONG SendScreenMfns(IN size_t numPages, IN PFN_NUMBER* pfns)
+ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
 {
     ULONG status;
-    struct shm_cmd *shmCmd = NULL;
     struct msg_hdr header;
-    UINT32 size;
+    struct msg_window_dump_hdr dumpHdr;
 
     LogVerbose("start");
 
-    if (numPages == 0 || numPages > MAX_MFN_COUNT)
+    if (refs == NULL)
     {
-        LogError("invalid pfn count: %lu", numPages);
-        return ERROR_INSUFFICIENT_BUFFER;
+        LogError("grant refs are NULL");
+        return ERROR_INVALID_PARAMETER;
     }
 
-    status = PrepareShmCmd(&shmCmd, numPages, pfns);
-    if (ERROR_SUCCESS != status)
-        return win_perror2(status, "PrepareShmCmd");
+    if (numGrants == 0 || numGrants > MAX_GRANT_REFS_COUNT)
+    {
+        LogError("invalid grant count: %lu", numGrants);
+        return ERROR_INVALID_PARAMETER;
+    }
 
-    size = shmCmd->num_mfn * sizeof(uint32_t);
-
-    header.type = MSG_MFNDUMP;
+    header.type = MSG_WINDOW_DUMP;
     header.window = 0; // screen
-    header.untrusted_len = sizeof(struct shm_cmd) + size;
+    size_t untrusted_len = sizeof(dumpHdr) + numGrants * sizeof(ULONG);
+    assert(untrusted_len < UINT32_MAX);
+    header.untrusted_len = (uint32_t)untrusted_len;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    if (!VCHAN_SEND(header, L"MSG_MFNDUMP"))
+    if (!VCHAN_SEND(header, L"MSG_WINDOW_DUMP"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
         return win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
     }
 
-    status = VchanSendBuffer(g_Vchan, shmCmd, sizeof(struct shm_cmd) + size, L"shm_cmd");
-    LeaveCriticalSection(&g_VchanCriticalSection);
-    if (!status)
-        return win_perror2(status, "VchanSendBuffer");
+    dumpHdr.type = WINDOW_DUMP_TYPE_GRANT_REFS;
+    dumpHdr.bpp = 32;
+    dumpHdr.width = g_ScreenWidth;
+    dumpHdr.height = g_ScreenHeight;
 
-    free(shmCmd);
+    if (!VCHAN_SEND(dumpHdr, L"dumpHdr"))
+    {
+        LeaveCriticalSection(&g_VchanCriticalSection);
+        return win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(dumpHdr)");
+    }
+
+    status = ERROR_SUCCESS;
+    if (!VchanSendBuffer(g_Vchan, refs, numGrants * sizeof(ULONG), L"refs"))
+    {
+        status = win_perror2(ERROR_UNIDENTIFIED_ERROR, "VchanSendBuffer(grants)");
+    }
+    LeaveCriticalSection(&g_VchanCriticalSection);
+
     LogVerbose("end");
 
-    return ERROR_SUCCESS;
+    return status;
 }
 
 ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)

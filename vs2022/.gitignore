@@ -1,3 +1,4 @@
-﻿.vs/
-x64/
-*.vcxproj.user
+/.vs
+/tmp
+/x64
+/**/*.user

@@ -52,7 +52,7 @@
 #define MessageHint      128  // (this bit is obsolete)
 #define UrgencyHint      256  // urgency
 
-ULONG SendScreenMfns(IN size_t numPages, IN PFN_NUMBER* pfns);
+ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs);
 ULONG SendWindowCreate(IN const WINDOW_DATA *windowData);
 ULONG SendWindowDestroy(IN HWND window);
 ULONG SendWindowFlags(IN HWND window, IN uint32_t flagsToSet, IN uint32_t flagsToUnset);

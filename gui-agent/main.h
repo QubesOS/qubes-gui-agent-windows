@@ -36,6 +36,7 @@ extern LONG g_HostScreenHeight;
 extern BOOL g_VchanClientConnected;
 extern HWND g_DesktopWindow;
 extern char g_DomainName[256];
+extern USHORT g_GuiDomainId;
 extern CRITICAL_SECTION g_csWatchedWindows;
 
 typedef struct _WINDOW_DATA

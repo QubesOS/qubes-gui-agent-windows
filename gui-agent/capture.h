@@ -26,9 +26,7 @@
 #include <dxgi1_2.h>
 #include <initguid.h>
 
-#include "MemoryLockPublic.h"
-
-typedef ULONG64 PFN_NUMBER;
+#include <xencontrol.h>
 
 #define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
 #define	FRAMEBUFFER_PAGE_COUNT(width, height)	(ALIGN(((width)*(height)*4), PAGE_SIZE) / PAGE_SIZE)
@@ -55,10 +53,10 @@ typedef struct _CAPTURE_CONTEXT
 	IDXGIOutput1* output;
 	IDXGIOutputDuplication* duplication;
 	HANDLE thread; // capture loop
-	HANDLE mlock; // MemoryLock device
+	PXENCONTROL_CONTEXT xc;
 	// mapped framebuffer location is constant as long as the capture interface is valid
 	// this gets initialized when the first frame is acquired
-	MEMORYLOCK_GET_PFNS_OUT* framebuffer_pfns;
+	ULONG* grant_refs; // xen grant refs for shared framebuffer pages
 	HANDLE frame_event; // capture thread -> main loop: new frame
 	HANDLE ready_event; // main loop -> capture thread: frame processed
 	HANDLE error_event; // capture thread -> main loop: capture error

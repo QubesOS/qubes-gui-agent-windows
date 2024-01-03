@@ -21,21 +21,20 @@
 
 #include "capture.h"
 #include "common.h"
+#include "main.h"
 
 #include <log.h>
 
 #include <assert.h>
-#include <setupapi.h>
 #include <cfgmgr32.h>
+#include <setupapi.h>
+#include <strsafe.h>
 
 BOOL g_CaptureThreadEnable = FALSE;
 
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout);
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx);
 static DWORD WINAPI CaptureThread(void* param);
-static HANDLE OpenDriverDevice(const GUID* dev_guid);
-static MEMORYLOCK_GET_PFNS_OUT* LockMemory(HANDLE device, void* ptr, size_t size);
-static void UnlockMemory(HANDLE device, ULONG request_id);
 
 // note: win_perror* functions set last error
 
@@ -167,7 +166,7 @@ static IDXGIOutputDuplication* GetDuplication(IN IDXGIOutput1* output, IN ID3D11
     LogDebug("Got output duplication. Surface dimensions = %ux%u %.2f fps, "
         L"format %d, scanline order %d, mapped in memory %d",
         desc.ModeDesc.Width, desc.ModeDesc.Height,
-        (float)desc.ModeDesc.RefreshRate.Numerator / desc.ModeDesc.RefreshRate.Denominator,
+        (float)desc.ModeDesc.RefreshRate.Numerator / (float)desc.ModeDesc.RefreshRate.Denominator,
         desc.ModeDesc.Format, desc.ModeDesc.ScanlineOrdering,
         desc.DesktopImageInSystemMemory);
 
@@ -191,6 +190,14 @@ fail:
     return NULL;
 }
 
+static void XcLogger(IN XENCONTROL_LOG_LEVEL logLevel, IN const char* function, IN const wchar_t* format, IN va_list args)
+{
+    wchar_t buf[1024];
+
+    StringCbVPrintfW(buf, sizeof(buf), format, args);
+    _LogFormat(logLevel, /*raw=*/FALSE, function, buf);
+}
+
 CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
 {
     LogVerbose("start");
@@ -202,8 +209,14 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
         goto fail;
     }
 
-    ctx->mlock = OpenDriverDevice(&GUID_DEVINTERFACE_MemoryLock);
-    if (!ctx->mlock)
+    DWORD status = XcOpen(XcLogger, &ctx->xc);
+    if (status != ERROR_SUCCESS)
+    {
+        win_perror2(status, "Failed to open xencontrol handle");
+        goto fail;
+    }
+
+    if (!ctx->xc)
         goto fail;
 
     ctx->adapter = GetAdapter();
@@ -269,13 +282,12 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
     if (ctx->adapter)
         IDXGIAdapter_Release(ctx->adapter);
 
-    if (ctx->mlock)
-        CloseHandle(ctx->mlock); // locked pages are unlocked here
+    if (ctx->xc)
+        XcClose(ctx->xc); // TODO: ensure this stops page sharing
 
     if (ctx->frame.texture)
         ReleaseFrame(ctx);
 
-    free(ctx->framebuffer_pfns);
     free(ctx);
     LogVerbose("end");
     SetLastError(status);
@@ -310,18 +322,18 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
         goto fail1;
     }
 
-    if (ctx->frame.info.LastPresentTime.QuadPart == 0 && ctx->framebuffer_pfns)
+    if (ctx->frame.info.LastPresentTime.QuadPart == 0 && ctx->grant_refs)
     {
-        // only skip here after we mapped the PFNs
+        // only skip here after we shared the framebuffer
         LogVerbose("framebuffer unchanged");
         ctx->frame.mapped = FALSE;
         goto end;
     }
 
-    // we only really need to map the framebuffer to get PFNs
-    if (!ctx->framebuffer_pfns)
+    // we only really need to map the framebuffer to ge
+    if (!ctx->grant_refs)
     {
-        LogDebug("1st frame, locking framebuffer");
+        LogDebug("1st frame, sharing framebuffer");
 
         status = IDXGIOutputDuplication_MapDesktopSurface(ctx->duplication, &ctx->frame.rect);
         if (FAILED(status))
@@ -332,13 +344,26 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
 
         ctx->frame.mapped = TRUE;
 
-        ctx->framebuffer_pfns = LockMemory(ctx->mlock, ctx->frame.rect.pBits, 4 * ctx->width * ctx->height);
-        if (!ctx->framebuffer_pfns)
+        size_t page_count = FRAMEBUFFER_PAGE_COUNT(ctx->width, ctx->height);
+        assert(page_count < ULONG_MAX);
+        ctx->grant_refs = malloc(page_count * sizeof(ULONG));
+
+        PVOID shared_va = NULL;
+        status = XcGnttabPermitForeignAccess2(ctx->xc,
+            g_GuiDomainId,
+            ctx->frame.rect.pBits,
+            (ULONG)page_count,
+            0,
+            0,
+            XENIFACE_GNTTAB_READONLY,
+            &shared_va,
+            ctx->grant_refs);
+
+        if (status != ERROR_SUCCESS)
         {
-            win_perror("LockMemory");
+            win_perror("sharing framebuffer with GUI domain");
             goto fail3;
         }
-        assert(ctx->framebuffer_pfns->NumberOfPages == FRAMEBUFFER_PAGE_COUNT(ctx->width, ctx->height));
     }
 
     // dirty rects
@@ -385,7 +410,11 @@ fail4:
     ctx->frame.dirty_rects_count = 0;
 fail3:
     if (ctx->frame.mapped)
+    {
+        free(ctx->grant_refs);
+        ctx->grant_refs = NULL;
         IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
+    }
 fail2:
     IDXGIOutputDuplication_ReleaseFrame(ctx->duplication);
 fail1:
@@ -499,140 +528,4 @@ end_frame:
     }
     LogDebug("exiting");
     return status;
-}
-
-// memorylock driver interface
-static HANDLE OpenDriverDevice(const GUID* dev_guid)
-{
-    LogVerbose("start");
-    SP_DEVINFO_DATA dev_data = { 0 };
-    dev_data.cbSize = sizeof(dev_data);
-
-    HANDLE dev_set = SetupDiGetClassDevs(dev_guid, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-
-    HANDLE dev_handle = NULL;
-    DWORD dev_idx = 0;
-    int instance_idx = 0;
-    // TODO: more error checking
-    while (TRUE)
-    {
-        BOOL ok = SetupDiEnumDeviceInfo(dev_set, dev_idx, &dev_data);
-        if (!ok)
-            break;
-
-        dev_data.cbSize = sizeof(dev_data);
-        ULONG id_size;
-        CM_Get_Device_ID_Size(&id_size, dev_data.DevInst, 0);
-
-        char dev_id[200];
-        CM_Get_Device_IDA(dev_data.DevInst, dev_id, sizeof(dev_id), 0);
-        LogDebug("Device instance #%d: id = '%S'", dev_data.DevInst, dev_id);
-        instance_idx++;
-
-        SP_DEVICE_INTERFACE_DATA iface_data;
-        iface_data.cbSize = sizeof(iface_data);
-        DWORD iface_idx = 0;
-        while (TRUE)
-        {
-            if (!SetupDiEnumDeviceInterfaces(dev_set, &dev_data, dev_guid, iface_idx, &iface_data))
-            {
-                win_perror("SetupDiEnumDeviceInterfaces");
-                break;
-            }
-
-            iface_data.cbSize = sizeof(iface_data);
-            DWORD needed;
-            SetupDiGetDeviceInterfaceDetail(dev_set, &iface_data, NULL, 0, &needed, 0);
-
-            SP_DEVICE_INTERFACE_DETAIL_DATA* details = (SP_DEVICE_INTERFACE_DETAIL_DATA*)malloc(needed);
-            if (!details)
-            {
-                SetLastError(ERROR_OUTOFMEMORY);
-                goto fail;
-            }
-            details->cbSize = sizeof(SP_INTERFACE_DEVICE_DETAIL_DATA);
-
-            DWORD unused;
-            ok = SetupDiGetDeviceInterfaceDetail(dev_set, &iface_data, details, needed, &unused, NULL);
-            LogDebug("%s", details->DevicePath);
-
-            dev_handle = CreateFile(details->DevicePath, GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-
-            if (dev_handle != INVALID_HANDLE_VALUE)
-            {
-                LogDebug("Driver device successfully opened");
-                LogVerbose("end");
-                return dev_handle;
-            }
-
-            iface_idx++;
-        }
-
-        dev_idx++;
-    }
-
-fail:
-    LogVerbose("end (fail)");
-    return NULL;
-}
-
-static MEMORYLOCK_GET_PFNS_OUT* LockMemory(HANDLE device, void* ptr, size_t size)
-{
-    LogVerbose("start");
-    MEMORYLOCK_LOCK_IN input;
-    MEMORYLOCK_LOCK_OUT output;
-    input.Address = ptr;
-    input.Size = (UINT)size;
-
-    if (!DeviceIoControl(device, IOCTL_MEMORYLOCK_LOCK,
-        &input, sizeof(input), &output, sizeof(output), NULL, NULL))
-    {
-        win_perror("DeviceIoControl(IOCTL_MEMORYLOCK_LOCK)");
-        goto end;
-    }
-
-    LogDebug("request: 0x%x, %llu pages", output.RequestId, output.NumberOfPages);
-
-    MEMORYLOCK_GET_PFNS_IN pfn_in;
-    MEMORYLOCK_GET_PFNS_OUT* pfn_out;
-    size_t pfn_out_size = sizeof(MEMORYLOCK_GET_PFNS_OUT) + sizeof(PFN_NUMBER) * output.NumberOfPages;
-    pfn_out = (MEMORYLOCK_GET_PFNS_OUT*)malloc(pfn_out_size);
-    assert(pfn_out);
-
-    pfn_in.RequestId = output.RequestId;
-
-    if (!DeviceIoControl(device, IOCTL_MEMORYLOCK_GET_PFNS,
-        &pfn_in, (DWORD)sizeof(pfn_in), pfn_out, (DWORD)pfn_out_size, NULL, NULL))
-    {
-        win_perror("DeviceIoControl(IOCTL_MEMORYLOCK_GET_PFNS)");
-        goto end;
-    }
-
-    LogVerbose("PFN array:");
-    // XXX DEBUG
-    for (size_t i = 0; i < 5; i++)
-        LogVerboseRaw("0x%016lx ", pfn_out->Pfn[i]);
-    LogVerboseRaw("...\n");
-
-    // we ignore RequestId since we'll not explicitly unlock framebuffer
-    // it'll get unlocked by the driver when we close its handle on teardown
-
-end:
-    LogVerbose("end");
-    return pfn_out;
-}
-
-// XXX unused
-static void UnlockMemory(HANDLE device, ULONG request_id)
-{
-    LogDebug("request %x", request_id);
-    MEMORYLOCK_UNLOCK_IN input;
-    input.RequestId = request_id;
-
-    if (!DeviceIoControl(device, IOCTL_MEMORYLOCK_UNLOCK,
-        &input, sizeof(input), NULL, 0, NULL, NULL))
-    {
-        win_perror("DeviceIoControl(IOCTL_MEMORYLOCK_UNLOCK)");
-    }
 }

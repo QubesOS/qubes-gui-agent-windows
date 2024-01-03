@@ -1,4 +1,0 @@
-#define QTW_FILEDESCRIPTION_STR "Qubes install helper (disable device)"
-#define QTW_FILETYPE VFT_APP
-#include "..\..\version.h"
-#include "version_common.rc"
