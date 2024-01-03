@@ -1,7 +1,1 @@
-*.msm
-*.suo
-*.user
-*.sdf
-*.opensdf
-bin/
-obj/
+/bin/
