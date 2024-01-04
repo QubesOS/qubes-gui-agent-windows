@@ -71,16 +71,19 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(SolutionDir)\dirs.props" Condition="exists('$(SolutionDir)\dirs.props')" Label="Installer include/lib directory overrides" />
+  </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IntDir>$(SolutionDir)\tmp\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir)\..\include;$(QUBES_INCLUDES);$(EWDK_INCLUDE)</IncludePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)\..\..\include;$(QUBES_INCLUDES);$(EWDK_INCLUDE)</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(QUBES_LIBS);$(EWDK_LIB)</LibraryPath>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IntDir>$(SolutionDir)\tmp\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir)\..\include;$(QUBES_INCLUDES);$(EWDK_INCLUDE)</IncludePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)\..\..\include;$(QUBES_INCLUDES);$(EWDK_INCLUDE)</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(QUBES_LIBS);$(EWDK_LIB)</LibraryPath>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
@@ -98,7 +101,7 @@
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>powershell $(SolutionDir)\..\set_version.ps1 $(SolutionDir)\..\version $(SolutionDir)\..\include\qwt_version.h</Command>
+      <Command>powershell $(ProjectDir)\..\..\set_version.ps1 $(ProjectDir)\..\..\version $(ProjectDir)\..\..\include\qwt_version.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Generate qwt_version.h</Message>
@@ -127,7 +130,7 @@
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>powershell $(SolutionDir)\..\set_version.ps1 $(SolutionDir)\..\version $(SolutionDir)\..\include\qwt_version.h</Command>
+      <Command>powershell $(ProjectDir)\..\..\set_version.ps1 $(ProjectDir)\..\..\version $(ProjectDir)\..\..\include\qwt_version.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Generate qwt_version.h</Message>
