@@ -29,7 +29,6 @@
 
 // value names in registry config
 #define REG_CONFIG_FPS_VALUE        L"MaxFps"
-#define REG_CONFIG_DIRTY_VALUE      L"UseDirtyBits"
 #define REG_CONFIG_CURSOR_VALUE     L"DisableCursor"
 #define REG_CONFIG_SEAMLESS_VALUE   L"SeamlessMode"
 
