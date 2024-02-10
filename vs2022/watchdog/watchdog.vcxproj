@@ -22,6 +22,7 @@
     <ProjectGuid>{9ca9d9c3-6989-40cf-8e22-af09e3de87dc}</ProjectGuid>
     <RootNamespace>watchdog</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>gui-watchdog</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
