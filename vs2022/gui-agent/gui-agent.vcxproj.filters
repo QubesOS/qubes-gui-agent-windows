@@ -74,6 +74,9 @@
     <ClInclude Include="..\..\gui-agent\xorg-keymap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\gui-agent\blank.cur">

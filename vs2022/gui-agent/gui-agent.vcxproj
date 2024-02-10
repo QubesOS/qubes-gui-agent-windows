@@ -32,6 +32,7 @@
     <ClInclude Include="..\..\gui-agent\vchan.h" />
     <ClInclude Include="..\..\gui-agent\wm.h" />
     <ClInclude Include="..\..\gui-agent\xorg-keymap.h" />
+    <ClInclude Include="..\..\include\common.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\gui-agent\blank.cur" />
