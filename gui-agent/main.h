@@ -56,14 +56,6 @@ typedef struct _WINDOW_DATA
     HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
 } WINDOW_DATA;
 
-typedef struct _BANNED_WINDOWS
-{
-    HWND Explorer;
-    HWND Desktop;
-    HWND Taskbar;
-    HWND Start;
-} BANNED_WINDOWS;
-
 // used when searching for modal window that's blocking another window
 typedef struct _MODAL_SEARCH_PARAMS
 {

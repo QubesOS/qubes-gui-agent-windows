@@ -65,9 +65,9 @@ USHORT g_GuiDomainId = 0;
 
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
-BANNED_WINDOWS g_bannedWindows = { 0 };
 
 HWND g_DesktopWindow = NULL;
+HWND g_TaskbarWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
@@ -182,6 +182,7 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     {
         if (windowEntry)
             *windowEntry = entry;
+
         return ERROR_SUCCESS;
     }
 
@@ -334,23 +335,9 @@ static ULONG AddAllWindows(void)
 {
     LogVerbose("start");
 
-    // Check for special windows that should be ignored/hidden in seamless mode.
-    g_bannedWindows.Explorer = FindWindow(L"Progman", L"Program Manager");
-
-    g_bannedWindows.Taskbar = FindWindow(L"Shell_TrayWnd", NULL);
-    if (g_bannedWindows.Taskbar)
-    {
-        ShowWindow(g_bannedWindows.Taskbar, SW_HIDE);
-    }
-
-    g_bannedWindows.Start = FindWindowEx(g_DesktopWindow, NULL, L"Button", NULL);
-    if (g_bannedWindows.Start)
-    {
-        ShowWindow(g_bannedWindows.Start, SW_HIDE);
-    }
-
-    LogDebug("desktop=0x%x, explorer=0x%x, taskbar=0x%x, start=0x%x",
-             g_DesktopWindow, g_bannedWindows.Explorer, g_bannedWindows.Taskbar, g_bannedWindows.Start);
+    g_TaskbarWindow = FindWindow(L"Shell_TrayWnd", NULL);
+    if (g_TaskbarWindow)
+        ShowWindow(g_TaskbarWindow, SW_HIDE);
 
     // Enum top-level windows and add all that are not filtered.
     if (!EnumWindows(AddWindowsProc, 0))
@@ -404,11 +391,8 @@ static ULONG ResetWatch(BOOL seamlessMode)
     }
     else
     {
-        if (g_bannedWindows.Taskbar)
-            ShowWindow(g_bannedWindows.Taskbar, SW_SHOW);
-
-        if (g_bannedWindows.Start)
-            ShowWindow(g_bannedWindows.Start, SW_SHOW);
+        if (g_TaskbarWindow)
+            ShowWindow(g_TaskbarWindow, SW_SHOW);
     }
 
     LogVerbose("success");
@@ -490,6 +474,7 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
 
     if (!windowInfo)
     {
+        wi.cbSize = sizeof(wi);
         if (!GetWindowInfo(window, &wi))
         {
             win_perror("GetWindowInfo");
@@ -498,11 +483,10 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
         windowInfo = &wi;
     }
 
-    if (g_bannedWindows.Explorer == window ||
-        g_bannedWindows.Desktop == window ||
-        g_bannedWindows.Start == window ||
-        g_bannedWindows.Taskbar == window
-        )
+    if (window == g_TaskbarWindow)
+        return FALSE;
+
+    if (window == GetShellWindow())
         return FALSE;
 
     // empty window rectangle? ignore (guid rejects those)
@@ -516,10 +500,13 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     if (windowInfo->dwStyle & WS_CHILD)
         return FALSE;
 
-    // Skip invisible windows.
     if (!IsWindowVisible(window))
         return FALSE;
 
+    // this style seems to be used exclusively by helper windows that aren't visible despite having WS_VISIBLE style
+    if (windowInfo->dwExStyle & WS_EX_NOACTIVATE)
+        return FALSE;
+    /*
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
     // 0x800 exstyle is undocumented...
     // FIXME: ignoring these border "windows" causes weird window looks.
@@ -531,6 +518,12 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     // TODO more robust detection
     if (windowInfo->dwExStyle & 0xc0000000)
         return FALSE;
+    */
+
+    DWORD cloaked;
+    if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))))
+        if (cloaked != 0) // hidden by DWM
+            return FALSE;
 
     return TRUE;
 }
