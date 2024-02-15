@@ -5,10 +5,12 @@ VisualStudioVersion = 17.6.33723.286
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gui-agent", "gui-agent\gui-agent.vcxproj", "{2CAD426C-FEE2-41F4-88C0-DCF14B59EA9E}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "watchdog", "watchdog\watchdog.vcxproj", "{9CA9D9C3-6989-40CF-8E22-AF09E3DE87DC}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gui-watchdog", "watchdog\watchdog.vcxproj", "{9CA9D9C3-6989-40CF-8E22-AF09E3DE87DC}"
 	ProjectSection(ProjectDependencies) = postProject
 		{2CAD426C-FEE2-41F4-88C0-DCF14B59EA9E} = {2CAD426C-FEE2-41F4-88C0-DCF14B59EA9E}
 	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dump-windows", "dump-windows\dump-windows.vcxproj", "{A6473190-2539-46C8-8B3A-E3F649365ADE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -24,6 +26,10 @@ Global
 		{9CA9D9C3-6989-40CF-8E22-AF09E3DE87DC}.Debug|x64.Build.0 = Debug|x64
 		{9CA9D9C3-6989-40CF-8E22-AF09E3DE87DC}.Release|x64.ActiveCfg = Release|x64
 		{9CA9D9C3-6989-40CF-8E22-AF09E3DE87DC}.Release|x64.Build.0 = Release|x64
+		{A6473190-2539-46C8-8B3A-E3F649365ADE}.Debug|x64.ActiveCfg = Debug|x64
+		{A6473190-2539-46C8-8B3A-E3F649365ADE}.Debug|x64.Build.0 = Debug|x64
+		{A6473190-2539-46C8-8B3A-E3F649365ADE}.Release|x64.ActiveCfg = Release|x64
+		{A6473190-2539-46C8-8B3A-E3F649365ADE}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
