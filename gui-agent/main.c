@@ -740,19 +740,25 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    // Update the window list - check for new/destroyed/updated windows.
+    // Update the window list - check for new/updated windows.
     // TODO: don't enumerate all windows every time, use window hooks to monitor for changes
     AddAllWindows();
 
-    // send damage notifications
+    // send damage notifications and detect destroyed windows
     entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
-    while (entry != (WINDOW_DATA *)&g_WatchedWindowsList)
+    while (entry != (WINDOW_DATA*)&g_WatchedWindowsList)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
-        nextEntry = (WINDOW_DATA *)entry->ListEntry.Flink;
+        nextEntry = (WINDOW_DATA*)entry->ListEntry.Flink;
 
         if (entry->IsIconic) // minimized, don't care
             goto skip;
+
+        if (!IsWindow(entry->Handle)) // destroyed
+        {
+            RemoveWindow(entry);
+            goto skip;
+        }
 
         RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Height };
         RECT changedArea; // intersection of damage rect with window rect
