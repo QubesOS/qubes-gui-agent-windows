@@ -122,9 +122,6 @@ ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
     if (hresult != S_OK)
         return hresult;
 
-    // TODO: remove excessive logging after confirming this works correctly
-    LogVerbose("%x: DWM rect (%d,%d)-(%d,%d)", window, dwmRect.left, dwmRect.top, dwmRect.right, dwmRect.bottom);
-
     // monitor info is needed to adjust for DPI scaling
     HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
     MONITORINFOEX monInfo;
@@ -135,23 +132,17 @@ ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
         return win_perror("GetMonitorInfo failed");
 #pragma warning(pop)
 
-    LogVerbose("monitor name: %s", monInfo.szDevice);
-    LogVerbose("monitor rect: (%d,%d)-(%d,%d)", monInfo.rcMonitor.left, monInfo.rcMonitor.top, monInfo.rcMonitor.right, monInfo.rcMonitor.bottom);
-    LogVerbose("work rect: (%d,%d)-(%d,%d)", monInfo.rcWork.left, monInfo.rcWork.top, monInfo.rcWork.right, monInfo.rcWork.bottom);
-
     DEVMODE devMode;
     devMode.dmSize = sizeof(DEVMODE);
     EnumDisplaySettings(monInfo.szDevice, ENUM_CURRENT_SETTINGS, &devMode);
 
     // adjust for DPI scaling
     double scale = (monInfo.rcMonitor.right - monInfo.rcMonitor.left) / (double)devMode.dmPelsWidth;
-    LogVerbose("Pel width: %d, scale: %lf", devMode.dmPelsWidth, scale);
 
     rect->left = (LONG)((dwmRect.left - devMode.dmPosition.x) * scale) + monInfo.rcMonitor.left;
     rect->right = (LONG)((dwmRect.right - devMode.dmPosition.x) * scale) + monInfo.rcMonitor.left;
     rect->top = (LONG)((dwmRect.top - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
     rect->bottom = (LONG)((dwmRect.bottom - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
-    LogVerbose("final rect: (%d,%d)-(%d,%d)", rect->left, rect->top, rect->right, rect->bottom);
 
     return ERROR_SUCCESS;
 }
