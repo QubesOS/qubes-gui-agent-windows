@@ -754,7 +754,7 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
         if (entry->IsIconic) // minimized, don't care
             goto skip;
 
-        RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
+        RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Height };
         RECT changedArea; // intersection of damage rect with window rect
 
         // skip windows that aren't in the changed area
