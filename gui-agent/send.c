@@ -114,8 +114,8 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
         wi.rcWindow.left = 0;
         wi.rcWindow.top = 0;
 
-        wi.rcWindow.right = GetSystemMetrics(SM_CXSCREEN) - 1;
-        wi.rcWindow.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
+        wi.rcWindow.right = GetSystemMetrics(SM_CXSCREEN);
+        wi.rcWindow.bottom = GetSystemMetrics(SM_CYSCREEN);
 
         header.window = 0;
     }
@@ -137,8 +137,8 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 
     createMsg.x = wi.rcWindow.left;
     createMsg.y = wi.rcWindow.top;
-    createMsg.width = wi.rcWindow.right - wi.rcWindow.left + 1;
-    createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top + 1;
+    createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
+    createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
 #pragma warning(suppress:4311)
     createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
