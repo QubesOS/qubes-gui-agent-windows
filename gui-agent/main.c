@@ -1067,8 +1067,13 @@ static ULONG WINAPI WatchForEvents  (void)
 
     LogDebug("main loop finished");
 
+    EnterCriticalSection(&g_VchanCriticalSection);
     if (g_VchanClientConnected)
+    {
         libvchan_close(g_Vchan);
+        g_VchanClientConnected = FALSE;
+    }
+    LeaveCriticalSection(&g_VchanCriticalSection);
 
     if (capture)
         StopFrameProcessing(&capture);
