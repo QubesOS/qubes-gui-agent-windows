@@ -317,7 +317,7 @@ static DWORD HandleConfigure(IN HWND window)
         return ERROR_UNIDENTIFIED_ERROR;
     }
 
-    LogDebug("0x%x (%d,%d) %dx%d", window, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
+    LogDebug("0x%x: (%d,%d) %dx%d", window, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
 
     if (window != 0) // 0 is full screen
     {
@@ -329,16 +329,14 @@ static DWORD HandleConfigure(IN HWND window)
 
         if (g_ScreenWidth == configureMsg.width && g_ScreenHeight == configureMsg.height)
         {
-            // send ACK to guid so it won't stop sending MSG_CONFIGURE
-            return SendScreenConfigure(configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height);
+            goto end;
             // nothing changes, ignore
         }
 
         if (!IS_RESOLUTION_VALID(configureMsg.width, configureMsg.height))
         {
             LogWarning("Ignoring invalid resolution %dx%d", configureMsg.width, configureMsg.height);
-            // send back current resolution to keep daemon up to date
-            return SendScreenConfigure(0, 0, g_ScreenWidth, g_ScreenHeight);
+            goto end;
         }
 
         // XY coords are used to reply with the same message to the daemon.
@@ -346,8 +344,10 @@ static DWORD HandleConfigure(IN HWND window)
         // Signal the trigger event so the throttling thread evaluates the resize request.
         RequestResolutionChange(configureMsg.width, configureMsg.height, configureMsg.x, configureMsg.y);
     }
-
-    return ERROR_SUCCESS;
+end:
+    // send ACK to gui daemon so it won't stop sending MSG_CONFIGURE
+    return SendWindowConfigure(window,
+        configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, configureMsg.override_redirect);
 }
 
 static DWORD HandleFocus(IN HWND window)

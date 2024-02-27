@@ -38,7 +38,7 @@ static_assert(sizeof(ULONG) == sizeof(uint32_t), "ULONG has a different size tha
 
 ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
 {
-    ULONG status;
+    ULONG status = ERROR_INVALID_PARAMETER;
     struct msg_hdr header;
     struct msg_window_dump_hdr dumpHdr;
 
@@ -47,13 +47,13 @@ ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
     if (refs == NULL)
     {
         LogError("grant refs are NULL");
-        return ERROR_INVALID_PARAMETER;
+        goto end;
     }
 
     if (numGrants == 0 || numGrants > MAX_GRANT_REFS_COUNT)
     {
         LogError("invalid grant count: %lu", numGrants);
-        return ERROR_INVALID_PARAMETER;
+        goto end;
     }
 
     header.type = MSG_WINDOW_DUMP;
@@ -66,7 +66,8 @@ ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
     if (!VCHAN_SEND(header, L"MSG_WINDOW_DUMP"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
-        return win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
+        status = win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(header)");
+        goto end;
     }
 
     dumpHdr.type = WINDOW_DUMP_TYPE_GRANT_REFS;
@@ -77,7 +78,8 @@ ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
     if (!VCHAN_SEND(dumpHdr, L"dumpHdr"))
     {
         LeaveCriticalSection(&g_VchanCriticalSection);
-        return win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(dumpHdr)");
+        status = win_perror2(ERROR_UNIDENTIFIED_ERROR, "VCHAN_SEND(dumpHdr)");
+        goto end;
     }
 
     status = ERROR_SUCCESS;
@@ -87,7 +89,8 @@ ULONG SendScreenGrants(IN size_t numGrants, IN const ULONG* refs)
     }
     LeaveCriticalSection(&g_VchanCriticalSection);
 
-    LogVerbose("end");
+end:
+    LogVerbose("end (%x)", status);
 
     return status;
 }
@@ -118,12 +121,12 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     }
     else
     {
-        LogDebug("hwnd=0x%x, (%d,%d) %dx%d, override=%d", windowData->WindowHandle,
+        LogDebug("0x%x, (%d,%d) %dx%d, override=%d", windowData->Handle,
                  windowData->X, windowData->Y, windowData->Width, windowData->Height,
                  windowData->IsOverrideRedirect);
 
 #pragma warning(suppress:4311)
-        header.window = (uint32_t)windowData->WindowHandle;
+        header.window = (uint32_t)windowData->Handle;
         wi.rcWindow.left = windowData->X;
         wi.rcWindow.top = windowData->Y;
         wi.rcWindow.right = windowData->X + windowData->Width;
@@ -151,7 +154,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 
     if (windowData)
     {
-        status = SendWindowHints(windowData->WindowHandle, PPosition); // program-specified position
+        status = SendWindowHints(windowData->Handle, PPosition); // program-specified position
         if (ERROR_SUCCESS != status)
             return status;
     }
@@ -281,14 +284,14 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
         return ERROR_SUCCESS;
 
     if (windowData)
-        LogInfo("Mapping window 0x%x", windowData->WindowHandle);
+        LogInfo("Mapping window 0x%x", windowData->Handle);
     else
         LogInfo("Mapping desktop window");
 
     header.type = MSG_MAP;
     if (windowData)
 #pragma warning(suppress:4311)
-        header.window = (uint32_t)windowData->WindowHandle;
+        header.window = (uint32_t)windowData->Handle;
     else
         header.window = 0;
     header.untrusted_len = 0;
@@ -327,7 +330,7 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
         if (g_ScreenWidth == g_HostScreenWidth && g_ScreenHeight == g_HostScreenHeight)
         {
             LogDebug("fullscreen window");
-            status = SendWindowFlags(windowData ? windowData->WindowHandle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
+            status = SendWindowFlags(windowData ? windowData->Handle : NULL, WINDOW_FLAG_FULLSCREEN, 0);
             if (ERROR_SUCCESS != status)
                 return status;
         }
@@ -336,46 +339,29 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
     return ERROR_SUCCESS;
 }
 
-// if windowData == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
+// if window == 0, use the whole screen
+ULONG SendWindowConfigure(HANDLE window, int x, int y, int width, int height, BOOL popup)
 {
     struct msg_hdr header;
     struct msg_configure configureMsg;
-    struct msg_map_info mapMsg;
-    BOOL status;
 
     if (!g_VchanClientConnected)
         return ERROR_SUCCESS;
 
-    if (windowData)
-    {
-        LogDebug("0x%x", windowData->WindowHandle);
 #pragma warning(suppress:4311)
-        header.window = (uint32_t)windowData->WindowHandle;
+    header.window = (uint32_t)window;
 
-        header.type = MSG_CONFIGURE;
+    header.type = MSG_CONFIGURE;
 
-        configureMsg.x = windowData->X;
-        configureMsg.y = windowData->Y;
-        configureMsg.width = windowData->Width;
-        configureMsg.height = windowData->Height;
-        configureMsg.override_redirect = windowData->IsOverrideRedirect;
-    }
-    else // whole screen
-    {
-        LogDebug("fullscreen: (0,0) %dx%d", g_ScreenWidth, g_ScreenHeight);
-        header.window = 0;
+    configureMsg.x = x;
+    configureMsg.y = y;
+    configureMsg.width = width;
+    configureMsg.height = height;
+    configureMsg.override_redirect = popup;
+    LogVerbose("0x%x: (%d,%d) %dx%d ovr=%d", window, configureMsg.x, configureMsg.y,
+        configureMsg.width, configureMsg.height, configureMsg.override_redirect);
 
-        header.type = MSG_CONFIGURE;
-
-        configureMsg.x = 0;
-        configureMsg.y = 0;
-        configureMsg.width = g_ScreenWidth;
-        configureMsg.height = g_ScreenHeight;
-        configureMsg.override_redirect = 0;
-    }
-
-    status = TRUE;
+    BOOL status = TRUE;
     EnterCriticalSection(&g_VchanCriticalSection);
 
     // don't send resize to 0x0 - this window is just hiding itself, MSG_UNMAP will follow
@@ -386,45 +372,7 @@ ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL)
             goto cleanup;
     }
 
-    if (windowData)
-    {
-#pragma warning(suppress:4311)
-        mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE; // TODO?
-        mapMsg.override_redirect = windowData->IsOverrideRedirect;
-
-        header.type = MSG_MAP;
-        status = VCHAN_SEND_MSG(header, mapMsg, L"MSG_MAP");
-    }
-
 cleanup:
-    LeaveCriticalSection(&g_VchanCriticalSection);
-
-    return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
-}
-
-// Send screen resolution back to gui daemon.
-ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height)
-{
-    struct msg_hdr header;
-    struct msg_configure configMsg;
-    BOOL status;
-
-    if (!g_VchanClientConnected)
-        return ERROR_SUCCESS;
-
-    LogDebug("(%d,%d) %dx%d", x, y, width, height);
-    header.window = 0; // 0 = screen
-
-    header.type = MSG_CONFIGURE;
-
-    configMsg.x = x;
-    configMsg.y = y;
-    configMsg.width = width;
-    configMsg.height = height;
-    configMsg.override_redirect = 0;
-
-    EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND_MSG(header, configMsg, L"MSG_CONFIGURE screen");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;
@@ -439,7 +387,7 @@ ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN
     if (!g_VchanClientConnected)
         return ERROR_SUCCESS;
 
-    LogVerbose("0x%x (%d,%d)-(%d,%d)", window, x, y, x + width, y + height);
+    LogVerbose("0x%x: (%d,%d)-(%d,%d) %dx%d", window, x, y, x + width, y + height, width, height);
     header.type = MSG_SHMIMAGE;
 #pragma warning(suppress:4311)
     header.window = (uint32_t)window;

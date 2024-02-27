@@ -195,6 +195,7 @@ static void XcLogger(IN XENCONTROL_LOG_LEVEL logLevel, IN const char* function, 
     wchar_t buf[1024];
 
     StringCbVPrintfW(buf, sizeof(buf), format, args);
+    // XC log levels are the same as ours
     _LogFormat(logLevel, /*raw=*/FALSE, function, buf);
 }
 
@@ -283,7 +284,7 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
         IDXGIAdapter_Release(ctx->adapter);
 
     if (ctx->xc)
-        XcClose(ctx->xc); // TODO: ensure this stops page sharing
+        XcClose(ctx->xc);
 
     if (ctx->frame.texture)
         ReleaseFrame(ctx);
@@ -318,7 +319,10 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
         timeout, &ctx->frame.info, &ctx->frame.texture);
     if (FAILED(status))
     {
-        win_perror2(status, "duplication->AcquireNextFrame()");
+        if (status != DXGI_ERROR_WAIT_TIMEOUT) // don't spam log with timeouts
+        {
+            win_perror2(status, "duplication->AcquireNextFrame()");
+        }
         goto fail1;
     }
 
@@ -330,7 +334,7 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
         goto end;
     }
 
-    // we only really need to map the framebuffer to ge
+    // we only really need to map the framebuffer to get its pointer for sharing
     if (!ctx->grant_refs)
     {
         LogDebug("1st frame, sharing framebuffer");
@@ -482,7 +486,7 @@ static DWORD WINAPI CaptureThread(void* param)
             break;
         }
 
-        status = GetFrame(capture, 1000);
+        status = GetFrame(capture, 1000); // TODO: configure timeout through registry config
         if (FAILED(status))
         {
             if (status == DXGI_ERROR_WAIT_TIMEOUT)

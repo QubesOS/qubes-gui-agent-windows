@@ -28,9 +28,11 @@
 extern "C" {
 #endif
 
-    char *MsgNameFromId(DWORD id);
-    char *HookNameFromId(DWORD id);
-    char *CBTNameFromId(DWORD id);
+char *MsgNameFromId(DWORD id);
+char *HookNameFromId(DWORD id);
+char *CBTNameFromId(DWORD id);
+void LogStyle(DWORD style);
+void LogExStyle(DWORD style);
 
 #ifdef __cplusplus
 }

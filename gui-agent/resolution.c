@@ -95,7 +95,7 @@ void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG x, IN LONG y
 
     // ACK the daemon
     // XXX needed for every configure msg received or only the last one in case of throttling?
-    SendScreenConfigure(x, y, width, height);
+    SendWindowConfigure(NULL, x, y, width, height, FALSE);
 }
 
 // Actually set video mode through qvideo calls.

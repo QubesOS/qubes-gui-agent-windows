@@ -41,8 +41,11 @@ extern CRITICAL_SECTION g_csWatchedWindows;
 
 typedef struct _WINDOW_DATA
 {
-    HWND WindowHandle;
+    HWND Handle;
+    DWORD Style;
+    DWORD ExStyle;
     BOOL IsIconic;
+    BOOL IsVisible;
     WCHAR Caption[256];
     WCHAR Class[256];
     int X;
@@ -64,21 +67,24 @@ typedef struct _MODAL_SEARCH_PARAMS
 } MODAL_SEARCH_PARAMS;
 
 BOOL ShouldAcceptWindow(
-    IN HWND window,
-    IN const WINDOWINFO *pwi OPTIONAL
+    IN const WINDOW_DATA* data
     );
 
 WINDOW_DATA *FindWindowByHandle(
-    HWND window
+    IN HWND window
     );
 
-ULONG AddWindowWithInfo(
-    IN HWND window,
-    IN const WINDOWINFO *windowInfo,
-    OUT WINDOW_DATA **windowEntry OPTIONAL
+ULONG AddWindow(
+    IN WINDOW_DATA* entry
     );
 
-ULONG RemoveWindow(IN OUT WINDOW_DATA *entry);
+ULONG RemoveWindow(
+    IN OUT WINDOW_DATA *entry
+    );
+
+ULONG UpdateWindowData(
+    IN OUT WINDOW_DATA* entry
+    );
 
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(

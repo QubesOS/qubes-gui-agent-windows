@@ -19,6 +19,8 @@
  *
  */
 
+#define DEBUG_DUMP_WINDOWS
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
@@ -36,6 +38,7 @@
 #include "send.h"
 #include "vchan-handlers.h"
 #include "util.h"
+#include "debug.h"
 
 // windows-utils
 #include <log.h>
@@ -71,45 +74,47 @@ HWND g_TaskbarWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
-#if defined(_DEBUG) || defined(DEBUG)
 // diagnostic: dump all watched windows
 void DumpWindows(void)
 {
     WINDOW_DATA *entry;
     WCHAR exePath[MAX_PATH];
-    DWORD pid = 0;
-    HANDLE process;
 
     EnterCriticalSection(&g_csWatchedWindows);
     entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
 
+    LogDebug("### Window dump:");
     while (entry != (WINDOW_DATA *)&g_WatchedWindowsList)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
 
         exePath[0] = 0;
-        GetWindowThreadProcessId(entry->WindowHandle, &pid);
+        DWORD pid;
+        GetWindowThreadProcessId(entry->Handle, &pid);
         if (pid)
         {
-            process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if (process)
+            HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (process != INVALID_HANDLE_VALUE)
             {
-                GetProcessImageFileNameW(process, exePath, RTL_NUMBER_OF(exePath));
+                DWORD size = ARRAYSIZE(exePath);
+                QueryFullProcessImageName(process, 0, exePath, &size);
                 CloseHandle(process);
             }
         }
 
-        LogDebug("%8x: (%6d,%6d) %4dx%4d ico=%d ovr=%d [%s] '%s' {%s}",
-                 entry->WindowHandle, entry->X, entry->Y, entry->Width, entry->Height,
-                 entry->IsIconic, entry->IsOverrideRedirect,
-                 entry->Class, entry->Caption, exePath);
+        LogDebugRaw("0x%8x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} ",
+            entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
+            entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
+            entry->Class, entry->Caption, exePath);
+        LogStyle(entry->Style);
+        LogExStyle(entry->ExStyle);
+        LogDebugRaw("\r\n");
 
         entry = (WINDOW_DATA *)entry->ListEntry.Flink;
     }
 
     LeaveCriticalSection(&g_csWatchedWindows);
 }
-#endif
 
 // When DWM compositing is enabled (normally always on), most windows are actually smaller
 // than their size reported by winuser functions. This is because their edges contain
@@ -146,92 +151,110 @@ ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
 
     return ERROR_SUCCESS;
 }
-
-// watched windows list critical section must be entered
-// Returns ERROR_SUCCESS if the window was added OR ignored (windowEntry is NULL if ignored).
-// Other errors mean fatal conditions.
-ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WINDOW_DATA **windowEntry OPTIONAL)
+// fills WINDOW_DATA if successful
+// if *windowData is NULL, the function allocates a new struct and sets the pointer
+// if *windowData is not NULL, the function updates the supplied struct
+ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
 {
-    WINDOW_DATA *entry = NULL;
+    WINDOW_DATA* entry = NULL;
     ULONG status;
 
-    if (!windowInfo)
+    if (windowData == NULL)
         return ERROR_INVALID_PARAMETER;
 
-    RECT dwmRect = windowInfo->rcWindow;
-    // TODO: this calls should always succeed so we don't need to get the window size by winuser functions earlier
-    status = GetWindowRectFromDwm(window, &dwmRect);
+    RECT rect;
+    status = GetWindowRectFromDwm(window, &rect);
     if (!SUCCEEDED(status))
-        LogWarning("GetWindowRectFromDwm failed");
-
-    LogDebug("0x%x (%d,%d)-(%d,%d), style 0x%x, exstyle 0x%x, visible=%d",
-             window, dwmRect.left, dwmRect.top, dwmRect.right, dwmRect.bottom,
-             windowInfo->dwStyle, windowInfo->dwExStyle, IsWindowVisible(window));
-
-    entry = FindWindowByHandle(window);
-    if (entry) // already in list
     {
-        if (windowEntry)
-            *windowEntry = entry;
-
-        return ERROR_SUCCESS;
+        return win_perror2(status, "GetWindowRectFromDwm");
     }
 
-    entry = (WINDOW_DATA *)malloc(sizeof(WINDOW_DATA));
-    if (!entry)
+    if (*windowData != NULL)
     {
-        LogError("Failed to malloc entry");
-        return ERROR_NOT_ENOUGH_MEMORY;
-    }
-
-    ZeroMemory(entry, sizeof(WINDOW_DATA));
-
-    entry->WindowHandle = window;
-    entry->X = dwmRect.left;
-    entry->Y = dwmRect.top;
-    entry->Width = dwmRect.right - dwmRect.left;
-    entry->Height = dwmRect.bottom - dwmRect.top;
-    entry->IsIconic = IsIconic(window);
-    GetWindowText(window, entry->Caption, RTL_NUMBER_OF(entry->Caption)); // don't really care about errors here
-    GetClassName(window, entry->Class, RTL_NUMBER_OF(entry->Class));
-
-    LogDebug("0x%x: iconic=%d", entry->WindowHandle, entry->IsIconic);
-
-    // FIXME: better prevention of large popup windows that can obscure dom0 screen
-    // this is mainly for the logon window (which is screen-sized without caption)
-    if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
-    {
-        LogDebug("popup too large: %dx%d, screen %dx%d",
-                 entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
-        entry->IsOverrideRedirect = FALSE;
+        entry = *windowData;
     }
     else
     {
-        // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
-        if ((windowInfo->dwStyle & WS_CAPTION) == WS_CAPTION)
+        entry = (WINDOW_DATA*)malloc(sizeof(*entry));
+        if (!entry)
         {
-            // normal window
-            entry->IsOverrideRedirect = FALSE;
+            LogError("Failed to malloc entry");
+            return ERROR_NOT_ENOUGH_MEMORY;
         }
-        else if (((windowInfo->dwStyle & WS_SYSMENU) == WS_SYSMENU) && ((windowInfo->dwExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
+        *windowData = entry;
+    }
+
+    ZeroMemory(entry, sizeof(*entry));
+
+    entry->X = rect.left;
+    entry->Y = rect.top;
+    entry->Width = rect.right - rect.left;
+    entry->Height = rect.bottom - rect.top;
+    entry->Handle = window;
+    entry->Style = GetWindowLong(window, GWL_STYLE);
+    entry->ExStyle = GetWindowLong(window, GWL_EXSTYLE);
+    entry->IsIconic = IsIconic(window);
+#ifdef _DEBUG
+    if (entry->IsIconic != ((entry->Style & WS_ICONIC) == WS_ICONIC))
+        LogWarning("0x%x: iconic state mismatch");
+#endif
+    GetWindowText(window, entry->Caption, ARRAYSIZE(entry->Caption)); // don't really care about errors here
+    GetClassName(window, entry->Class, ARRAYSIZE(entry->Class));
+
+    entry->IsVisible = IsWindowVisible(window);
+    DWORD cloaked;
+    if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))))
+    {
+        if (cloaked != 0) // hidden by DWM
+            entry->IsVisible = FALSE;
+    }
+
+    if (entry->IsVisible)
+    {
+        // FIXME: better prevention of large popup windows that can obscure dom0 screen
+        // this is mainly for the logon window (which is screen-sized without caption)
+        if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
         {
-            // Metro apps without WS_CAPTION.
-            // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
-            // but I guess MS doesn't adhere to its own standards...
+            LogDebug("popup too large: %dx%d, screen %dx%d",
+                entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
             entry->IsOverrideRedirect = FALSE;
         }
         else
-            entry->IsOverrideRedirect = TRUE;
+        {
+            // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
+            if ((entry->Style & WS_CAPTION) == WS_CAPTION)
+            {
+                // normal window
+                entry->IsOverrideRedirect = FALSE;
+            }
+            else if (((entry->Style & WS_SYSMENU) == WS_SYSMENU) && ((entry->ExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
+            {
+                // Metro apps without WS_CAPTION.
+                // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
+                // but I guess MS doesn't adhere to its own standards...
+                entry->IsOverrideRedirect = FALSE;
+            }
+            else
+            {
+                entry->IsOverrideRedirect = TRUE;
+            }
+        }
     }
 
     if (entry->IsOverrideRedirect)
     {
-        LogDebug("popup: %dx%d, screen %dx%d",
-            dwmRect.right - dwmRect.left,
-            dwmRect.bottom - dwmRect.top,
-            g_ScreenWidth, g_ScreenHeight);
+        LogDebug("popup: %dx%d, screen %dx%d", entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
     }
 
+    return ERROR_SUCCESS;
+}
+
+// watched window critical section must be entered
+// also sends creation notifications to gui daemon
+ULONG AddWindow(IN WINDOW_DATA* entry)
+{
+    ULONG status = ERROR_SUCCESS;
+    LogVerbose("start, handle 0x%x", entry->Handle);
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
 
     // send window creation info to gui daemon
@@ -239,84 +262,113 @@ ULONG AddWindowWithInfo(IN HWND window, IN const WINDOWINFO *windowInfo, OUT WIN
     {
         status = SendWindowCreate(entry);
         if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowCreate");
-
-        // map (show) the window if it's visible and not minimized
-        if (!entry->IsIconic)
         {
-            status = SendWindowMap(entry);
-            if (ERROR_SUCCESS != status)
-                return win_perror2(status, "SendWindowMap");
+            win_perror2(status, "SendWindowCreate");
+            goto end;
         }
 
-        status = SendWindowName(window, entry->Caption);
+        // map (show) the window if it's visible and not minimized
+        if (!entry->IsIconic && entry->IsVisible)
+        {
+            // XXX should iconic be checked here?
+            status = SendWindowMap(entry);
+            if (ERROR_SUCCESS != status)
+            {
+                win_perror2(status, "SendWindowMap");
+                goto end;
+            }
+        }
+
+        status = SendWindowName(entry->Handle, entry->Caption);
         if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowName");
+        {
+            win_perror2(status, "SendWindowName");
+            goto end;
+        }
     }
 
-    if (windowEntry)
-        *windowEntry = entry;
-    return ERROR_SUCCESS;
+end:
+    LogVerbose("end (%x)", status);
+    return status;
 }
 
 // Remove window from the list and free memory.
 // Watched windows list critical section must be entered.
 ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
 {
-    ULONG status;
+    ULONG status = ERROR_INVALID_PARAMETER;
+
+    LogVerbose("start");
 
     if (!entry)
-        return ERROR_INVALID_PARAMETER;
+        goto end;
 
-    LogDebug("0x%x", entry->WindowHandle);
+    LogDebug("0x%x", entry->Handle);
 
     RemoveEntryList(&entry->ListEntry);
 
     if (g_VchanClientConnected)
     {
-        status = SendWindowUnmap(entry->WindowHandle);
+        status = SendWindowUnmap(entry->Handle);
         if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowUnmap");
-
-        if (entry->WindowHandle) // never destroy screen "window"
         {
-            status = SendWindowDestroy(entry->WindowHandle);
+            win_perror2(status, "SendWindowUnmap");
+            goto end;
+        }
+
+        if (entry->Handle) // never destroy screen "window"
+        {
+            status = SendWindowDestroy(entry->Handle);
             if (ERROR_SUCCESS != status)
-                return win_perror2(status, "SendWindowDestroy");
+            {
+                win_perror2(status, "SendWindowDestroy");
+                goto end;
+            }
         }
     }
 
     free(entry);
-
-    return ERROR_SUCCESS;
+    status = ERROR_SUCCESS;
+end:
+    LogVerbose("end (%x)", status);
+    return status;
 }
 
 // EnumWindows callback for adding all top-level windows to the list.
+// watched windows critical section must be entered
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
-    WINDOWINFO wi = { 0 };
     ULONG status;
 
-    LogVerbose("window %x", window);
+    LogVerbose("window 0x%x", window);
 
-    wi.cbSize = sizeof(wi);
-    if (!GetWindowInfo(window, &wi))
+    WINDOW_DATA* data = FindWindowByHandle(window);
+    if (data) // already in the list
     {
-        win_perror("GetWindowInfo");
-        LogWarning("Skipping window %x", window);
+        status = UpdateWindowData(data);
+        if (status != ERROR_SUCCESS || !ShouldAcceptWindow(data))
+            RemoveWindow(data);
+        LogVerbose("end (existing)");
+        return TRUE; // skip to next window
+    }
+
+    // window not in list, get its data and add
+    status = GetWindowData(window, &data);
+    if (status != ERROR_SUCCESS || !ShouldAcceptWindow(data))
+    {
+        LogVerbose("end (new, skipping)");
         return TRUE;
     }
 
-    if (!ShouldAcceptWindow(window, &wi))
-        return TRUE; // skip
-
-    status = AddWindowWithInfo(window, &wi, NULL);
+    status = AddWindow(data);
     if (ERROR_SUCCESS != status)
     {
-        win_perror2(status, "AddWindowWithInfo");
+        win_perror2(status, "AddWindow");
+        LogVerbose("end (add failed, exiting)");
         return FALSE; // stop enumeration, fatal error occurred (should probably exit process at this point)
     }
 
+    LogVerbose("end (new, added)");
     return TRUE;
 }
 
@@ -330,11 +382,13 @@ static ULONG AddAllWindows(void)
     if (g_TaskbarWindow)
         ShowWindow(g_TaskbarWindow, SW_HIDE);
 
+    ULONG status = ERROR_SUCCESS;
     // Enum top-level windows and add all that are not filtered.
     if (!EnumWindows(AddWindowsProc, 0))
-        return win_perror("EnumWindows");
+        status = win_perror("EnumWindows");
 
-    return ERROR_SUCCESS;
+    LogVerbose("end (%x)", status);
+    return status;
 }
 
 // Reinitialize watched windows, called after a seamless/fullscreen switch or resolution change.
@@ -374,6 +428,7 @@ static ULONG ResetWatch(BOOL seamlessMode)
     // WatchForEvents will map the whole screen as one window.
     if (seamlessMode)
     {
+        LogVerbose("seamless mode, adding all windows");
         // Add all eligible windows to watch list.
         // Since this is a switch from fullscreen, no windows were watched.
         EnterCriticalSection(&g_csWatchedWindows);
@@ -382,32 +437,39 @@ static ULONG ResetWatch(BOOL seamlessMode)
     }
     else
     {
+        LogVerbose("fullscreen mode, showing taskbar");
         if (g_TaskbarWindow)
             ShowWindow(g_TaskbarWindow, SW_SHOW);
     }
 
-    LogVerbose("success");
+    LogVerbose("end (%x)", status);
     return status;
 }
 
 // set fullscreen/seamless mode
 ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
 {
-    ULONG status;
+    ULONG status = ERROR_SUCCESS;
 
-    LogVerbose("Seamless mode changing to %d", seamlessMode);
+    LogVerbose("start");
+    LogDebug("Seamless mode changing to %d", seamlessMode);
 
     if (g_SeamlessMode == seamlessMode && !forceUpdate)
-        return ERROR_SUCCESS; // nothing to do
+        goto end; // nothing to do
 
-    CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, seamlessMode, NULL);
+    status = CfgWriteDword(NULL, REG_CONFIG_SEAMLESS_VALUE, seamlessMode, NULL);
+    if (status != ERROR_SUCCESS)
+        LogWarning("Failed to write seamless mode registry value");
 
     if (!seamlessMode)
     {
         // show the screen window
         status = SendWindowMap(NULL);
         if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowMap(NULL)");
+        {
+            win_perror2(status, "SendWindowMap(NULL)");
+            goto end;
+        }
     }
     else // seamless mode
     {
@@ -421,82 +483,83 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
         // hide the screen window
         status = SendWindowUnmap(NULL);
         if (ERROR_SUCCESS != status)
-            return win_perror2(status, "SendWindowUnmap(NULL)");
+        {
+            win_perror2(status, "SendWindowUnmap(NULL)");
+            goto end;
+        }
     }
 
     // ResetWatch removes all watched windows.
     // If seamless mode is on, top-level windows are added to watch list.
     status = ResetWatch(seamlessMode);
     if (ERROR_SUCCESS != status)
-        return win_perror2(status, "ResetWatch");
+    {
+        win_perror2(status, "ResetWatch");
+        goto end;
+    }
 
     g_SeamlessMode = seamlessMode;
 
     LogInfo("Seamless mode changed to %d", seamlessMode);
+    status = ERROR_SUCCESS;
 
-    return ERROR_SUCCESS;
+end:
+    LogVerbose("end (%x)", status);
+    return status;
 }
 
 WINDOW_DATA *FindWindowByHandle(IN HWND window)
 {
-    WINDOW_DATA *watchedDC;
+    WINDOW_DATA *entry;
 
-    LogVerbose("%x", window);
-    watchedDC = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
-    while (watchedDC != (WINDOW_DATA *)&g_WatchedWindowsList)
+    entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
+    while (entry != (WINDOW_DATA *)&g_WatchedWindowsList)
     {
-        watchedDC = CONTAINING_RECORD(watchedDC, WINDOW_DATA, ListEntry);
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
 
-        if (window == watchedDC->WindowHandle)
-            return watchedDC;
+        if (window == entry->Handle)
+            return entry;
 
-        watchedDC = (WINDOW_DATA *)watchedDC->ListEntry.Flink;
+        entry = (WINDOW_DATA *)entry->ListEntry.Flink;
     }
 
     return NULL;
 }
 
-BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL)
+// filters unwanted windows (not visible, too small etc)
+BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
 {
-    WINDOWINFO wi;
-
-    if (!IsWindow(window))
+    if (!data->IsVisible)
         return FALSE;
 
-    if (!windowInfo)
+    if (data->Handle == g_TaskbarWindow)
+        return FALSE;
+
+    if (data->Handle == GetShellWindow())
+        return FALSE;
+
+    int xmin = GetSystemMetrics(SM_CXMIN);
+    int ymin = GetSystemMetrics(SM_CYMIN);
+    // too small?
+    if (data->Width < xmin || data->Height < ymin)
     {
-        wi.cbSize = sizeof(wi);
-        if (!GetWindowInfo(window, &wi))
-        {
-            win_perror("GetWindowInfo");
-            return FALSE;
-        }
-        windowInfo = &wi;
-    }
-
-    if (window == g_TaskbarWindow)
-        return FALSE;
-
-    if (window == GetShellWindow())
-        return FALSE;
-
-    // empty window rectangle? ignore (guid rejects those)
-    if ((windowInfo->rcWindow.bottom - windowInfo->rcWindow.top == 0) || (windowInfo->rcWindow.right - windowInfo->rcWindow.left == 0))
-    {
-        LogVerbose("window rectangle is empty");
+        LogVerbose("window rectangle is too small");
         return FALSE;
     }
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
-    if (windowInfo->dwStyle & WS_CHILD)
+    if (data->Style & WS_CHILD)
+    {
+        LogVerbose("ignoring child window"); // this shouldn't happen as we only enumerate top-level windows
         return FALSE;
-
-    if (!IsWindowVisible(window))
-        return FALSE;
+    }
 
     // this style seems to be used exclusively by helper windows that aren't visible despite having WS_VISIBLE style
-    if (windowInfo->dwExStyle & WS_EX_NOACTIVATE)
+    if (data->ExStyle & WS_EX_NOACTIVATE)
+    {
+        LogVerbose("ignoring WS_EX_NOACTIVATE");
         return FALSE;
+    }
     /*
     // Office 2013 uses this style for some helper windows that are drawn on/near its border.
     // 0x800 exstyle is undocumented...
@@ -510,11 +573,6 @@ BOOL ShouldAcceptWindow(IN HWND window, IN const WINDOWINFO *windowInfo OPTIONAL
     if (windowInfo->dwExStyle & 0xc0000000)
         return FALSE;
     */
-
-    DWORD cloaked;
-    if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))))
-        if (cloaked != 0) // hidden by DWM
-            return FALSE;
 
     return TRUE;
 }
@@ -535,92 +593,88 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
         return TRUE;
 
     msp->ModalWindow = hwnd;
-    LogVerbose("0x%x: seems OK for 0x%x", hwnd, msp->ParentWindow);
+    LogVerbose("found 0x%x for parent 0x%x", hwnd, msp->ParentWindow);
     return FALSE; // stop enumeration
 }
 
-// Refresh data about a window, send notifications to guid if needed.
-static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
+// Refresh data about a window, send notifications to gui daemon if needed.
+static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
 {
     ULONG status;
-    WINDOWINFO wi = { 0 };
-    int x, y, width, height;
-    BOOL updateNeeded;
-    WCHAR caption[256];
-    MODAL_SEARCH_PARAMS modalParams = { 0 };
 
-    *skip = FALSE;
-
+    LogVerbose("start");
     // get current window state
-    wi.cbSize = sizeof(wi);
-
-    if (!GetWindowInfo(wd->WindowHandle, &wi) || !ShouldAcceptWindow(wd->WindowHandle, &wi))
+    WINDOW_DATA data;
+    WINDOW_DATA* ptr = &data;
+    status = GetWindowData(windowData->Handle, &ptr);
+    if (status != ERROR_SUCCESS)
     {
-        LogDebug("window %x disappeared, removing", wd->WindowHandle);
-        status = RemoveWindow(wd);
-        *skip = TRUE;
-        return status;
-    }
-
-    // iconic state
-    if (IsIconic(wd->WindowHandle))
-    {
-        if (!wd->IsIconic)
-        {
-            LogDebug("minimizing %x", wd->WindowHandle);
-            wd->IsIconic = TRUE;
-            *skip = TRUE;
-            return SendWindowFlags(wd->WindowHandle, WINDOW_FLAG_MINIMIZE, 0); // exit
-        }
-        return ERROR_SUCCESS;
-    }
-    else
-    {
-        LogVerbose("%x not iconic", wd->WindowHandle);
-        wd->IsIconic = FALSE;
-    }
-
-    // coords
-    x = wi.rcWindow.left;
-    y = wi.rcWindow.top;
-    width = wi.rcWindow.right - wi.rcWindow.left;
-    height = wi.rcWindow.bottom - wi.rcWindow.top;
-
-    updateNeeded = (x != wd->X || y != wd->Y || width != wd->Width || height != wd->Height);
-
-    wd->X = x;
-    wd->Y = y;
-    wd->Width = width;
-    wd->Height = height;
-    LogVerbose("%x (%d,%d) %dx%d", wd->WindowHandle, x, y, width, height);
-
-    if (updateNeeded)
-        SendWindowConfigure(wd);
-
-    // visibility
-    if (!IsWindowVisible(wd->WindowHandle))
-    {
-        LogDebug("window %x turned invisible", wd->WindowHandle);
-        status = RemoveWindow(wd);
-        *skip = TRUE;
-        return status;
+        win_perror2(status, "GetWindowData");
+        goto end;
     }
 
     // caption
-    GetWindowText(wd->WindowHandle, caption, RTL_NUMBER_OF(caption));
-    if (0 != wcscmp(wd->Caption, caption))
+    if (0 != wcscmp(windowData->Caption, data.Caption))
     {
         // caption changed
-        StringCchCopy(wd->Caption, RTL_NUMBER_OF(wd->Caption), caption);
-        SendWindowName(wd->WindowHandle, wd->Caption);
+        StringCchCopy(windowData->Caption, ARRAYSIZE(windowData->Caption), data.Caption);
+        status = SendWindowName(windowData->Handle, windowData->Caption);
+        if (status != ERROR_SUCCESS)
+            goto end;
+    }
+
+    // minimized state changed
+    if (data.IsIconic)
+    {
+        if (!windowData->IsIconic)
+        {
+            LogDebug("0x%x became minimized", windowData->Handle);
+            windowData->IsIconic = TRUE;
+            status = SendWindowFlags(windowData->Handle, WINDOW_FLAG_MINIMIZE, 0);
+            goto end;
+        }
+    }
+    else
+    {
+        if (windowData->IsIconic)
+        {
+            LogVerbose("0x%x became restored", windowData->Handle);
+            status = SendWindowFlags(windowData->Handle, 0, WINDOW_FLAG_MINIMIZE); // unset minimize
+            if (status != ERROR_SUCCESS)
+                goto end;
+        }
+        windowData->IsIconic = FALSE;
+    }
+
+    // coords
+    BOOL updateNeeded = (windowData->X != data.X || windowData->Y != data.Y ||
+        windowData->Width != data.Width || windowData->Height != data.Height);
+
+    if (updateNeeded)
+    {
+        LogVerbose("coords changed: 0x%x (%d,%d) %dx%d -> (%d,%d) %dx%d",
+            windowData->Handle, windowData->X, windowData->Y, windowData->Width, windowData->Height,
+            data.X, data.Y, data.Width, data.Height);
+
+        windowData->X = data.X;
+        windowData->Y = data.Y;
+        windowData->Width = data.Width;
+        windowData->Height = data.Height;
+
+        status = SendWindowConfigure(windowData->Handle,
+            windowData->X, windowData->Y, windowData->Width, windowData->Height, windowData->IsOverrideRedirect);
+
+        if (status != ERROR_SUCCESS)
+            goto end;
     }
 
     // style
-    if (wi.dwStyle & WS_DISABLED)
+    if (data.Style & WS_DISABLED)
     {
         // possibly showing a modal window
-        LogDebug("0x%x is WS_DISABLED, searching for modal window", wd->WindowHandle);
-        modalParams.ParentWindow = wd->WindowHandle;
+        LogDebug("0x%x is WS_DISABLED, searching for modal window", windowData->Handle);
+        MODAL_SEARCH_PARAMS modalParams = { 0 };
+        modalParams.ParentWindow = windowData->Handle;
         modalParams.ModalWindow = NULL;
 
         // No checking for success, EnumWindows returns FALSE if the callback function returns FALSE.
@@ -633,28 +687,31 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *wd, OUT BOOL *skip)
             if (modalWindow && !modalWindow->ModalParent)
             {
                 // need to toggle map since this is the only way to change modal status for gui daemon
-                modalWindow->ModalParent = wd->WindowHandle;
-                status = SendWindowUnmap(modalWindow->WindowHandle);
+                modalWindow->ModalParent = windowData->Handle;
+                status = SendWindowUnmap(modalWindow->Handle);
                 if (ERROR_SUCCESS != status)
-                    return win_perror2(status, "SendWindowUnmap");
+                    goto end;
 
                 status = SendWindowMap(modalWindow);
                 if (ERROR_SUCCESS != status)
-                    return win_perror2(status, "SendWindowMap");
+                    goto end;
             }
         }
     }
 
-    return ERROR_SUCCESS;
+    status = ERROR_SUCCESS;
+
+end:
+    LogVerbose("end (%x)", status);
+    return status;
 }
 
 // Called after receiving new frame.
-static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
+static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
     HWND oldDesktopWindow = g_DesktopWindow;
-    BOOL first = TRUE;
     ULONG status = ERROR_SUCCESS;
 
     LogVerbose("start");
@@ -664,7 +721,7 @@ static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
         {
             // normally we don't get frames with 0 dirty rects unless it's the 1st one
             // then refresh everything
-            LogVerbose("no dirty rects, updating whole screen");
+            LogDebug("no dirty rects, updating whole screen");
             SendWindowDamageEvent(NULL, 0, 0, g_ScreenWidth, g_ScreenHeight);
         }
         else
@@ -677,30 +734,25 @@ static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
             }
         }
 
+        LogVerbose("end (fullscreen)");
         return ERROR_SUCCESS;
     }
 
-    // Update the window list - check for new/destroyed windows.
+    EnterCriticalSection(&g_csWatchedWindows);
+
+    // Update the window list - check for new/destroyed/updated windows.
     // TODO: don't enumerate all windows every time, use window hooks to monitor for changes
     AddAllWindows();
 
-    // Update all watched windows.
-    EnterCriticalSection(&g_csWatchedWindows);
-
+    // send damage notifications
     entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
     while (entry != (WINDOW_DATA *)&g_WatchedWindowsList)
     {
-        BOOL skip;
-
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
         nextEntry = (WINDOW_DATA *)entry->ListEntry.Flink;
 
-        UpdateWindowData(entry, &skip);
-        if (skip)
-        {
-            entry = nextEntry;
-            continue;
-        }
+        if (entry->IsIconic) // minimized, don't care
+            goto skip;
 
         RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Width };
         RECT changedArea; // intersection of damage rect with window rect
@@ -710,11 +762,17 @@ static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
         {
             if (IntersectRect(&changedArea, &frame->dirty_rects[i], &windowRect))
             {
-                status = SendWindowDamageEvent(entry->WindowHandle,
-                    changedArea.left - entry->X, // TODO: verify
+                LogVerbose("damage for 0x%x: window (%d,%d) %dx%d, damage (%d,%d) %dx%d, intersect (%d,%d) %dx%d",
+                    entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
+                    frame->dirty_rects[i].left, frame->dirty_rects[i].top,
+                    frame->dirty_rects[i].right - frame->dirty_rects[i].left, frame->dirty_rects[i].bottom - frame->dirty_rects[i].top,
+                    changedArea.left, changedArea.top, changedArea.right - changedArea.left, changedArea.bottom - changedArea.top);
+
+                status = SendWindowDamageEvent(entry->Handle,
+                    changedArea.left - entry->X, // window-relative coords
                     changedArea.top - entry->Y,
-                    changedArea.right - entry->X,
-                    changedArea.bottom - entry->Y);
+                    changedArea.right - changedArea.left, // size
+                    changedArea.bottom - changedArea.top);
 
                 if (ERROR_SUCCESS != status)
                 {
@@ -723,12 +781,13 @@ static ULONG ProcessUpdatedWindows(IN const CAPTURE_FRAME* frame)
                 }
             }
         }
+skip:
         entry = nextEntry;
     }
 
 cleanup:
     LeaveCriticalSection(&g_csWatchedWindows);
-
+    LogVerbose("end (%x)", status);
     return status;
 }
 
@@ -767,6 +826,7 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
 
 void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
 {
+    LogVerbose("start");
     if (!capture)
         return;
 
@@ -774,6 +834,7 @@ void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
 
     CaptureTeardown(*capture);
     *capture = NULL;
+    LogVerbose("end");
 }
 
 // main event loop
@@ -786,7 +847,7 @@ static ULONG WINAPI WatchForEvents  (void)
     ULONG status;
     BOOL exitLoop;
     HANDLE watchedEvents[MAXIMUM_WAIT_OBJECTS];
-#if defined(_DEBUG) || defined(DEBUG)
+#ifdef DEBUG_DUMP_WINDOWS
     DWORD dumpLastTime = GetTickCount();
     //UINT64 damageCount = 0, damageCountOld = 0;
 #endif
@@ -823,9 +884,9 @@ static ULONG WINAPI WatchForEvents  (void)
     watchedEvents[3] = fullScreenOffEvent;
     watchedEvents[4] = g_ResolutionChangeEvent;
     watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
-    watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
-    watchedEvents[7] = captureErrorEvent;
-    eventCount = 8;
+    //watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
+    watchedEvents[6] = captureErrorEvent;
+    eventCount = 7;
 
     CAPTURE_CONTEXT* capture = NULL;
 
@@ -843,7 +904,7 @@ static ULONG WINAPI WatchForEvents  (void)
             break;
         }
 
-#if defined(_DEBUG) || defined(DEBUG)
+#ifdef DEBUG_DUMP_WINDOWS
         // dump watched windows every second
         if (GetTickCount() - dumpLastTime > 1000)
         {
@@ -871,15 +932,15 @@ static ULONG WINAPI WatchForEvents  (void)
             if (g_VchanClientConnected)
             {
                 assert(capture);
-                ProcessUpdatedWindows(&capture->frame);
+                ProcessNewFrame(&capture->frame);
             }
 
             if (capture)
                 SetEvent(capture->ready_event); // frame processed
             break;
 
-        case 2: // seamless off event
-            LogVerbose("seamless off");
+        case 2:
+            LogVerbose("fullscreen on");
             status = SetSeamlessMode(FALSE, FALSE);
             if (ERROR_SUCCESS != status)
             {
@@ -888,8 +949,8 @@ static ULONG WINAPI WatchForEvents  (void)
             }
             break;
 
-        case 3: // seamless on event
-            LogVerbose("seamless on");
+        case 3:
+            LogVerbose("fullscreen off");
             status = SetSeamlessMode(TRUE, FALSE);
             if (ERROR_SUCCESS != status)
             {

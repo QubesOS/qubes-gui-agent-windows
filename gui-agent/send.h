@@ -60,8 +60,7 @@ ULONG SendWindowHints(IN HWND window, IN uint32_t flags);
 ULONG SendScreenHints(void);
 ULONG SendWindowUnmap(IN HWND window);
 ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL); // if windowData == 0, use the whole screen
-ULONG SendWindowConfigure(IN const WINDOW_DATA *windowData OPTIONAL); // if windowData == 0, use the whole screen
-ULONG SendScreenConfigure(IN UINT32 x, IN UINT32 y, IN UINT32 width, IN UINT32 height);
+ULONG SendWindowConfigure(HANDLE window, int x, int y, int width, int height, BOOL popup);
 ULONG SendWindowDamageEvent(IN HWND window, IN int x, IN int y, IN int width, IN int height);
 ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL);
 ULONG SendProtocolVersion(void);

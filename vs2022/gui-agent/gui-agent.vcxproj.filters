@@ -36,7 +36,7 @@
     <ClCompile Include="..\..\gui-agent\vchan-handlers.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\gui-agent\wm.c">
+    <ClCompile Include="..\..\gui-agent\debug.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\gui-agent\xorg-keymap.c">
@@ -68,7 +68,7 @@
     <ClInclude Include="..\..\gui-agent\vchan-handlers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\gui-agent\wm.h">
+    <ClInclude Include="..\..\gui-agent\debug.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\gui-agent\xorg-keymap.h">
