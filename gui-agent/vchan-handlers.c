@@ -264,7 +264,7 @@ static DWORD HandleButton(IN HWND window)
         LogWarning("unknown button pressed/released 0x%x", buttonMsg.button);
     }
 
-    LogDebug("window 0x%x, (%d,%d), flags 0x%x", window, inputEvent.mi.dx, inputEvent.mi.dy, inputEvent.mi.dwFlags);
+    LogDebug("window 0x%x, (%d,%d), flags 0x%x", window, buttonMsg.x, buttonMsg.y, inputEvent.mi.dwFlags);
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
     {
         return win_perror("SendInput");

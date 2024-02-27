@@ -102,7 +102,7 @@ void DumpWindows(void)
             }
         }
 
-        LogDebugRaw("0x%8x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} ",
+        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} ",
             entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
             entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
             entry->Class, entry->Caption, exePath);
@@ -215,8 +215,8 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
         // this is mainly for the logon window (which is screen-sized without caption)
         if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
         {
-            LogDebug("popup too large: %dx%d, screen %dx%d",
-                entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
+            LogDebug("0x%x: popup too large: %dx%d, screen %dx%d",
+                     entry->Handle, entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
             entry->IsOverrideRedirect = FALSE;
         }
         else
@@ -241,9 +241,9 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
         }
     }
 
-    if (entry->IsOverrideRedirect)
+    if (entry->IsOverrideRedirect && entry->IsVisible)
     {
-        LogDebug("popup: %dx%d, screen %dx%d", entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
+        LogVerbose("0x%x: popup %dx%d", entry->Handle, entry->Width, entry->Height);
     }
 
     return ERROR_SUCCESS;
