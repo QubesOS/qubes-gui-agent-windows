@@ -321,7 +321,68 @@ static DWORD HandleConfigure(IN HWND window)
 
     if (window != 0) // 0 is full screen
     {
-        SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, 0);
+        UINT flags = SWP_ASYNCWINDOWPOS; // post request without waiting to not block
+        EnterCriticalSection(&g_csWatchedWindows);
+        WINDOW_DATA* data = FindWindowByHandle(window);
+        LeaveCriticalSection(&g_csWatchedWindows);
+
+        if (data != NULL)
+        {
+            if (data->X == configureMsg.x && data->Y == configureMsg.y)
+            {
+                flags |= SWP_NOMOVE;
+                LogVerbose("SWP_NOMOVE");
+            }
+
+            if (data->Width == configureMsg.width && data->Height == configureMsg.height)
+            {
+                flags |= SWP_NOSIZE;
+                LogVerbose("SWP_NOSIZE");
+            }
+        }
+        else
+        {
+            LogWarning("window 0x%x not tracked", window);
+        }
+
+        // XXX HWND_TOP places the window in the z-order top, is this always what we want?
+        if (SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, flags))
+        {
+            EnterCriticalSection(&g_csWatchedWindows);
+            WINDOW_DATA* data = FindWindowByHandle(window);
+            if (!data)
+            {
+                LogWarning("window 0x%x not tracked", window);
+                LeaveCriticalSection(&g_csWatchedWindows);
+                goto end;
+            }
+
+            // update expected pos/size of the tracked window without waiting for actual change
+            // since we use SWP_ASYNCWINDOWPOS
+            // TODO: improve further, somehow window data via UpdateWindowData() later after SetWindowPos below
+            // is still different from what was passed via configureMsg - DWM API needs a while to properly update
+            // the window state after changes?
+            if (!(flags & SWP_NOMOVE))
+            {
+                LogVerbose("Updating position of 0x%x: (%d,%d) -> (%d,%d)", window, data->X, data->Y,
+                    configureMsg.x, configureMsg.y);
+                data->X = configureMsg.x;
+                data->Y = configureMsg.y;
+            }
+
+            if (!(flags & SWP_NOSIZE))
+            {
+                LogVerbose("Updating size of 0x%x: %dx%d -> %dx%d", window, data->Width, data->Height,
+                    configureMsg.width, configureMsg.height);
+                data->Width = configureMsg.width;
+                data->Height = configureMsg.height;
+            }
+            LeaveCriticalSection(&g_csWatchedWindows);
+        }
+        else
+        {
+            win_perror("SetWindowPos");
+        }
     }
     else
     {
