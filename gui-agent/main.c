@@ -912,15 +912,18 @@ static ULONG WINAPI WatchForEvents  (void)
         }
 
 #ifdef DEBUG_DUMP_WINDOWS
-        // dump watched windows every second
-        if (GetTickCount() - dumpLastTime > 1000)
+        if (g_SeamlessMode)
         {
-            DumpWindows();
-            dumpLastTime = GetTickCount();
+            // dump watched windows every second
+            if (GetTickCount() - dumpLastTime > 1000)
+            {
+                DumpWindows();
+                dumpLastTime = GetTickCount();
 
-            // XXX dump performance counters
-            //LogDebug("last second damages: %llu", damageCount - damageCountOld);
-            //damageCountOld = damageCount;
+                // XXX dump performance counters
+                //LogDebug("last second damages: %llu", damageCount - damageCountOld);
+                //damageCountOld = damageCount;
+            }
         }
 #endif
 
