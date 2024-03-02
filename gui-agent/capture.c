@@ -30,6 +30,9 @@
 #include <setupapi.h>
 #include <strsafe.h>
 
+// TODO: configure timeout through registry config (milliseconds)
+#define FRAME_TIMEOUT 1000
+
 BOOL g_CaptureThreadEnable = FALSE;
 
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout);
@@ -199,6 +202,7 @@ static void XcLogger(IN XENCONTROL_LOG_LEVEL logLevel, IN const char* function, 
     _LogFormat(logLevel, /*raw=*/FALSE, function, buf);
 }
 
+// TODO: use callbacks instead of events
 CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
 {
     LogVerbose("start");
@@ -236,8 +240,10 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
     if (!ctx->duplication)
         goto fail;
 
+    InitializeCriticalSection(&ctx->frame.lock);
+
     // get one frame to acquire framebuffer map
-    if (FAILED(GetFrame(ctx, 5000)))
+    if (FAILED(GetFrame(ctx, 5*FRAME_TIMEOUT)))
         goto fail;
 
     if (FAILED(ReleaseFrame(ctx)))
@@ -263,8 +269,8 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
 
     DWORD status = GetLastError(); // preserve
     InterlockedExchange(&g_CaptureThreadEnable, FALSE);
-    if (WaitForSingleObject(ctx->thread, 1000) != WAIT_OBJECT_0)
-    { // XXX timeout should be bigger than one in frame acquire
+    if (WaitForSingleObject(ctx->thread, 2*FRAME_TIMEOUT) != WAIT_OBJECT_0)
+    {
         LogWarning("capture thread timeout");
         TerminateThread(ctx->thread, 0);
     }
@@ -286,9 +292,9 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
     if (ctx->xc)
         XcClose(ctx->xc);
 
-    if (ctx->frame.texture)
-        ReleaseFrame(ctx);
+    ReleaseFrame(ctx);
 
+    DeleteCriticalSection(&ctx->frame.lock);
     free(ctx);
     LogVerbose("end");
     SetLastError(status);
@@ -313,6 +319,7 @@ HRESULT CaptureStart(IN OUT CAPTURE_CONTEXT* ctx)
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
 {
     LogVerbose("start");
+    EnterCriticalSection(&ctx->frame.lock);
     assert(!ctx->frame.texture);
 
     HRESULT status = IDXGIOutputDuplication_AcquireNextFrame(ctx->duplication,
@@ -405,6 +412,7 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
     // an application must first process all move RECTs before it processes dirty RECTs.
 
 end:
+    LeaveCriticalSection(&ctx->frame.lock);
     LogVerbose("end");
     return 0;
 
@@ -424,6 +432,7 @@ fail2:
 fail1:
     LogVerbose("end (%x)", status);
     ctx->frame.texture = NULL;
+    LeaveCriticalSection(&ctx->frame.lock);
     SetLastError(status);
     return status;
 }
@@ -431,6 +440,7 @@ fail1:
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
 {
     LogVerbose("start");
+    EnterCriticalSection(&ctx->frame.lock);
     HRESULT status = ERROR_INVALID_PARAMETER;
     if (!ctx->frame.texture)
         goto end;
@@ -467,6 +477,7 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
     ctx->frame.dirty_rects_count = 0;
     status = ERROR_SUCCESS;
 end:
+    LeaveCriticalSection(&ctx->frame.lock);
     LogVerbose("end (%x)", status);
     return status;
 }
@@ -486,7 +497,7 @@ static DWORD WINAPI CaptureThread(void* param)
             break;
         }
 
-        status = GetFrame(capture, 1000); // TODO: configure timeout through registry config
+        status = GetFrame(capture, FRAME_TIMEOUT);
         if (FAILED(status))
         {
             if (status == DXGI_ERROR_WAIT_TIMEOUT)
@@ -511,6 +522,7 @@ static DWORD WINAPI CaptureThread(void* param)
         SetEvent(capture->frame_event);
 
         // wait until main loop processes the frame
+        // XXX arbitrary timeout
         if (WaitForSingleObject(capture->ready_event, 1000) != WAIT_OBJECT_0)
         {
             LogWarning("error/timeout waiting for frame processing");

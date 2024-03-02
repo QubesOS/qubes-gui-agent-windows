@@ -42,6 +42,7 @@ typedef struct _CAPTURE_FRAME
 	DXGI_MAPPED_RECT rect;
 	UINT dirty_rects_count;
 	RECT* dirty_rects;
+	CRITICAL_SECTION lock;
 } CAPTURE_FRAME;
 
 typedef struct _CAPTURE_CONTEXT
