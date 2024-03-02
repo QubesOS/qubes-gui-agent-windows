@@ -405,7 +405,14 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
     }
 
     ctx->frame.dirty_rects_count = dr_size / sizeof(RECT);
+
+#ifdef _DEBUG
     LogVerbose("%u dirty rects", ctx->frame.dirty_rects_count);
+    for (UINT i = 0; i < ctx->frame.dirty_rects_count; i++)
+        LogVerbose("DR#%u: (%d,%d) %dx%d", i, ctx->frame.dirty_rects[i].left, ctx->frame.dirty_rects[i].top,
+            ctx->frame.dirty_rects[i].right - ctx->frame.dirty_rects[i].left,
+            ctx->frame.dirty_rects[i].bottom - ctx->frame.dirty_rects[i].top);
+#endif
 
     // TODO: GetFrameMoveRects (they seem to always be empty when testing)
     // MSDN note: To produce a visually accurate copy of the desktop,
