@@ -631,8 +631,9 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
             LogDebug("0x%x became minimized", windowData->Handle);
             windowData->IsIconic = TRUE;
             status = SendWindowFlags(windowData->Handle, WINDOW_FLAG_MINIMIZE, 0);
-            goto end;
         }
+        // ignore position changes, iconic windows have coords like (-32000,-32000)
+        goto end;
     }
     else
     {
