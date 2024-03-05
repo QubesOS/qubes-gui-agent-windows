@@ -194,6 +194,7 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
     entry->Style = GetWindowLong(window, GWL_STYLE);
     entry->ExStyle = GetWindowLong(window, GWL_EXSTYLE);
     entry->IsIconic = IsIconic(window);
+    entry->DeletePending = FALSE;
 #ifdef _DEBUG
     if (entry->IsIconic != ((entry->Style & WS_ICONIC) == WS_ICONIC))
         LogWarning("0x%x: iconic state mismatch");
@@ -334,7 +335,7 @@ end:
     return status;
 }
 
-// EnumWindows callback for adding all top-level windows to the list.
+// EnumWindows callback for adding all eligible top-level windows to the list.
 // watched windows critical section must be entered
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
@@ -345,9 +346,6 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
     WINDOW_DATA* data = FindWindowByHandle(window);
     if (data) // already in the list
     {
-        status = UpdateWindowData(data);
-        if (status != ERROR_SUCCESS || !ShouldAcceptWindow(data))
-            RemoveWindow(data);
         LogVerbose("end (existing)");
         return TRUE; // skip to next window
     }
@@ -387,6 +385,42 @@ static ULONG AddAllWindows(void)
     if (!EnumWindows(AddWindowsProc, 0))
         status = win_perror("EnumWindows");
 
+    // Now, for *some* reason, the start menu (or "search") in win10 is not enumerated by the above,
+    // despite it being a top-level, visible, normal window. Dump below:
+
+    // 0x101f6 : E - "Windows.UI.Core.CoreWindow" "Search" [C:\Windows\SystemApps\Microsoft.Windows.Search_cw5n1h2txyewy\SearchApp.exe]
+    // WR(48, 760:832, 1400)(784x640) WI(48, 760:832, 1400)(784x640) Border(0, 0) DWM(48, 760:832, 1400)(784x640) parent = 0x10010
+    // WS_POPUP WS_VISIBLE WS_CLIPSIBLINGS WS_EX_UISTATEFOCUSRECTHIDDEN WS_EX_UISTATEKBACCELHIDDEN WS_EX_REDIRECTED WS_EX_NOREDIRECTIONBITMAP 0x8000 WS_EX_MAKEVISIBLEWHENUNGHOSTED WS_EX_TOPMOST
+
+    // So as a failsafe we add the foreground window here if it's not in the watched list.
+    // TODO: this window (start/search) has a large transparent section on the right it seems,
+    // we can't easily do anything about it without scanning the client pixels
+    HWND fg = GetForegroundWindow();
+    if (fg)
+    {
+        WINDOW_DATA* data = FindWindowByHandle(fg);
+        if (!data)
+        {
+            status = GetWindowData(fg, &data);
+            if (status != ERROR_SUCCESS)
+            {
+                win_perror2(status, "GetWindowData");
+                goto end;
+            }
+
+            LogDebug("Foreground window 0x%x not tracked", fg);
+            if (ShouldAcceptWindow(data))
+            {
+                status = AddWindow(data);
+            }
+            else
+            {
+                // this can happen right after window creation when it's not fully initialized/showed yet
+                LogDebug("Foreground window 0x%x not accepted?", fg);
+            }
+        }
+    }
+end:
     LogVerbose("end (%x)", status);
     return status;
 }
@@ -527,12 +561,16 @@ WINDOW_DATA *FindWindowByHandle(IN HWND window)
 }
 
 // filters unwanted windows (not visible, too small etc)
+// assumes window state is up to date
 BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
 {
     if (!data->IsVisible)
         return FALSE;
 
     if (data->Handle == g_TaskbarWindow)
+        return FALSE;
+
+    if (data->DeletePending)
         return FALSE;
 
     if (data->Handle == GetShellWindow())
@@ -598,19 +636,50 @@ static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
 }
 
 // Refresh data about a window, send notifications to gui daemon if needed.
+// Marks the window for removal from the list if the new state makes it no longer eligible.
+// Watched windows critical section must be entered.
 static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
 {
-    ULONG status;
+    ULONG status = ERROR_SUCCESS;
 
-    LogVerbose("start");
-    // get current window state
+    LogVerbose("start, 0x%x", windowData->Handle);
+
     WINDOW_DATA data;
     WINDOW_DATA* ptr = &data;
+
+    if (!IsWindow(windowData->Handle))
+    {
+        LogDebug("0x%x is destroyed, marking for removal");
+        windowData->DeletePending = TRUE;
+        goto end;
+    }
+
+    // get current window state
     status = GetWindowData(windowData->Handle, &ptr);
     if (status != ERROR_SUCCESS)
     {
         win_perror2(status, "GetWindowData");
         goto end;
+    }
+
+    if (windowData->IsVisible != data.IsVisible)
+    {
+        windowData->IsVisible = data.IsVisible;
+        LogDebug("0x%x IsVisible changed to %d", data.IsVisible);
+        if (!data.IsVisible)
+            goto end; // skip other stuff, this window will be removed
+    }
+
+    if (windowData->Style != data.Style)
+    {
+        windowData->Style = data.Style;
+        LogDebug("0x%x style changed to 0x%x", data.Style);
+    }
+
+    if (windowData->ExStyle != data.ExStyle)
+    {
+        windowData->ExStyle = data.ExStyle;
+        LogDebug("0x%x exstyle changed to 0x%x", data.ExStyle);
     }
 
     // caption
@@ -703,6 +772,12 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
     status = ERROR_SUCCESS;
 
 end:
+    if (!windowData->DeletePending && !ShouldAcceptWindow(windowData))
+    {
+        LogDebug("0x%x no longer eligible, marking for removal", windowData->Handle);
+        windowData->DeletePending = TRUE;
+    }
+
     LogVerbose("end (%x)", status);
     return status;
 }
@@ -741,11 +816,50 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
 
     EnterCriticalSection(&g_csWatchedWindows);
 
-    // Update the window list - check for new/updated windows.
     // TODO: don't enumerate all windows every time, use window hooks to monitor for changes
+
+    // Update state of all tracked windows. If a window is no longer eligible (destroyed, hidden...)
+    // then mark it for removal but keep in the list for now, so AddAllWindows() can skip them.
+    entry = (WINDOW_DATA*)g_WatchedWindowsList.Flink;
+    while (entry != (WINDOW_DATA*)&g_WatchedWindowsList)
+    {
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
+        nextEntry = (WINDOW_DATA*)entry->ListEntry.Flink;
+        status = UpdateWindowData(entry);
+        if (status != ERROR_SUCCESS)
+        {
+            win_perror2(status, "UpdateWindowData");
+            entry->DeletePending = TRUE;
+            // TODO: exit if there was a vchan failure and we not just failed to get window data
+        }
+
+        entry = nextEntry;
+    }
+
+    // Enumerate all top-level windows and all eligible ones to the list if not already there.
     AddAllWindows();
 
-    // send damage notifications and detect destroyed windows
+    // Remove windows marked for deletion.
+    entry = (WINDOW_DATA*)g_WatchedWindowsList.Flink;
+    while (entry != (WINDOW_DATA*)&g_WatchedWindowsList)
+    {
+        entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
+        nextEntry = (WINDOW_DATA*)entry->ListEntry.Flink;
+
+        if (entry->DeletePending)
+        {
+            status = RemoveWindow(entry);
+            if (status != ERROR_SUCCESS)
+            {
+                win_perror2(status, "RemoveWindow");
+                goto cleanup;
+            }
+        }
+
+        entry = nextEntry;
+    }
+
+    // send damage notifications
     entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
     while (entry != (WINDOW_DATA*)&g_WatchedWindowsList)
     {
@@ -754,12 +868,6 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
 
         if (entry->IsIconic) // minimized, don't care
             goto skip;
-
-        if (!IsWindow(entry->Handle)) // destroyed
-        {
-            RemoveWindow(entry);
-            goto skip;
-        }
 
         RECT windowRect = { entry->X, entry->Y, entry->X + entry->Width, entry->Y + entry->Height };
         RECT changedArea; // intersection of damage rect with window rect

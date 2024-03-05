@@ -46,6 +46,7 @@ typedef struct _WINDOW_DATA
     DWORD ExStyle;
     BOOL IsIconic;
     BOOL IsVisible;
+    BOOL DeletePending;
     WCHAR Caption[256];
     WCHAR Class[256];
     int X;
