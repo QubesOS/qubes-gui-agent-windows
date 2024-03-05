@@ -27,6 +27,7 @@
 struct ENUM_CTX {
     FILE* fv;
     FILE* fi;
+    char* msg;
 };
 
 #define STYLE_CHECK(ws) if (style & ws) { fprintf(f, #ws); fprintf(f, " "); }
@@ -123,7 +124,11 @@ int EnumWindowsProc(_In_ HWND window, _In_ LPARAM context)
     else
         f = ctx->fi;
 
-    fprintf(f, "%p: ", window);
+    if (ctx->msg)
+        fprintf(f, "%s\n", ctx->msg);
+
+#pragma warning(suppress:4477 4313) // format mismatch
+    fprintf(f, "0x%x: ", window);
 
     if (IsWindowEnabled(window))
         fprintf(f, "E ");
@@ -179,7 +184,10 @@ int EnumWindowsProc(_In_ HWND window, _In_ LPARAM context)
 
     if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(rect))))
         fprintf(f, "DWM(%d,%d:%d,%d)(%dx%d) ", rect.left, rect.top, rect.right, rect.bottom, rect.right - rect.left, rect.bottom - rect.top);
-        
+
+#pragma warning(suppress:4477 4313) // format mismatch
+    fprintf(f, "parent=0x%x ", GetAncestor(window, GA_PARENT));
+
     DumpStyle(f, wi.dwStyle);
     DumpExStyle(f, wi.dwExStyle);
 
@@ -209,10 +217,51 @@ int main(void)
     ctx.fv = fopen("windows-visible.txt", "w");
     ctx.fi = fopen("windows-invisible.txt", "w");
     GetMetrics(ctx.fv);
-    fprintf(ctx.fv, "Desktop: %p\n", GetDesktopWindow());
-    fprintf(ctx.fv, "Shell:   %p\n", GetShellWindow());
+#pragma warning(suppress:4477 4313) // format mismatch
+    fprintf(ctx.fv, "Desktop: 0x%x\n", GetDesktopWindow());
+#pragma warning(suppress:4477 4313) // format mismatch
+    fprintf(ctx.fv, "Shell:   0x%x\n", GetShellWindow());
 
-    fprintf(ctx.fv, "EnumWindows:\n");
-    fprintf(ctx.fi, "EnumWindows:\n");
-    EnumWindows(EnumWindowsProc, (LPARAM)&ctx);
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    SetConsoleMode(input, 0); // only care about key events
+    SetConsoleTitle(L"dump-windows: Press ESC to exit");
+
+    while (TRUE)
+    {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+
+        fprintf(ctx.fv, "### %02d-%02d-%02d %02d:%02d:%02d.%03d\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+        fprintf(ctx.fi, "### %02d-%02d-%02d %02d:%02d:%02d.%03d\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+
+        HWND fg = GetForegroundWindow();
+        if (fg)
+        {
+            ctx.msg = "Foreground window:";
+            EnumWindowsProc(fg, (LPARAM)&ctx);
+        }
+
+        ctx.msg = NULL;
+        EnumWindows(EnumWindowsProc, (LPARAM)&ctx);
+
+        // wait for input event
+        DWORD wait_res = WaitForSingleObject(input, 1000);
+        if (wait_res == WAIT_TIMEOUT)
+            continue;
+
+        // exit on ESC
+        DWORD input_count = 0;
+        INPUT_RECORD ir;
+        if (ReadConsoleInput(input, &ir, 1, &input_count))
+        {
+            if (input_count > 0 && ir.EventType == KEY_EVENT)
+            {
+                if (ir.Event.KeyEvent.bKeyDown && ir.Event.KeyEvent.wVirtualKeyCode == VK_ESCAPE)
+                    break;
+            }
+        }
+    }
+    return 0;
 }
