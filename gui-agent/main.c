@@ -102,10 +102,10 @@ void DumpWindows(void)
             }
         }
 
-        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} ",
+        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} parent=0x%x ",
             entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
             entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
-            entry->Class, entry->Caption, exePath);
+            entry->Class, entry->Caption, exePath, GetAncestor(entry->Handle, GA_PARENT));
         LogStyle(entry->Style);
         LogExStyle(entry->ExStyle);
         LogDebugRaw("\r\n");
