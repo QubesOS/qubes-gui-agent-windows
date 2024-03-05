@@ -225,7 +225,7 @@ DWORD WINAPI WatchdogThread(void *param)
 
     while (TRUE)
     {
-        Sleep(2000);
+        Sleep(1000);
 
         EnterCriticalSection(&g_gaCs);
         // Check if the gui agent is running.
