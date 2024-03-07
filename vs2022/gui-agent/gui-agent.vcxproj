@@ -40,6 +40,9 @@
   <ItemGroup>
     <ResourceCompile Include="..\..\gui-agent\qga.rc" />
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="..\..\gui-agent\gui-agent.manifest" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>

@@ -385,42 +385,6 @@ static ULONG AddAllWindows(void)
     if (!EnumWindows(AddWindowsProc, 0))
         status = win_perror("EnumWindows");
 
-    // Now, for *some* reason, the start menu (or "search") in win10 is not enumerated by the above,
-    // despite it being a top-level, visible, normal window. Dump below:
-
-    // 0x101f6 : E - "Windows.UI.Core.CoreWindow" "Search" [C:\Windows\SystemApps\Microsoft.Windows.Search_cw5n1h2txyewy\SearchApp.exe]
-    // WR(48, 760:832, 1400)(784x640) WI(48, 760:832, 1400)(784x640) Border(0, 0) DWM(48, 760:832, 1400)(784x640) parent = 0x10010
-    // WS_POPUP WS_VISIBLE WS_CLIPSIBLINGS WS_EX_UISTATEFOCUSRECTHIDDEN WS_EX_UISTATEKBACCELHIDDEN WS_EX_REDIRECTED WS_EX_NOREDIRECTIONBITMAP 0x8000 WS_EX_MAKEVISIBLEWHENUNGHOSTED WS_EX_TOPMOST
-
-    // So as a failsafe we add the foreground window here if it's not in the watched list.
-    // TODO: this window (start/search) has a large transparent section on the right it seems,
-    // we can't easily do anything about it without scanning the client pixels
-    HWND fg = GetForegroundWindow();
-    if (fg)
-    {
-        WINDOW_DATA* data = FindWindowByHandle(fg);
-        if (!data)
-        {
-            status = GetWindowData(fg, &data);
-            if (status != ERROR_SUCCESS)
-            {
-                win_perror2(status, "GetWindowData");
-                goto end;
-            }
-
-            LogDebug("Foreground window 0x%x not tracked", fg);
-            if (ShouldAcceptWindow(data))
-            {
-                status = AddWindow(data);
-            }
-            else
-            {
-                // this can happen right after window creation when it's not fully initialized/showed yet
-                LogDebug("Foreground window 0x%x not accepted?", fg);
-            }
-        }
-    }
-end:
     LogVerbose("end (%x)", status);
     return status;
 }

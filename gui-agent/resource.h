@@ -19,4 +19,5 @@
  *
  */
 
-#define IDC_BLANK                       100
+#define IDC_BLANK     100
+#define IDC_MANIFEST  200
