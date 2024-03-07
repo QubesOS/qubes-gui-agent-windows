@@ -3,4 +3,10 @@
   <ItemGroup>
     <ClCompile Include="..\..\test\dump-windows\dump-windows.c" />
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="..\..\test\dump-windows\dump-windows.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\test\dump-windows\dump-windows.rc" />
+  </ItemGroup>
 </Project>
