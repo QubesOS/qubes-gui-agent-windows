@@ -291,7 +291,16 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
         IDXGIAdapter_Release(ctx->adapter);
 
     if (ctx->xc)
+    {
+        // grants are not automatically revoked when the xeniface device handle is closed
+        assert(ctx->frame.mapped);
+        status = XcGnttabRevokeForeignAccess(ctx->xc, ctx->frame.rect.pBits);
+        if (status != ERROR_SUCCESS)
+        {
+            win_perror2(status, "XcGnttabRevokeForeignAccess");
+        }
         XcClose(ctx->xc);
+    }
 
     ReleaseFrame(ctx);
 
@@ -376,6 +385,8 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
             win_perror("sharing framebuffer with GUI domain");
             goto fail3;
         }
+
+        assert(shared_va == ctx->frame.rect.pBits);
     }
 
     // dirty rects
