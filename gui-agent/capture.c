@@ -224,6 +224,7 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
     if (!ctx->xc)
         goto fail;
 
+    XcSetLogLevel(ctx->xc, LogGetLevel()); // XC log levels are the same as ours
     ctx->adapter = GetAdapter();
     if (!ctx->adapter)
         goto fail;
