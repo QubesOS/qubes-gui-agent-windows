@@ -876,7 +876,7 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
     AttachToInputDesktop();
     // Initialize capture interfaces, this also initializes framebuffer PFNs
     *capture = CaptureInitialize(newFrameEvent, captureErrorEvent);
-    if (!*capture)
+    if (!(*capture))
         return win_perror("CaptureInitialize");
 
     ULONG status;
@@ -909,6 +909,7 @@ void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
     if (!capture)
         return;
 
+    SendWindowUnmap(NULL);
     SendWindowDestroy(NULL);
 
     CaptureTeardown(*capture);

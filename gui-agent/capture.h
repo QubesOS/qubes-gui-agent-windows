@@ -57,6 +57,7 @@ typedef struct _CAPTURE_CONTEXT
 	PXENCONTROL_CONTEXT xc;
 	// mapped framebuffer location is constant as long as the capture interface is valid
 	// this gets initialized when the first frame is acquired
+	void* framebuffer; // framebuffer address
 	ULONG* grant_refs; // xen grant refs for shared framebuffer pages
 	HANDLE frame_event; // capture thread -> main loop: new frame
 	HANDLE ready_event; // main loop -> capture thread: frame processed

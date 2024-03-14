@@ -278,6 +278,20 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
 
     CloseHandle(ctx->ready_event);
 
+    if (ctx->xc && ctx->grant_refs)
+    {
+        // grants are not automatically revoked when the xeniface device handle is closed
+        assert(ctx->framebuffer);
+        status = XcGnttabRevokeForeignAccess(ctx->xc, ctx->framebuffer);
+        if (status != ERROR_SUCCESS)
+        {
+            win_perror2(status, "XcGnttabRevokeForeignAccess");
+        }
+    }
+
+    ReleaseFrame(ctx);
+    DeleteCriticalSection(&ctx->frame.lock);
+
     if (ctx->duplication)
         IDXGIOutputDuplication_Release(ctx->duplication);
 
@@ -291,20 +305,8 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
         IDXGIAdapter_Release(ctx->adapter);
 
     if (ctx->xc)
-    {
-        // grants are not automatically revoked when the xeniface device handle is closed
-        assert(ctx->frame.mapped);
-        status = XcGnttabRevokeForeignAccess(ctx->xc, ctx->frame.rect.pBits);
-        if (status != ERROR_SUCCESS)
-        {
-            win_perror2(status, "XcGnttabRevokeForeignAccess");
-        }
         XcClose(ctx->xc);
-    }
 
-    ReleaseFrame(ctx);
-
-    DeleteCriticalSection(&ctx->frame.lock);
     free(ctx);
     LogVerbose("end");
     SetLastError(status);
@@ -369,7 +371,6 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
         assert(page_count < ULONG_MAX);
         ctx->grant_refs = malloc(page_count * sizeof(ULONG));
 
-        PVOID shared_va = NULL;
         status = XcGnttabPermitForeignAccess2(ctx->xc,
             g_GuiDomainId,
             ctx->frame.rect.pBits,
@@ -377,7 +378,7 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
             0,
             0,
             XENIFACE_GNTTAB_READONLY,
-            &shared_va,
+            &ctx->framebuffer,
             ctx->grant_refs);
 
         if (status != ERROR_SUCCESS)
@@ -386,7 +387,7 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
             goto fail3;
         }
 
-        assert(shared_va == ctx->frame.rect.pBits);
+        assert(ctx->framebuffer == ctx->frame.rect.pBits);
     }
 
     // dirty rects
@@ -464,6 +465,10 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
     if (!ctx->frame.texture)
         goto end;
 
+    free(ctx->frame.dirty_rects);
+    ctx->frame.dirty_rects = NULL;
+    ctx->frame.dirty_rects_count = 0;
+
     if (ctx->frame.mapped)
     {
         status = IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
@@ -482,6 +487,8 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
         goto end;
     }
 
+    ctx->frame.texture = NULL;
+
     status = IDXGIOutputDuplication_ReleaseFrame(ctx->duplication);
     if (FAILED(status))
     {
@@ -489,11 +496,6 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
         goto end;
     }
 
-    ctx->frame.texture = NULL;
-
-    free(ctx->frame.dirty_rects);
-    ctx->frame.dirty_rects = NULL;
-    ctx->frame.dirty_rects_count = 0;
     status = ERROR_SUCCESS;
 end:
     LeaveCriticalSection(&ctx->frame.lock);
