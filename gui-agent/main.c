@@ -377,8 +377,6 @@ static ULONG AddAllWindows(void)
     LogVerbose("start");
 
     g_TaskbarWindow = FindWindow(L"Shell_TrayWnd", NULL);
-    if (g_TaskbarWindow)
-        ShowWindow(g_TaskbarWindow, SW_HIDE);
 
     ULONG status = ERROR_SUCCESS;
     // Enum top-level windows and add all that are not filtered.
@@ -432,12 +430,6 @@ static ULONG ResetWatch(BOOL seamlessMode)
         EnterCriticalSection(&g_csWatchedWindows);
         status = AddAllWindows();
         LeaveCriticalSection(&g_csWatchedWindows);
-    }
-    else
-    {
-        LogVerbose("fullscreen mode, showing taskbar");
-        if (g_TaskbarWindow)
-            ShowWindow(g_TaskbarWindow, SW_SHOW);
     }
 
     LogVerbose("end (%x)", status);
