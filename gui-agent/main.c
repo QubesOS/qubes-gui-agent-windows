@@ -39,6 +39,7 @@
 #include "vchan-handlers.h"
 #include "util.h"
 #include "debug.h"
+#include "qubes-io.h"
 
 // windows-utils
 #include <log.h>
@@ -74,13 +75,24 @@ HWND g_TaskbarWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
+#ifdef DEBUG_DUMP_WINDOWS
 // diagnostic: dump all watched windows
 void DumpWindows(void)
 {
     WINDOW_DATA *entry;
-    WCHAR exePath[MAX_PATH];
+    static WCHAR* exePath = NULL;
 
     EnterCriticalSection(&g_csWatchedWindows);
+    if (!exePath)
+    {
+        exePath = malloc(MAX_PATH_LONG_WSIZE);
+        if (!exePath)
+        {
+            LeaveCriticalSection(&g_csWatchedWindows);
+            return;
+        }
+    }
+
     entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
 
     LogDebug("### Window dump:");
@@ -96,7 +108,7 @@ void DumpWindows(void)
             HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
             if (process != INVALID_HANDLE_VALUE)
             {
-                DWORD size = ARRAYSIZE(exePath);
+                DWORD size = MAX_PATH_LONG;
                 QueryFullProcessImageName(process, 0, exePath, &size);
                 CloseHandle(process);
             }
@@ -115,6 +127,7 @@ void DumpWindows(void)
 
     LeaveCriticalSection(&g_csWatchedWindows);
 }
+#endif // DEBUG_DUMP_WINDOWS
 
 // When DWM compositing is enabled (normally always on), most windows are actually smaller
 // than their size reported by winuser functions. This is because their edges contain
