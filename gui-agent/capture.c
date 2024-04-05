@@ -206,13 +206,12 @@ static void XcLogger(IN XENCONTROL_LOG_LEVEL logLevel, IN const char* function, 
 CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
 {
     LogVerbose("start");
+
     CAPTURE_CONTEXT* ctx = (CAPTURE_CONTEXT*)calloc(1, sizeof(CAPTURE_CONTEXT));
     if (!ctx)
-    {
-        LogError("no memory");
-        SetLastError(ERROR_OUTOFMEMORY);
-        goto fail;
-    }
+        exit(ERROR_OUTOFMEMORY);
+
+    InitializeCriticalSection(&ctx->frame.lock);
 
     DWORD status = XcOpen(XcLogger, &ctx->xc);
     if (status != ERROR_SUCCESS)
@@ -241,8 +240,6 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
     if (!ctx->duplication)
         goto fail;
 
-    InitializeCriticalSection(&ctx->frame.lock);
-
     // get one frame to acquire framebuffer map
     if (FAILED(GetFrame(ctx, 5*FRAME_TIMEOUT)))
         goto fail;
@@ -270,13 +267,17 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
 
     DWORD status = GetLastError(); // preserve
     InterlockedExchange(&g_CaptureThreadEnable, FALSE);
-    if (WaitForSingleObject(ctx->thread, 2*FRAME_TIMEOUT) != WAIT_OBJECT_0)
+    if (ctx->thread)
     {
-        LogWarning("capture thread timeout");
-        TerminateThread(ctx->thread, 0);
+        if (WaitForSingleObject(ctx->thread, 2 * FRAME_TIMEOUT) != WAIT_OBJECT_0)
+        {
+            LogWarning("capture thread timeout");
+            TerminateThread(ctx->thread, 0);
+        }
     }
 
-    CloseHandle(ctx->ready_event);
+    if (ctx->ready_event)
+        CloseHandle(ctx->ready_event);
 
     if (ctx->xc && ctx->grant_refs)
     {
@@ -290,6 +291,7 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
     }
 
     ReleaseFrame(ctx);
+
     DeleteCriticalSection(&ctx->frame.lock);
 
     if (ctx->duplication)
