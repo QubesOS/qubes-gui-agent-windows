@@ -22,19 +22,17 @@
 #include <windows.h>
 #include <wtsapi32.h>
 #include <shlwapi.h>
-#include <string.h>
+#include <strsafe.h>
 #include "common.h"
 
 #include <log.h>
 #include <config.h>
+#include <qubes-io.h>
 
 #define SERVICE_NAME L"QgaWatchdog"
 
-#define QGA_TERMINATE_TIMEOUT 2000
-
 SERVICE_STATUS g_Status;
 SERVICE_STATUS_HANDLE g_StatusHandle;
-HANDLE g_ConsoleEvent;
 
 void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context);
@@ -42,24 +40,6 @@ DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void 
 typedef void (WINAPI *fSendSAS)(BOOL);
 // this is not defined in WDK headers
 fSendSAS SendSAS = NULL;
-
-const WCHAR *g_SessionEventName[] = {
-    L"<invalid>",
-    L"WTS_CONSOLE_CONNECT",
-    L"WTS_CONSOLE_DISCONNECT",
-    L"WTS_REMOTE_CONNECT",
-    L"WTS_REMOTE_DISCONNECT",
-    L"WTS_SESSION_LOGON",
-    L"WTS_SESSION_LOGOFF",
-    L"WTS_SESSION_LOCK",
-    L"WTS_SESSION_UNLOCK",
-    L"WTS_SESSION_REMOTE_CONTROL",
-    L"WTS_SESSION_CREATE",
-    L"WTS_SESSION_TERMINATE"
-};
-
-// Held when restarting gui agent.
-CRITICAL_SECTION g_gaCs;
 
 // Entry point.
 int wmain(int argc, WCHAR *argv[])
@@ -69,7 +49,6 @@ int wmain(int argc, WCHAR *argv[])
         { NULL, NULL }
     };
 
-    InitializeCriticalSection(&g_gaCs);
     StartServiceCtrlDispatcher(serviceTable);
     return ERROR_SUCCESS;
 }
@@ -105,53 +84,6 @@ cleanup:
     if (processInfo)
         WTSFreeMemory(processInfo);
     return found;
-}
-
-DWORD TerminateTargetProcess(IN const WCHAR *exeName)
-{
-    HANDLE targetProcess;
-    HANDLE shutdownEvent;
-    DWORD processId, sessionId, status;
-
-    status = GetLastError();
-    LogInfo("Process name: '%s'", exeName);
-
-    shutdownEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SHUTDOWN_EVENT_NAME);
-    if (!shutdownEvent)
-    {
-        win_perror("OpenEvent");
-        LogInfo("Shutdown event '%s' not found, making sure it's not running", QGA_SHUTDOWN_EVENT_NAME);
-    }
-    else
-    {
-        LogDebug("Signaling shutdown event: %s", QGA_SHUTDOWN_EVENT_NAME);
-        SetEvent(shutdownEvent);
-        CloseHandle(shutdownEvent);
-
-        LogDebug("Waiting for process shutdown");
-    }
-
-    if (IsProcessRunning(exeName, &processId, &sessionId))
-    {
-        LogDebug("Process '%s' running as PID %d in session %d, waiting for %dms",
-            exeName, processId, sessionId, QGA_TERMINATE_TIMEOUT);
-
-        targetProcess = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, processId);
-
-        if (!targetProcess)
-        {
-            return win_perror("OpenProcess");
-        }
-
-        // wait for exit
-        if (WAIT_OBJECT_0 != WaitForSingleObject(targetProcess, QGA_TERMINATE_TIMEOUT))
-        {
-            LogWarning("Process didn't exit in time, killing it");
-            TerminateProcess(targetProcess, 0);
-        }
-        CloseHandle(targetProcess);
-    }
-    return ERROR_SUCCESS;
 }
 
 // Starts the process as SYSTEM in currently active console session.
@@ -214,12 +146,10 @@ DWORD StartTargetProcess(IN WCHAR *exePath) // non-const because it can be modif
 // Restarts gui agent in active session if it's dead for too long.
 DWORD WINAPI WatchdogThread(void *param)
 {
-    WCHAR *cmdline;
-    WCHAR *exeName;
+    WCHAR* cmdline = (WCHAR*) param;
 
-    cmdline = (WCHAR*) param;
     PathUnquoteSpaces(cmdline);
-    exeName = PathFindFileName(cmdline);
+    WCHAR* exeName = PathFindFileName(cmdline);
 
     LogDebug("cmdline: '%s', exe: '%s'", cmdline, exeName);
 
@@ -227,55 +157,34 @@ DWORD WINAPI WatchdogThread(void *param)
     {
         Sleep(1000);
 
-        EnterCriticalSection(&g_gaCs);
         // Check if the gui agent is running.
         if (!IsProcessRunning(exeName, NULL, NULL))
         {
             LogWarning("Process '%s' not running, restarting it", exeName);
             StartTargetProcess(cmdline);
         }
-        LeaveCriticalSection(&g_gaCs);
     }
 
     return ERROR_SUCCESS;
 }
 
-DWORD WINAPI SessionChangeThread(void *param)
+DWORD WINAPI EventsThread(void *param)
 {
-    WCHAR *cmdline;
-    WCHAR *exeName;
-    HANDLE events[2];
-    DWORD signaledEvent = 3;
+    HANDLE events[1];
+    DWORD signaledEvent = 2;
 
     LogDebug("start");
 
-    cmdline = (WCHAR*) param;
-    PathUnquoteSpaces(cmdline);
-    exeName = PathFindFileName(cmdline);
-
-    LogDebug("cmdline: '%s', exe: '%s'", cmdline, exeName);
-
-    events[0] = g_ConsoleEvent;
     // Default security for the SAS event, only SYSTEM processes can signal it.
-    events[1] = CreateEvent(NULL, FALSE, FALSE, QGA_SAS_EVENT_NAME);
+    events[0] = CreateEvent(NULL, FALSE, FALSE, QGA_SAS_EVENT_NAME);
 
     while (TRUE)
     {
-        // Wait until the interactive session changes.
-        signaledEvent = WaitForMultipleObjects(2, events, FALSE, INFINITE) - WAIT_OBJECT_0;
+        signaledEvent = WaitForMultipleObjects(ARRAYSIZE(events), events, FALSE, INFINITE) - WAIT_OBJECT_0;
 
         switch (signaledEvent)
         {
-        case 0: // console event: restart gui agent
-            EnterCriticalSection(&g_gaCs);
-            // Make sure process is not running.
-            TerminateTargetProcess(exeName);
-            // restart
-            StartTargetProcess(cmdline);
-            LeaveCriticalSection(&g_gaCs);
-            break;
-
-        case 1: // SAS event
+        case 0: // SAS event
             LogInfo("SAS event signaled");
             if (SendSAS)
                 SendSAS(FALSE); // calling as service
@@ -291,24 +200,24 @@ DWORD WINAPI SessionChangeThread(void *param)
 
 void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
 {
-    WCHAR cmdline1[MAX_PATH], cmdline2[MAX_PATH];
     WCHAR moduleName[CFG_MODULE_MAX];
     HANDLE workerHandle = NULL;
     HANDLE watchdogHandle = NULL;
     DWORD status;
     HANDLE sasDll;
 
+    WCHAR* cmdline = malloc(MAX_PATH_LONG_WSIZE);
+    if (!cmdline)
+        goto cleanup;
+
     // Read the registry configuration.
     CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
-    status = CfgReadString(moduleName, REG_CONFIG_AGENT_PATH_VALUE, cmdline1, RTL_NUMBER_OF(cmdline1), NULL);
+    status = CfgReadString(moduleName, REG_CONFIG_AGENT_PATH_VALUE, cmdline, MAX_PATH_LONG, NULL);
     if (ERROR_SUCCESS != status)
     {
         win_perror("CfgReadString(" REG_CONFIG_AGENT_PATH_VALUE L")");
         goto cleanup;
     }
-
-    // 2nd copy is for the 2nd thread since it will be modified by Path* functions
-    memcpy(cmdline2, cmdline1, sizeof(cmdline2));
 
     // Get SendSAS address.
     sasDll = LoadLibrary(L"sas.dll");
@@ -325,8 +234,7 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
 
     g_Status.dwServiceType = SERVICE_WIN32;
     g_Status.dwCurrentState = SERVICE_START_PENDING;
-    // SERVICE_ACCEPT_SESSIONCHANGE allows us to receive session change notifications.
-    g_Status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE;
+    g_Status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
     g_Status.dwWin32ExitCode = 0;
     g_Status.dwServiceSpecificExitCode = 0;
     g_Status.dwCheckPoint = 0;
@@ -341,58 +249,34 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     g_Status.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(g_StatusHandle, &g_Status);
 
-    // Create trigger event for the worker thread.
-    g_ConsoleEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-    // Start the worker thread.
-    LogDebug("Starting worker thread");
-    workerHandle = CreateThread(NULL, 0, SessionChangeThread, cmdline1, 0, NULL);
+    LogDebug("Starting event thread");
+    workerHandle = CreateThread(NULL, 0, EventsThread, NULL, 0, NULL);
     if (!workerHandle)
     {
-        win_perror("CreateThread");
+        win_perror("CreateThread(events)");
         goto cleanup;
     }
 
     LogDebug("Starting watchdog thread");
-    watchdogHandle = CreateThread(NULL, 0, WatchdogThread, cmdline2, 0, NULL);
+    watchdogHandle = CreateThread(NULL, 0, WatchdogThread, cmdline, 0, NULL);
     if (!watchdogHandle)
     {
-        win_perror("CreateThread");
+        win_perror("CreateThread(watchdog)");
         goto cleanup;
     }
 
-    // Start the gui agent.
-    StartTargetProcess(cmdline1);
-
-    // Wait for the worker thread to exit.
+    // FIXME that thread never exits
     WaitForSingleObject(workerHandle, INFINITE);
 
 cleanup:
+    // don't free cmdline here, a thread using it may be still running, memory is freed on exit anyway
     g_Status.dwCurrentState = SERVICE_STOPPED;
     g_Status.dwWin32ExitCode = GetLastError();
-    SetServiceStatus(g_StatusHandle, &g_Status);
+    if (g_StatusHandle)
+        SetServiceStatus(g_StatusHandle, &g_Status);
 
     LogInfo("exiting");
     return;
-}
-
-void SessionChange(IN DWORD eventType, IN const WTSSESSION_NOTIFICATION *sn)
-{
-    static DWORD previousConsoleId = 0;
-    DWORD consoleId = WTSGetActiveConsoleSessionId();
-
-    if (eventType < RTL_NUMBER_OF(g_SessionEventName))
-        LogDebug("%s, session ID %d, console session: %d", g_SessionEventName[eventType], sn->dwSessionId, consoleId);
-    else
-        LogDebug("<unknown event: %d>, session ID %d, console session: %d", eventType, sn->dwSessionId, consoleId);
-
-    if (consoleId != previousConsoleId)
-    {
-        LogDebug("console session change, signaling event");
-        previousConsoleId = consoleId;
-        // Signal trigger event for the worker thread.
-        SetEvent(g_ConsoleEvent);
-    }
 }
 
 DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context)
@@ -406,11 +290,6 @@ DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void 
         LogInfo("stopping...");
         SetServiceStatus(g_StatusHandle, &g_Status);
         break;
-/*  looks like there is no necessary to restart qga on session change, disable it.
-    case SERVICE_CONTROL_SESSIONCHANGE:
-        SessionChange(eventType, (WTSSESSION_NOTIFICATION*) eventData);
-        break;
-*/
     default:
         LogDebug("code 0x%x, event 0x%x", controlCode, eventType);
         break;
