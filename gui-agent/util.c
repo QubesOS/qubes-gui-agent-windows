@@ -171,29 +171,6 @@ HANDLE CreateNamedMailslot(IN const WCHAR *name)
     return slot;
 }
 
-ULONG StartProcess(IN const WCHAR *executable, OUT HANDLE *processHandle)
-{
-    STARTUPINFO si = { 0 };
-    PROCESS_INFORMATION pi;
-    WCHAR exePath[MAX_PATH]; // cmdline can't be read-only
-
-    LogDebug("%s", executable);
-
-    StringCchCopy(exePath, RTL_NUMBER_OF(exePath), executable);
-
-    si.cb = sizeof(si);
-    //si.wShowWindow = SW_HIDE;
-    //si.dwFlags = STARTF_USESHOWWINDOW;
-    if (!CreateProcess(NULL, exePath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-        return win_perror("CreateProcess");
-    CloseHandle(pi.hThread);
-    *processHandle = pi.hProcess;
-
-    LogDebug("PID: %lu", pi.dwProcessId);
-
-    return ERROR_SUCCESS;
-}
-
 ULONG IncreaseProcessWorkingSetSize(IN SIZE_T minimumSize, IN SIZE_T maximumSize)
 {
     if (!SetProcessWorkingSetSize(GetCurrentProcess(), minimumSize, maximumSize))
