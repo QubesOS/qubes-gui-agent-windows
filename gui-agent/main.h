@@ -49,6 +49,9 @@ typedef struct _WINDOW_DATA
     BOOL DeletePending;
     WCHAR Caption[256];
     WCHAR Class[256];
+
+    // These coords are a minimal bounding rectangle for the visible portion of the window.
+    // This may be different than the real RECT of the window.
     int X;
     int Y;
     int Width;

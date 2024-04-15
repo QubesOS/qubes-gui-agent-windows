@@ -1053,6 +1053,15 @@ void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
     LogVerbose("end");
 }
 
+const WINDOW_DATA* GetWindowDataCb(IN HWND window)
+{
+    const WINDOW_DATA* data = NULL;
+    EnterCriticalSection(&g_csWatchedWindows);
+    data = FindWindowByHandle(window);
+    LeaveCriticalSection(&g_csWatchedWindows);
+    return data;
+}
+
 // main event loop
 // TODO: refactor into smaller parts
 static ULONG WINAPI WatchForEvents  (void)
@@ -1253,7 +1262,7 @@ static ULONG WINAPI WatchForEvents  (void)
 
             while (VchanGetReadBufferSize(g_Vchan) > 0)
             {
-                status = HandleServerData();
+                status = HandleServerData(GetWindowDataCb);
                 if (ERROR_SUCCESS != status)
                 {
                     exitLoop = TRUE;

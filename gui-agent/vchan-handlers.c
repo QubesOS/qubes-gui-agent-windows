@@ -24,6 +24,7 @@
 #include "common.h"
 #include "main.h"
 #include "vchan.h"
+#include "vchan-handlers.h"
 #include "send.h"
 #include "xorg-keymap.h"
 #include "resolution.h"
@@ -273,11 +274,10 @@ static DWORD HandleButton(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-static DWORD HandleMotion(IN HWND window)
+static DWORD HandleMotion(IN HWND window, GetWindowDataCallback getWindowData)
 {
     struct msg_motion motionMsg;
     INPUT inputEvent;
-    RECT rect = { 0 };
 
     LogVerbose("0x%x", window);
     if (!VchanReceiveBuffer(g_Vchan, &motionMsg, sizeof(motionMsg), L"msg_motion"))
@@ -286,17 +286,32 @@ static DWORD HandleMotion(IN HWND window)
         return ERROR_UNIDENTIFIED_ERROR;
     }
 
+    int32_t x = motionMsg.x;
+    int32_t y = motionMsg.y;
+
+    if (motionMsg.is_hint)
+    {
+        LogDebug("0x%x: ignoring motion hint (%d,%d)", window, x, y);
+        return ERROR_SUCCESS;
+    }
+
     if (window)
-        GetWindowRect(window, &rect);
+    {
+        const WINDOW_DATA* data = getWindowData(window);
+        x += data->X;
+        y += data->Y;
+
+        LogVerbose("0x%x: (%d,%d)", window, x, y);
+    }
 
     inputEvent.type = INPUT_MOUSE;
     inputEvent.mi.time = 0;
     /* pointer coordinates must be 0..65535, which covers the whole screen -
     * regardless of resolution */
-    inputEvent.mi.dx = (motionMsg.x + rect.left) * 65535 / g_ScreenWidth;
-    inputEvent.mi.dy = (motionMsg.y + rect.top) * 65535 / g_ScreenHeight;
+    inputEvent.mi.dx = x * 65535 / g_ScreenWidth;
+    inputEvent.mi.dy = y * 65535 / g_ScreenHeight;
     inputEvent.mi.mouseData = 0;
-    inputEvent.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_ABSOLUTE;
+    inputEvent.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
     inputEvent.mi.dwExtraInfo = 0;
 
     if (!SendInput(1, &inputEvent, sizeof(inputEvent)))
@@ -465,7 +480,7 @@ static DWORD HandleWindowFlags(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-DWORD HandleServerData(void)
+DWORD HandleServerData(GetWindowDataCallback getWindowData)
 {
     struct msg_hdr header;
     BYTE discardBuffer[256];
@@ -491,7 +506,7 @@ DWORD HandleServerData(void)
         status = HandleButton((HWND)header.window);
         break;
     case MSG_MOTION:
-        status = HandleMotion((HWND)header.window);
+        status = HandleMotion((HWND)header.window, getWindowData);
         break;
     case MSG_CONFIGURE:
         status = HandleConfigure((HWND)header.window);
