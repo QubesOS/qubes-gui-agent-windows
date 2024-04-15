@@ -1389,15 +1389,7 @@ static ULONG Init(void)
     }
 
     status = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
-    // XXX dirty bits
-    /* disabled for now because driver lacks interface for it
-    status = CfgReadDword(moduleName, REG_CONFIG_DIRTY_VALUE, &g_UseDirtyBits, NULL);
-    if (ERROR_SUCCESS != status)
-    {
-        LogWarning("Failed to read '%s' config value, disabling that feature", REG_CONFIG_DIRTY_VALUE);
-        g_UseDirtyBits = FALSE;
-    }
-    */
+
     status = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
     if (ERROR_SUCCESS != status)
     {
