@@ -1,3 +1,4 @@
+#include "winuser.h"
 #include "resource.h"
 
 IDC_MANIFEST  RT_MANIFEST          "gui-agent.manifest"
