@@ -226,7 +226,9 @@ end:
 // When DWM compositing is enabled (normally always on), most windows are actually smaller
 // than their size reported by winuser functions. This is because their edges contain
 // invisible grip handles managed by DWM. This function returns actual visible window size.
-ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
+// This function also accounts for a clipping region possibly defined for the window
+// and returns a minimal bounding rectangle that covers the visible region.
+ULONG GetRealWindowRect(IN HWND window, OUT RECT* rect)
 {
     RECT dwmRect;
     // get real rect of the window as managed by DWM
@@ -255,9 +257,43 @@ ULONG GetWindowRectFromDwm(IN HWND window, OUT RECT* rect)
     rect->right = (LONG)((dwmRect.right - devMode.dmPosition.x) * scale) + monInfo.rcMonitor.left;
     rect->top = (LONG)((dwmRect.top - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
     rect->bottom = (LONG)((dwmRect.bottom - devMode.dmPosition.y) * scale) + monInfo.rcMonitor.top;
+    LogDebug("0x%x: rect (%d,%d) %dx%d", window,
+        rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top);
+
+    // get clipping region
+    // TODO: probably need to account for DPI here too
+    static HRGN region = NULL;
+    if (!region)
+        region = CreateRectRgn(0, 0, 0, 0);
+
+    int region_type = GetWindowRgn(window, region);
+    if (region_type == SIMPLEREGION || region_type == COMPLEXREGION)
+    {
+        RECT bounds;
+        GetRgnBox(region, &bounds); // bounding box for the region TODO: better clipping for complex ones?
+        LogDebug("0x%x: clipping region type %d: bounds (%d,%d) %dx%d", window, region_type,
+            bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+        // region coords are relative to the window
+        // TODO: should we use DWM's window rect or USER one if they differ?
+        bounds.left += rect->left;
+        bounds.top += rect->top;
+        bounds.right += rect->left;
+        bounds.bottom += rect->top;
+
+        RECT clipped;
+        IntersectRect(&clipped, rect, &bounds);
+        *rect = clipped;
+        // clipped is always bounded by rect
+
+        LogDebug("0x%x: clipping region type %d: final rect (%d,%d) %dx%d", window, region_type,
+            rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top);
+    }
+    // TODO: start menu still has transparent DWM borders included even after clipping
+    // apply the difference between DWM's rect and unclipped rect to clipped one
 
     return ERROR_SUCCESS;
 }
+
 // fills WINDOW_DATA if successful
 // if *windowData is NULL, the function allocates a new struct and sets the pointer
 // if *windowData is not NULL, the function updates the supplied struct
@@ -270,10 +306,10 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
         return ERROR_INVALID_PARAMETER;
 
     RECT rect;
-    status = GetWindowRectFromDwm(window, &rect);
+    status = GetRealWindowRect(window, &rect);
     if (!SUCCEEDED(status))
     {
-        return win_perror2(status, "GetWindowRectFromDwm");
+        return win_perror2(status, "GetRealWindowRect");
     }
 
     if (*windowData != NULL)
@@ -316,6 +352,7 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
         if (cloaked != 0) // hidden by DWM
             entry->IsVisible = FALSE;
     }
+    // TODO: search window seems still visible (transparent) when opening start menu
 
     if (entry->IsVisible)
     {
