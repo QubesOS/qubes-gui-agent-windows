@@ -76,6 +76,96 @@ HWND g_TaskbarWindow = NULL;
 HANDLE g_ShutdownEvent = NULL;
 
 #ifdef DEBUG_DUMP_WINDOWS
+// FIXME: this fails for UWP apps
+void DumpWindowBitmap(const WINDOW_DATA* data)
+{
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    WCHAR path[256];
+    StringCchPrintf(path, 256, L"c:\\Qubes Tools\\log\\%x_%04d%02d%02d_%02d%02d%02d_%03d.bmp", data->Handle,
+        t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
+
+    DWORD status = 0;
+    HDC hdc = NULL;
+    HBITMAP bm = NULL;
+    HDC win_dc = GetWindowDC(data->Handle);
+    if (!win_dc)
+    {
+        status = win_perror("CreateCompatibleDC(window)");
+        goto end;
+    }
+
+    hdc = CreateCompatibleDC(win_dc);
+    if (!hdc)
+    {
+        status = win_perror("CreateCompatibleDC(window)");
+        goto end;
+    }
+
+    RECT rect;
+    GetWindowRect(data->Handle, &rect);
+    int cx = rect.right - rect.left;
+    int cy = rect.bottom - rect.top;
+    bm = CreateCompatibleBitmap(win_dc, cx, cy);
+    if (!bm)
+    {
+        status = win_perror("CreateCompatibleBitmap(window)");
+        goto end;
+    }
+
+    SelectObject(hdc, bm);
+
+    if (!BitBlt(hdc, 0, 0, cx, cy, win_dc, 0, 0, SRCCOPY))
+    {
+        status = win_perror("BitBlt(window)");
+        goto end;
+    }
+
+    BITMAP b;
+    GetObject(bm, sizeof(BITMAP), &b);
+
+    BITMAPFILEHEADER bmfHeader;
+    BITMAPINFOHEADER bi;
+
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = b.bmWidth;
+    bi.biHeight = b.bmHeight;
+    bi.biPlanes = 1;
+    bi.biBitCount = 32;
+    bi.biCompression = BI_RGB;
+    bi.biSizeImage = 0;
+    bi.biXPelsPerMeter = 0;
+    bi.biYPelsPerMeter = 0;
+    bi.biClrUsed = 0;
+    bi.biClrImportant = 0;
+
+    DWORD bsize = ((b.bmWidth * bi.biBitCount + 31) / 32) * 4 * b.bmHeight;
+    HANDLE dib = GlobalAlloc(GHND, bsize);
+    char* ptr = (char*)GlobalLock(dib);
+    GetDIBits(win_dc, bm, 0, (UINT)b.bmHeight, ptr, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+    HANDLE file = CreateFile(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD dibsize = bsize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bmfHeader.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
+    bmfHeader.bfSize = dibsize;
+    bmfHeader.bfType = 0x4D42; // BM
+    DWORD wr;
+    WriteFile(file, (LPSTR)&bmfHeader, sizeof(BITMAPFILEHEADER), &wr, NULL);
+    WriteFile(file, (LPSTR)&bi, sizeof(BITMAPINFOHEADER), &wr, NULL);
+    WriteFile(file, (LPSTR)ptr, bsize, &wr, NULL);
+    GlobalUnlock(dib);
+    GlobalFree(dib);
+    CloseHandle(file);
+
+end:
+    if (win_dc)
+        ReleaseDC(data->Handle, win_dc);
+    if (hdc)
+        ReleaseDC(data->Handle, hdc);
+    if (bm)
+        DeleteObject(bm);
+    LogVerbose("end (%x)", status);
+}
+
 // diagnostic: dump all watched windows
 void DumpWindows(void)
 {
@@ -87,15 +177,15 @@ void DumpWindows(void)
     {
         exePath = malloc(MAX_PATH_LONG_WSIZE);
         if (!exePath)
-        {
-            LeaveCriticalSection(&g_csWatchedWindows);
-            return;
-        }
+            goto end;
     }
 
-    entry = (WINDOW_DATA *)g_WatchedWindowsList.Flink;
+    if (IsListEmpty(&g_WatchedWindowsList))
+        goto end;
 
     LogDebug("### Window dump:");
+
+    entry = (WINDOW_DATA*)g_WatchedWindowsList.Flink;
     while (entry != (WINDOW_DATA *)&g_WatchedWindowsList)
     {
         entry = CONTAINING_RECORD(entry, WINDOW_DATA, ListEntry);
@@ -115,8 +205,9 @@ void DumpWindows(void)
         }
 
         LogLock();
-        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d %c %c ovr=%d [%s] '%s' {%s} parent=0x%x ",
-            entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
+        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d ",
+            entry->Handle, entry->X, entry->Y, entry->Width, entry->Height);
+        LogDebugRaw("%c %c ovr=%d [%s] '%s' {%s} parent=0x%x ",
             entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
             entry->Class, entry->Caption, exePath, GetAncestor(entry->Handle, GA_PARENT));
         LogStyle(entry->Style);
@@ -124,9 +215,10 @@ void DumpWindows(void)
         LogDebugRaw("\n");
         LogUnlock();
 
+        //DumpWindowBitmap(entry);
         entry = (WINDOW_DATA *)entry->ListEntry.Flink;
     }
-
+end:
     LeaveCriticalSection(&g_csWatchedWindows);
 }
 #endif // DEBUG_DUMP_WINDOWS
