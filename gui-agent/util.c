@@ -30,6 +30,9 @@
 
 #include <log.h>
 
+extern HWND g_StartWindow;
+extern HWND g_SearchWindow;
+
 DWORD g_DisableCursor = TRUE;
 
 // SID for all authenticated users
@@ -304,6 +307,10 @@ ULONG AttachToInputDesktop(void)
     }
 
     g_DesktopWindow = GetDesktopWindow();
+    // TODO: enum windows and compare EXEs in case there's some other apps with the same title
+    g_StartWindow = FindWindow(L"Windows.UI.Core.CoreWindow", L"Start");
+    g_SearchWindow = FindWindow(L"Windows.UI.Core.CoreWindow", L"Search");
+    LogDebug("desktop: 0x%x, start: 0x%x, search: 0x%x", g_DesktopWindow, g_StartWindow, g_SearchWindow);
 
 cleanup:
     if (oldDesktop)

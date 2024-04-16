@@ -67,11 +67,19 @@ LONG g_HostScreenHeight = 0;
 char g_DomainName[256] = "<unknown>";
 USHORT g_GuiDomainId = 0;
 
+// TODO: group the list and global window handles in a struct with some accessors
 LIST_ENTRY g_WatchedWindowsList;
 CRITICAL_SECTION g_csWatchedWindows;
 
 HWND g_DesktopWindow = NULL;
 HWND g_TaskbarWindow = NULL;
+
+// these two are always present and "visible" to the winuser APIs regardless of their true state
+// may be cloaked by DWM if hidden
+// FIXME: search is sometimes "visible" (for winuser) and not DWM cloaked but it's really invisible, detect this state better
+BOOL g_StartVisible = FALSE;
+HWND g_StartWindow = NULL;
+HWND g_SearchWindow = NULL;
 
 HANDLE g_ShutdownEvent = NULL;
 
@@ -287,9 +295,18 @@ ULONG GetRealWindowRect(IN HWND window, OUT RECT* rect)
 
         LogDebug("0x%x: clipping region type %d: final rect (%d,%d) %dx%d", window, region_type,
             rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top);
+
+        if (window == g_StartWindow)
+        {
+            // FIXME: make this more reliable
+            // start menu still has transparent DWM borders included even after clipping
+            // TODO: this will probably break if taskbar is on a different side of the screen
+            rect->right -= (bounds.right - bounds.left) - (clipped.right - clipped.left);
+            rect->top += (bounds.bottom - bounds.top) - (clipped.bottom - clipped.top);
+            LogDebug("0x%x: fixed start rect (%d,%d) %dx%d", window,
+                rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top);
+        }
     }
-    // TODO: start menu still has transparent DWM borders included even after clipping
-    // apply the difference between DWM's rect and unclipped rect to clipped one
 
     return ERROR_SUCCESS;
 }
@@ -346,13 +363,16 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
     GetClassName(window, entry->Class, ARRAYSIZE(entry->Class));
 
     entry->IsVisible = IsWindowVisible(window);
+
     DWORD cloaked;
     if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))))
     {
         if (cloaked != 0) // hidden by DWM
             entry->IsVisible = FALSE;
     }
-    // TODO: search window seems still visible (transparent) when opening start menu
+
+    if (window == g_StartWindow)
+        g_StartVisible = entry->IsVisible;
 
     if (entry->IsVisible)
     {
@@ -451,6 +471,9 @@ ULONG RemoveWindow(IN OUT WINDOW_DATA *entry)
     LogDebug("0x%x", entry->Handle);
 
     RemoveEntryList(&entry->ListEntry);
+
+    if (entry->Handle == g_StartWindow)
+        g_StartVisible = FALSE;
 
     if (g_VchanClientConnected)
     {
@@ -675,6 +698,15 @@ BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
 
     if (data->Handle == GetShellWindow())
         return FALSE;
+
+    // hide search regardless of its state if start is being shown
+    // FIXME: this is a workaround for search being detected as visible and not DWM-cloaked
+    // even if it's really invisible/transparent
+    if (g_StartVisible && data->Handle == g_SearchWindow)
+    {
+        LogDebug("rejecting Search because Start is visible");
+        return FALSE;
+    }
 
     int xmin = GetSystemMetrics(SM_CXMIN);
     int ymin = GetSystemMetrics(SM_CYMIN);
