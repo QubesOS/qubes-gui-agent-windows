@@ -1,8 +1,9 @@
 #include "winuser.h"
 #include "resource.h"
 
-IDC_MANIFEST  RT_MANIFEST          "gui-agent.manifest"
-IDC_BLANK     CURSOR  DISCARDABLE  "blank.cur"
+// manifest MUST have ID 1, otherwise it's not recognized properly...
+  1  RT_MANIFEST               "gui-agent.manifest"
+100       CURSOR  DISCARDABLE  "blank.cur"
 
 #define QWT_FILEDESCRIPTION_STR "Qubes GUI Agent"
 #include "version_common.rc"
