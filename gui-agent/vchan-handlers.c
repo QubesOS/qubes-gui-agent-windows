@@ -42,7 +42,7 @@ static void SignalSASEvent(void)
     {
         sasEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, QGA_SAS_EVENT_NAME);
         if (!sasEvent)
-            win_perror("OpenEvent");
+            win_perror("OpenEvent(" QGA_SAS_EVENT_NAME L")");
     }
 
     if (sasEvent)
@@ -145,7 +145,7 @@ static DWORD SynthesizeKeycode(IN UINT keycode, IN BOOL release)
     inputEvent.ki.wVk = 0; // virtual key code is not used
     inputEvent.ki.wScan = scanCode & 0xff;
 
-    LogDebug("keycode: 0x%x, scancode: 0x%x", keycode, scanCode);
+    LogDebug("keycode: 0x%x, scancode: 0x%x, %s", keycode, scanCode, release ? L"release" : L"press");
 
     if ((scanCode & 0xff00) == 0xe000) // extended key
     {
@@ -210,7 +210,7 @@ static DWORD HandleKeypress(IN HWND window)
         return status;
 
     // TODO: allow customization of SAS sequence?
-    if (IsKeyDown(VK_CONTROL) && IsKeyDown(VK_MENU) && IsKeyDown(VK_HOME))
+    if (IsKeyDown(VK_CONTROL) && IsKeyDown(VK_SHIFT) && IsKeyDown(VK_DELETE))
         SignalSASEvent();
 
     return ERROR_SUCCESS;

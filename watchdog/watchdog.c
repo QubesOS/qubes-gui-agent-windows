@@ -21,6 +21,7 @@
 
 #include <windows.h>
 #include <wtsapi32.h>
+#include <sas.h>
 #include <shlwapi.h>
 #include <strsafe.h>
 #include "common.h"
@@ -36,10 +37,6 @@ SERVICE_STATUS_HANDLE g_StatusHandle;
 
 void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[]);
 DWORD WINAPI ControlHandlerEx(IN DWORD controlCode, IN DWORD eventType, IN void *eventData, IN void *context);
-
-typedef void (WINAPI *fSendSAS)(BOOL);
-// this is not defined in WDK headers
-fSendSAS SendSAS = NULL;
 
 // Entry point.
 int wmain(int argc, WCHAR *argv[])
@@ -186,8 +183,7 @@ DWORD WINAPI EventsThread(void *param)
         {
         case 0: // SAS event
             LogInfo("SAS event signaled");
-            if (SendSAS)
-                SendSAS(FALSE); // calling as service
+            SendSAS(FALSE); // calling as service
             break;
 
         default:
@@ -204,7 +200,6 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     HANDLE workerHandle = NULL;
     HANDLE watchdogHandle = NULL;
     DWORD status;
-    HANDLE sasDll;
 
     WCHAR* cmdline = malloc(MAX_PATH_LONG_WSIZE);
     if (!cmdline)
@@ -217,19 +212,6 @@ void WINAPI ServiceMain(IN DWORD argc, IN WCHAR *argv[])
     {
         win_perror("CfgReadString(" REG_CONFIG_AGENT_PATH_VALUE L")");
         goto cleanup;
-    }
-
-    // Get SendSAS address.
-    sasDll = LoadLibrary(L"sas.dll");
-    if (sasDll)
-    {
-        SendSAS = (fSendSAS) GetProcAddress(sasDll, "SendSAS");
-        if (!SendSAS)
-            LogWarning("Failed to get SendSAS() address, simulating CTRL+ALT+DELETE will not be possible");
-    }
-    else
-    {
-        LogWarning("Failed to load sas.dll, simulating CTRL+ALT+DELETE will not be possible");
     }
 
     g_Status.dwServiceType = SERVICE_WIN32;
