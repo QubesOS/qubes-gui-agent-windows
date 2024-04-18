@@ -218,6 +218,8 @@ void DumpWindows(void)
         LogDebugRaw("%c %c ovr=%d [%s] '%s' {%s} parent=0x%x ",
             entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
             entry->Class, entry->Caption, exePath, GetAncestor(entry->Handle, GA_PARENT));
+        if (entry->ModalParent)
+            LogDebugRaw(" ModalParent=0x%x ", entry->ModalParent);
         LogStyle(entry->Style);
         LogExStyle(entry->ExStyle);
         LogDebugRaw("\n");
@@ -376,6 +378,17 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
 
     if (entry->IsVisible)
     {
+        // check if we're modal to some other window
+        HWND owner = GetWindow(window, GW_OWNER);
+        if (owner)
+        {
+            BOOL ownerDisabled = GetWindowLong(owner, GWL_STYLE) & WS_DISABLED;
+            if (ownerDisabled)
+                entry->ModalParent = owner;
+            else
+                entry->ModalParent = NULL;
+        }
+
         // FIXME: better prevention of large popup windows that can obscure dom0 screen
         // this is mainly for the logon window (which is screen-sized without caption)
         if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
@@ -747,26 +760,6 @@ BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
     return TRUE;
 }
 
-// Enumerate top-level windows, searching for one that is modal
-// in relation to a parent one (passed in lParam).
-static BOOL WINAPI FindModalChildProc(IN HWND hwnd, IN LPARAM lParam)
-{
-    MODAL_SEARCH_PARAMS *msp = (MODAL_SEARCH_PARAMS *)lParam;
-    LONG wantedStyle = WS_POPUP | WS_VISIBLE;
-    HWND owner = GetWindow(hwnd, GW_OWNER);
-
-    // Modal windows are not child windows but owned windows.
-    if (owner != msp->ParentWindow)
-        return TRUE;
-
-    if ((GetWindowLong(hwnd, GWL_STYLE) & wantedStyle) != wantedStyle)
-        return TRUE;
-
-    msp->ModalWindow = hwnd;
-    LogVerbose("found 0x%x for parent 0x%x", hwnd, msp->ParentWindow);
-    return FALSE; // stop enumeration
-}
-
 // Refresh data about a window, send notifications to gui daemon if needed.
 // Marks the window for removal from the list if the new state makes it no longer eligible.
 // Watched windows critical section must be entered.
@@ -870,35 +863,21 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
             goto end;
     }
 
-    // style
-    if (data.Style & WS_DISABLED)
+    // TODO: should we care about style changes? some of them affect Z-order (topmost etc)
+
+    if (data.ModalParent != windowData->ModalParent)
     {
-        // possibly showing a modal window
-        LogDebug("0x%x is WS_DISABLED, searching for modal window", windowData->Handle);
-        MODAL_SEARCH_PARAMS modalParams = { 0 };
-        modalParams.ParentWindow = windowData->Handle;
-        modalParams.ModalWindow = NULL;
+        LogDebug("0x%x: modal parent changed from 0x%x to 0x%x",
+            data.Handle, windowData->ModalParent, data.ModalParent);
+        windowData->ModalParent = data.ModalParent;
+        // need to toggle map since this is the only way to change modal status for gui daemon
+        status = SendWindowUnmap(data.Handle);
+        if (ERROR_SUCCESS != status)
+            goto end;
 
-        // No checking for success, EnumWindows returns FALSE if the callback function returns FALSE.
-        EnumWindows(FindModalChildProc, (LPARAM)&modalParams);
-
-        LogDebug("result: 0x%x", modalParams.ModalWindow);
-        if (modalParams.ModalWindow) // found a modal "child"
-        {
-            WINDOW_DATA *modalWindow = FindWindowByHandle(modalParams.ModalWindow);
-            if (modalWindow && !modalWindow->ModalParent)
-            {
-                // need to toggle map since this is the only way to change modal status for gui daemon
-                modalWindow->ModalParent = windowData->Handle;
-                status = SendWindowUnmap(modalWindow->Handle);
-                if (ERROR_SUCCESS != status)
-                    goto end;
-
-                status = SendWindowMap(modalWindow);
-                if (ERROR_SUCCESS != status)
-                    goto end;
-            }
-        }
+        status = SendWindowMap(windowData);
+        if (ERROR_SUCCESS != status)
+            goto end;
     }
 
     status = ERROR_SUCCESS;
