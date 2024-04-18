@@ -297,11 +297,15 @@ ULONG SendWindowMap(IN const WINDOW_DATA *windowData OPTIONAL)
     header.untrusted_len = 0;
 
     if (windowData && windowData->ModalParent)
+    {
+        LogDebug("0x%x is transient for 0x%x", windowData->Handle, windowData->ModalParent);
 #pragma warning(suppress:4311)
         mapMsg.transient_for = (uint32_t)windowData->ModalParent;
+    }
     else
-#pragma warning(suppress:4311)
-        mapMsg.transient_for = (uint32_t)INVALID_HANDLE_VALUE;
+    {
+        mapMsg.transient_for = 0;
+    }
 
     if (windowData)
         mapMsg.override_redirect = windowData->IsOverrideRedirect;
