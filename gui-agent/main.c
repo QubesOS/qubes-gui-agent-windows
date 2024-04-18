@@ -774,7 +774,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
 
     if (!IsWindow(windowData->Handle))
     {
-        LogDebug("0x%x is destroyed, marking for removal");
+        LogDebug("0x%x is destroyed, marking for removal", windowData->Handle);
         windowData->DeletePending = TRUE;
         goto end;
     }
@@ -790,7 +790,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
     if (windowData->IsVisible != data.IsVisible)
     {
         windowData->IsVisible = data.IsVisible;
-        LogDebug("0x%x IsVisible changed to %d", data.IsVisible);
+        LogDebug("0x%x IsVisible changed to %d", data.Handle, data.IsVisible);
         if (!data.IsVisible)
             goto end; // skip other stuff, this window will be removed
     }
@@ -798,13 +798,13 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
     if (windowData->Style != data.Style)
     {
         windowData->Style = data.Style;
-        LogDebug("0x%x style changed to 0x%x", data.Style);
+        LogDebug("0x%x style changed to 0x%x", data.Handle, data.Style);
     }
 
     if (windowData->ExStyle != data.ExStyle)
     {
         windowData->ExStyle = data.ExStyle;
-        LogDebug("0x%x exstyle changed to 0x%x", data.ExStyle);
+        LogDebug("0x%x exstyle changed to 0x%x", data.Handle, data.ExStyle);
     }
 
     // caption
