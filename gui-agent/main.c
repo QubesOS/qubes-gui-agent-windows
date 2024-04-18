@@ -1225,6 +1225,7 @@ static ULONG WINAPI WatchForEvents  (void)
             if (!g_VchanClientConnected)
             {
                 vchanIoInProgress = FALSE;
+                libvchan_cleanup(g_Vchan); // needed to cleanup xenstore entry
 
                 LogInfo("A vchan client has connected");
 
