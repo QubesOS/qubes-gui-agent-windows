@@ -441,8 +441,6 @@ static DWORD HandleFocus(IN HWND window)
     {
         BringWindowToTop(window);
         SetForegroundWindow(window);
-        SetActiveWindow(window);
-        SetFocus(window);
     }
 
     return ERROR_SUCCESS;
