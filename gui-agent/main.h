@@ -63,13 +63,6 @@ typedef struct _WINDOW_DATA
     HWND ModalParent; // if nonzero, this window is modal in relation to window pointed by this field
 } WINDOW_DATA;
 
-// used when searching for modal window that's blocking another window
-typedef struct _MODAL_SEARCH_PARAMS
-{
-    HWND ParentWindow; // window that's disabled by a modal window, input
-    HWND ModalWindow; // modal window that's active, output
-} MODAL_SEARCH_PARAMS;
-
 BOOL ShouldAcceptWindow(
     IN const WINDOW_DATA* data
     );
