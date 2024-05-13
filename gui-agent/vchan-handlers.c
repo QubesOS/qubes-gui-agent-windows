@@ -298,8 +298,25 @@ static DWORD HandleMotion(IN HWND window, GetWindowDataCallback getWindowData)
     if (window)
     {
         const WINDOW_DATA* data = getWindowData(window);
-        x += data->X;
-        y += data->Y;
+        if (data)
+        {
+            x += data->X;
+            y += data->Y;
+        }
+        else // edge case: window might have got destroyed before we received this message
+        {
+            RECT rect;
+            if (GetWindowRect(window, &rect))
+            {
+                x += rect.left;
+                y += rect.top;
+            }
+            else
+            {
+                win_perror("GetWindowRect");
+                return ERROR_SUCCESS; // ignore
+            }
+        }
 
         LogVerbose("0x%x: (%d,%d)", window, x, y);
     }
