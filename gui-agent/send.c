@@ -142,7 +142,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
 #pragma warning(suppress:4311)
     createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
-    LogDebug("(%u,%u) %ux%u", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
+    LogDebug("(%d,%d) %ux%u", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 
     EnterCriticalSection(&g_VchanCriticalSection);
     if (!VCHAN_SEND_MSG(header, createMsg, L"MSG_CREATE"))
