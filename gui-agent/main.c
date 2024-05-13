@@ -44,6 +44,7 @@
 // windows-utils
 #include <log.h>
 #include <config.h>
+#include <exec.h>
 #include <qubesdb-client.h>
 
 #include <strsafe.h>
@@ -64,6 +65,10 @@ BOOL g_SeamlessMode = TRUE;
 LONG g_HostScreenWidth = 0;
 LONG g_HostScreenHeight = 0;
 
+// minimal acceptable window dimensions
+int g_MinWindowWidth = 0;
+int g_MinWindowHeight = 0;
+
 char g_DomainName[256] = "<unknown>";
 USHORT g_GuiDomainId = 0;
 
@@ -73,6 +78,7 @@ CRITICAL_SECTION g_csWatchedWindows;
 
 HWND g_DesktopWindow = NULL;
 HWND g_TaskbarWindow = NULL;
+BOOL g_ShowTaskbar = FALSE;
 
 // these two are always present and "visible" to the winuser APIs regardless of their true state
 // may be cloaked by DWM if hidden
@@ -357,10 +363,6 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
     entry->ExStyle = GetWindowLong(window, GWL_EXSTYLE);
     entry->IsIconic = IsIconic(window);
     entry->DeletePending = FALSE;
-#ifdef _DEBUG
-    if (entry->IsIconic != ((entry->Style & WS_ICONIC) == WS_ICONIC))
-        LogWarning("0x%x: iconic state mismatch");
-#endif
     GetWindowText(window, entry->Caption, ARRAYSIZE(entry->Caption)); // don't really care about errors here
     GetClassName(window, entry->Class, ARRAYSIZE(entry->Class));
 
@@ -378,6 +380,22 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
 
     if (entry->IsVisible)
     {
+        // Special treatment for minimized UAC prompts:
+        // These tend to show up when pressing ctrl-shift-enter in the "Run" dialog to run as admin.
+        // They don't show as normal windows, just flash their icon in the taskbar as if minimized.
+        // But, for SOME reason, *sometimes* these windows don't have the iconic flag set, and their size is 0...
+        // TODO: enumerate taskbar buttons to properly detect such cases,
+        // this seems to require using UI Automation interfaces.
+        if (wcscmp(entry->Class, L"$$$Secure UAP Dummy Window Class For Interim Dialog") == 0)
+        {
+            // For now we hide these windows and mark the taskbar to be shown
+            // because programatically activating them doesn't seem to work.
+            entry->IsVisible = FALSE;
+            g_ShowTaskbar = TRUE;
+            LogVerbose("0x%x: UAC prompt", window);
+            return ERROR_SUCCESS;
+        }
+
         // check if we're modal to some other window
         HWND owner = GetWindow(window, GW_OWNER);
         if (owner)
@@ -432,7 +450,7 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
 ULONG AddWindow(IN WINDOW_DATA* entry)
 {
     ULONG status = ERROR_SUCCESS;
-    LogVerbose("start, handle 0x%x", entry->Handle);
+    LogVerbose("start, handle 0x%x, visible %d, iconic %d", entry->Handle, entry->IsVisible, entry->IsIconic);
     InsertTailList(&g_WatchedWindowsList, &entry->ListEntry);
 
     // send window creation info to gui daemon
@@ -445,15 +463,21 @@ ULONG AddWindow(IN WINDOW_DATA* entry)
             goto end;
         }
 
-        // map (show) the window if it's visible and not minimized
-        if (!entry->IsIconic && entry->IsVisible)
+        // map (show) the window if it's visible OR minimized
+        if (entry->IsIconic || entry->IsVisible)
         {
-            // XXX should iconic be checked here?
             status = SendWindowMap(entry);
             if (ERROR_SUCCESS != status)
             {
                 win_perror2(status, "SendWindowMap");
                 goto end;
+            }
+
+            if (entry->IsIconic)
+            {
+                status = SendWindowFlags(entry->Handle, WINDOW_FLAG_MINIMIZE, 0);
+                if (ERROR_SUCCESS != status)
+                    goto end;
             }
         }
 
@@ -521,20 +545,24 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
     ULONG status;
 
-    LogVerbose("window 0x%x", window);
-
     WINDOW_DATA* data = FindWindowByHandle(window);
     if (data) // already in the list
     {
-        LogVerbose("end (existing)");
+        LogVerbose("0x%x: end (existing)", window);
         return TRUE; // skip to next window
     }
 
     // window not in list, get its data and add
     status = GetWindowData(window, &data);
-    if (status != ERROR_SUCCESS || !ShouldAcceptWindow(data))
+    if (status != ERROR_SUCCESS)
     {
-        LogVerbose("end (new, skipping)");
+        LogVerbose("0x%x: end (error)", window);
+        return TRUE;
+    }
+
+    if (!ShouldAcceptWindow(data))
+    {
+        LogVerbose("0x%x: end (skipping)", window);
         return TRUE;
     }
 
@@ -542,11 +570,11 @@ static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
     if (ERROR_SUCCESS != status)
     {
         win_perror2(status, "AddWindow");
-        LogVerbose("end (add failed, exiting)");
+        LogVerbose("0x%x: end (add failed, exiting)", window);
         return FALSE; // stop enumeration, fatal error occurred (should probably exit process at this point)
     }
 
-    LogVerbose("end (new, added)");
+    LogVerbose("0x%x: end (new, added)", window);
     return TRUE;
 }
 
@@ -556,13 +584,43 @@ static ULONG AddAllWindows(void)
 {
     LogVerbose("start");
 
-    g_TaskbarWindow = FindWindow(L"Shell_TrayWnd", NULL);
+    g_TaskbarWindow = FindWindow(L"Shell_TrayWnd", 0);
+    g_ShowTaskbar = FALSE;
 
     ULONG status = ERROR_SUCCESS;
     // Enum top-level windows and add all that are not filtered.
     if (!EnumWindows(AddWindowsProc, 0))
         status = win_perror("EnumWindows");
 
+    if (g_TaskbarWindow)
+    {
+        WINDOW_DATA* taskbarEntry = FindWindowByHandle(g_TaskbarWindow);
+        if (g_ShowTaskbar)
+        {
+            if (taskbarEntry) // taskbar is already tracked
+                goto end;
+
+            LogDebug("showing taskbar");
+            ShowWindow(g_TaskbarWindow, SW_SHOW);
+            taskbarEntry = NULL;
+            status = GetWindowData(g_TaskbarWindow, &taskbarEntry);
+            if (status != ERROR_SUCCESS)
+            {
+                win_perror2(status, "GetWindowData(taskbar)");
+                goto end;
+            }
+            status = AddWindow(taskbarEntry);
+        }
+        else
+        {
+            if (!taskbarEntry) // taskbar is not tracked
+                goto end;
+            status = RemoveWindow(taskbarEntry);
+            ShowWindow(g_TaskbarWindow, SW_HIDE);
+        }
+    }
+
+end:
     LogVerbose("end (%x)", status);
     return status;
 }
@@ -610,6 +668,9 @@ static ULONG ResetWatch(BOOL seamlessMode)
         EnterCriticalSection(&g_csWatchedWindows);
         status = AddAllWindows();
         LeaveCriticalSection(&g_csWatchedWindows);
+
+        if (g_TaskbarWindow)
+            ShowWindow(g_TaskbarWindow, SW_HIDE);
     }
 
     LogVerbose("end (%x)", status);
@@ -703,7 +764,7 @@ BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
     if (!data->IsVisible)
         return FALSE;
 
-    if (data->Handle == g_TaskbarWindow)
+    if (!g_ShowTaskbar && data->Handle == g_TaskbarWindow)
         return FALSE;
 
     if (data->DeletePending)
@@ -721,14 +782,9 @@ BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
         return FALSE;
     }
 
-    int xmin = GetSystemMetrics(SM_CXMIN);
-    int ymin = GetSystemMetrics(SM_CYMIN);
     // too small?
-    if (data->Width < xmin || data->Height < ymin)
-    {
-        LogVerbose("window rectangle is too small");
+    if (data->Width < g_MinWindowWidth || data->Height < g_MinWindowHeight)
         return FALSE;
-    }
 
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (data->Style & WS_CHILD)
@@ -791,7 +847,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
     {
         windowData->IsVisible = data.IsVisible;
         LogDebug("0x%x IsVisible changed to %d", data.Handle, data.IsVisible);
-        if (!data.IsVisible)
+        if (!data.IsVisible && !data.IsIconic)
             goto end; // skip other stuff, this window will be removed
     }
 
@@ -1409,6 +1465,7 @@ static ULONG Init(void)
         return GetLastError();
     }
 
+    EnableUIAccess();
     status = CfgGetModuleName(moduleName, RTL_NUMBER_OF(moduleName));
 
     status = CfgReadDword(moduleName, REG_CONFIG_CURSOR_VALUE, &g_DisableCursor, NULL);
@@ -1467,6 +1524,9 @@ static ULONG Init(void)
 
     InitializeListHead(&g_WatchedWindowsList);
     InitializeCriticalSection(&g_csWatchedWindows);
+
+    g_MinWindowWidth = GetSystemMetrics(SM_CXMIN);
+    g_MinWindowHeight = GetSystemMetrics(SM_CYMIN);
     return ERROR_SUCCESS;
 }
 

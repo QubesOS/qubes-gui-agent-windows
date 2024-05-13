@@ -360,6 +360,12 @@ static DWORD HandleConfigure(IN HWND window)
 
         if (data != NULL)
         {
+            if (data->IsIconic)
+            {
+                LogVerbose("0x%x is minimized, ignoring", window);
+                goto end;
+            }
+
             if (data->X == configureMsg.x && data->Y == configureMsg.y)
             {
                 flags |= SWP_NOMOVE;
@@ -456,10 +462,20 @@ static DWORD HandleFocus(IN HWND window)
 
     if (focusMsg.type == 9) // focus gain
     {
-        BringWindowToTop(window);
+        EnterCriticalSection(&g_csWatchedWindows);
+        WINDOW_DATA* data = FindWindowByHandle(window);
+        if (!data)
+        {
+            LogWarning("window 0x%x not tracked", window);
+            LeaveCriticalSection(&g_csWatchedWindows);
+            goto end;
+        }
+        if (data->IsIconic)
+            ShowWindow(window, SW_RESTORE);
         SetForegroundWindow(window);
+        //BringWindowToTop(window);
     }
-
+end:
     return ERROR_SUCCESS;
 }
 
