@@ -24,6 +24,7 @@
 
 extern WORD g_X11ToVk[256];
 extern WORD g_KeycodeToScancode[256];
+extern const char* g_KeycodeName[256];
 
 /* From X.h */
 #define KeyPress            2

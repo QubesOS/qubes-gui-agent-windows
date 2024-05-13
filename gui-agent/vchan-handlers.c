@@ -145,7 +145,7 @@ static DWORD SynthesizeKeycode(IN UINT keycode, IN BOOL release)
     inputEvent.ki.wVk = 0; // virtual key code is not used
     inputEvent.ki.wScan = scanCode & 0xff;
 
-    LogDebug("keycode: 0x%x, scancode: 0x%x, %s", keycode, scanCode, release ? L"release" : L"press");
+    LogDebug("%S keycode: 0x%x, scancode: 0x%x, %s", g_KeycodeName[keycode], keycode, scanCode, release ? L"release" : L"press");
 
     if ((scanCode & 0xff00) == 0xe000) // extended key
     {
