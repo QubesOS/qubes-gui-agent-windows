@@ -106,7 +106,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;sas.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>powershell $(ProjectDir)\..\..\set_version.ps1 $(ProjectDir)\..\..\version $(ProjectDir)\..\..\include\qwt_version.h</Command>
@@ -135,7 +135,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);ws2_32.lib;dxgi.lib;d3d11.lib;dxguid.lib;dwmapi.lib;sas.lib;xencontrol.lib;windows-utils.lib;libvchan.lib;qubesdb-client.lib</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>powershell $(ProjectDir)\..\..\set_version.ps1 $(ProjectDir)\..\..\version $(ProjectDir)\..\..\include\qwt_version.h</Command>
