@@ -353,97 +353,90 @@ static DWORD HandleConfigure(IN HWND window)
 
     if (window != 0) // 0 is full screen
     {
-        UINT flags = SWP_ASYNCWINDOWPOS; // post request without waiting to not block
+        // post request without waiting to not block and don't change the Z-order
+        UINT flags = SWP_ASYNCWINDOWPOS | SWP_NOZORDER;
         EnterCriticalSection(&g_csWatchedWindows);
         WINDOW_DATA* data = FindWindowByHandle(window);
-        LeaveCriticalSection(&g_csWatchedWindows);
 
         if (data != NULL)
         {
             if (data->IsIconic)
             {
                 LogVerbose("0x%x is minimized, ignoring", window);
-                goto end;
             }
-
-            if (data->X == configureMsg.x && data->Y == configureMsg.y)
+            else
             {
-                flags |= SWP_NOMOVE;
-                LogVerbose("SWP_NOMOVE");
-            }
+                if (data->X == configureMsg.x && data->Y == configureMsg.y)
+                {
+                    flags |= SWP_NOMOVE;
+                    LogVerbose("SWP_NOMOVE");
+                }
 
-            if (data->Width == configureMsg.width && data->Height == configureMsg.height)
-            {
-                flags |= SWP_NOSIZE;
-                LogVerbose("SWP_NOSIZE");
+                if (data->Width == configureMsg.width && data->Height == configureMsg.height)
+                {
+                    flags |= SWP_NOSIZE;
+                    LogVerbose("SWP_NOSIZE");
+                }
+
+                if (SetWindowPos(window, NULL, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, flags))
+                {
+                    // update expected pos/size of the tracked window without waiting for actual change
+                    // since we use SWP_ASYNCWINDOWPOS
+                    // TODO: improve further, somehow window data via UpdateWindowData() later after SetWindowPos below
+                    // is still different from what was passed via configureMsg - DWM API needs a while to properly update
+                    // the window state after changes?
+                    if (!(flags & SWP_NOMOVE))
+                    {
+                        LogVerbose("Updating position of 0x%x: (%d,%d) -> (%d,%d)", window, data->X, data->Y,
+                            configureMsg.x, configureMsg.y);
+                        data->X = configureMsg.x;
+                        data->Y = configureMsg.y;
+                    }
+
+                    if (!(flags & SWP_NOSIZE))
+                    {
+                        LogVerbose("Updating size of 0x%x: %dx%d -> %dx%d", window, data->Width, data->Height,
+                            configureMsg.width, configureMsg.height);
+                        data->Width = configureMsg.width;
+                        data->Height = configureMsg.height;
+                    }
+                }
+                else
+                {
+                    win_perror("SetWindowPos");
+                }
             }
         }
         else
         {
             LogWarning("window 0x%x not tracked", window);
         }
-
-        // XXX HWND_TOP places the window in the z-order top, is this always what we want?
-        if (SetWindowPos(window, HWND_TOP, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, flags))
-        {
-            EnterCriticalSection(&g_csWatchedWindows);
-            WINDOW_DATA* data = FindWindowByHandle(window);
-            if (!data)
-            {
-                LogWarning("window 0x%x not tracked", window);
-                LeaveCriticalSection(&g_csWatchedWindows);
-                goto end;
-            }
-
-            // update expected pos/size of the tracked window without waiting for actual change
-            // since we use SWP_ASYNCWINDOWPOS
-            // TODO: improve further, somehow window data via UpdateWindowData() later after SetWindowPos below
-            // is still different from what was passed via configureMsg - DWM API needs a while to properly update
-            // the window state after changes?
-            if (!(flags & SWP_NOMOVE))
-            {
-                LogVerbose("Updating position of 0x%x: (%d,%d) -> (%d,%d)", window, data->X, data->Y,
-                    configureMsg.x, configureMsg.y);
-                data->X = configureMsg.x;
-                data->Y = configureMsg.y;
-            }
-
-            if (!(flags & SWP_NOSIZE))
-            {
-                LogVerbose("Updating size of 0x%x: %dx%d -> %dx%d", window, data->Width, data->Height,
-                    configureMsg.width, configureMsg.height);
-                data->Width = configureMsg.width;
-                data->Height = configureMsg.height;
-            }
-            LeaveCriticalSection(&g_csWatchedWindows);
-        }
-        else
-        {
-            win_perror("SetWindowPos");
-        }
+        LeaveCriticalSection(&g_csWatchedWindows);
     }
     else
     {
         // gui daemon requests screen resize: possible resolution change
+        BOOL valid = TRUE;
 
         if (g_ScreenWidth == configureMsg.width && g_ScreenHeight == configureMsg.height)
         {
-            goto end;
+            valid = FALSE;
             // nothing changes, ignore
         }
 
         if (!IS_RESOLUTION_VALID(configureMsg.width, configureMsg.height))
         {
             LogWarning("Ignoring invalid resolution %dx%d", configureMsg.width, configureMsg.height);
-            goto end;
+            valid = FALSE;
         }
 
         // XY coords are used to reply with the same message to the daemon.
         // It's useless for fullscreen but the daemon needs such ACK...
         // Signal the trigger event so the throttling thread evaluates the resize request.
-        RequestResolutionChange(configureMsg.width, configureMsg.height, configureMsg.x, configureMsg.y);
+        if (valid)
+            RequestResolutionChange(configureMsg.width, configureMsg.height, configureMsg.x, configureMsg.y);
     }
-end:
+
     // send ACK to gui daemon so it won't stop sending MSG_CONFIGURE
     return SendWindowConfigure(window,
         configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, configureMsg.override_redirect);
@@ -467,15 +460,17 @@ static DWORD HandleFocus(IN HWND window)
         if (!data)
         {
             LogWarning("window 0x%x not tracked", window);
-            LeaveCriticalSection(&g_csWatchedWindows);
-            goto end;
         }
-        if (data->IsIconic)
-            ShowWindow(window, SW_RESTORE);
-        SetForegroundWindow(window);
-        //BringWindowToTop(window);
+        else
+        {
+            if (data->IsIconic)
+                ShowWindow(window, SW_RESTORE);
+            SetForegroundWindow(window);
+            //BringWindowToTop(window);
+        }
+        LeaveCriticalSection(&g_csWatchedWindows);
     }
-end:
+
     return ERROR_SUCCESS;
 }
 
