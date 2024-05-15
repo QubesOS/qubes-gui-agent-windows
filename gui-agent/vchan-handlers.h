@@ -22,7 +22,5 @@
 #pragma once
 #include <windows.h>
 
-typedef const WINDOW_DATA* GetWindowDataCallback(IN HWND window);
-
 DWORD HandleXconf(void);
-DWORD HandleServerData(GetWindowDataCallback getWindowData);
+DWORD HandleServerData(void);

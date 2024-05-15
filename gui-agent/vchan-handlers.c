@@ -274,7 +274,7 @@ static DWORD HandleButton(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-static DWORD HandleMotion(IN HWND window, GetWindowDataCallback getWindowData)
+static DWORD HandleMotion(IN HWND window)
 {
     struct msg_motion motionMsg;
     INPUT inputEvent;
@@ -297,7 +297,7 @@ static DWORD HandleMotion(IN HWND window, GetWindowDataCallback getWindowData)
 
     if (window)
     {
-        const WINDOW_DATA* data = getWindowData(window);
+        const WINDOW_DATA* data = FindWindowByHandle(window);
         if (data)
         {
             x += data->X;
@@ -511,7 +511,7 @@ static DWORD HandleWindowFlags(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-DWORD HandleServerData(GetWindowDataCallback getWindowData)
+DWORD HandleServerData()
 {
     struct msg_hdr header;
     BYTE discardBuffer[256];
@@ -537,7 +537,7 @@ DWORD HandleServerData(GetWindowDataCallback getWindowData)
         status = HandleButton((HWND)header.window);
         break;
     case MSG_MOTION:
-        status = HandleMotion((HWND)header.window, getWindowData);
+        status = HandleMotion((HWND)header.window);
         break;
     case MSG_CONFIGURE:
         status = HandleConfigure((HWND)header.window);
