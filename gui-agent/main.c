@@ -789,29 +789,16 @@ BOOL ShouldAcceptWindow(IN const WINDOW_DATA *data)
     // Ignore child windows, they are confined to parent's client area and can't be top-level.
     if (data->Style & WS_CHILD)
     {
-        LogVerbose("ignoring child window"); // this shouldn't happen as we only enumerate top-level windows
+        LogDebug("ignoring child window"); // this shouldn't happen as we only enumerate top-level windows
         return FALSE;
     }
 
-    // this style seems to be used exclusively by helper windows that aren't visible despite having WS_VISIBLE style
-    if (data->ExStyle & WS_EX_NOACTIVATE)
+    // Ignore the "activate windows" banner in the bottom-right TODO: more precise detection
+    if ((data->ExStyle & WS_EX_NOACTIVATE) && (data->ExStyle & WS_EX_TOPMOST) && (data->ExStyle & WS_EX_TRANSPARENT))
     {
-        LogVerbose("ignoring WS_EX_NOACTIVATE");
-        return FALSE;
+        if (wcslen(data->Caption) == 0 && !wcscmp(data->Class, L"Worker Window"))
+            return FALSE;
     }
-    /*
-    // Office 2013 uses this style for some helper windows that are drawn on/near its border.
-    // 0x800 exstyle is undocumented...
-    // FIXME: ignoring these border "windows" causes weird window looks.
-    // Investigate why moving main Office window doesn't move these windows.
-    if (windowInfo->dwExStyle == (WS_EX_LAYERED | WS_EX_TOOLWINDOW | 0x800))
-        return FALSE;
-
-    // undocumented styles, seem to be used by helper windows that have "visible" style but really aren't
-    // TODO more robust detection
-    if (windowInfo->dwExStyle & 0xc0000000)
-        return FALSE;
-    */
 
     return TRUE;
 }
