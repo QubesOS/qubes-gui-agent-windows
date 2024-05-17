@@ -716,10 +716,10 @@ const char* g_KeycodeName[256] = {
     "0x0000",	/* 168    	 */
     "0x0000",	/* 169    	0x1008ff2c (XF86Eject)	0x0000 (NoSymbol)	0x1008ff2c (XF86Eject)	 */
     "0x0000",	/* 170    	0x1008ff2c (XF86Eject)	0x1008ff2c (XF86Eject)	0x1008ff2c (XF86Eject)	0x1008ff2c (XF86Eject)	 */
-    0xe019,	/* 171    	0x1008ff17 (XF86AudioNext)	0x0000 (NoSymbol)	0x1008ff17 (XF86AudioNext)	 */
-    0xe0a2,	/* 172    	0x1008ff14 (XF86AudioPlay)	0x1008ff31 (XF86AudioPause)	0x1008ff14 (XF86AudioPlay)	0x1008ff31 (XF86AudioPause)	 */
-    0xe010,	/* 173    	0x1008ff16 (XF86AudioPrev)	0x0000 (NoSymbol)	0x1008ff16 (XF86AudioPrev)	 */
-    0xe0a4,	/* 174    	0x1008ff15 (XF86AudioStop)	0x1008ff2c (XF86Eject)	0x1008ff15 (XF86AudioStop)	0x1008ff2c (XF86Eject)	 */
+    "0xe019",	/* 171    	0x1008ff17 (XF86AudioNext)	0x0000 (NoSymbol)	0x1008ff17 (XF86AudioNext)	 */
+    "0xe0a2",	/* 172    	0x1008ff14 (XF86AudioPlay)	0x1008ff31 (XF86AudioPause)	0x1008ff14 (XF86AudioPlay)	0x1008ff31 (XF86AudioPause)	 */
+    "0xe010",	/* 173    	0x1008ff16 (XF86AudioPrev)	0x0000 (NoSymbol)	0x1008ff16 (XF86AudioPrev)	 */
+    "0xe0a4",	/* 174    	0x1008ff15 (XF86AudioStop)	0x1008ff2c (XF86Eject)	0x1008ff15 (XF86AudioStop)	0x1008ff2c (XF86Eject)	 */
     "0x0000",	/* 175    	0x1008ff1c (XF86AudioRecord)	0x0000 (NoSymbol)	0x1008ff1c (XF86AudioRecord)	 */
     "0x0000",	/* 176    	0x1008ff3e (XF86AudioRewind)	0x0000 (NoSymbol)	0x1008ff3e (XF86AudioRewind)	 */
     "0x0000",	/* 177    	0x1008ff6e (XF86Phone)	0x0000 (NoSymbol)	0x1008ff6e (XF86Phone)	 */
