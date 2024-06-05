@@ -426,15 +426,16 @@ static DWORD HandleConfigure(IN HWND window)
 
         if (!IS_RESOLUTION_VALID(configureMsg.width, configureMsg.height))
         {
-            LogWarning("Ignoring invalid resolution %dx%d", configureMsg.width, configureMsg.height);
+            LogWarning("Ignoring invalid resolution %ux%u", configureMsg.width, configureMsg.height);
             valid = FALSE;
         }
 
-        // XY coords are used to reply with the same message to the daemon.
-        // It's useless for fullscreen but the daemon needs such ACK...
-        // Signal the trigger event so the throttling thread evaluates the resize request.
         if (valid)
-            RequestResolutionChange(configureMsg.width, configureMsg.height, configureMsg.x, configureMsg.y);
+        {
+            DWORD status = RequestResolutionChange(configureMsg.width, configureMsg.height);
+            if (status != ERROR_SUCCESS)
+                return win_perror2(status, "requesting resolution change");
+        }
     }
 
     // send ACK to gui daemon so it won't stop sending MSG_CONFIGURE
@@ -506,7 +507,17 @@ static DWORD HandleWindowFlags(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-DWORD HandleServerData()
+static DWORD HandleDestroy(IN HWND window, OUT BOOL* screenDestroyed)
+{
+    LogDebug("0x%x", window);
+    if (window == NULL) // desktop
+    {
+        *screenDestroyed = TRUE;
+    }
+    return ERROR_SUCCESS;
+}
+
+DWORD HandleServerData(OUT BOOL* screenDestroyed)
 {
     struct msg_hdr header;
     BYTE discardBuffer[256];
@@ -548,6 +559,9 @@ DWORD HandleServerData()
         break;
     case MSG_WINDOW_FLAGS:
         status = HandleWindowFlags((HWND)header.window);
+        break;
+    case MSG_DESTROY:
+        status = HandleDestroy((HWND)header.window, screenDestroyed);
         break;
 #pragma warning(pop)
     default:

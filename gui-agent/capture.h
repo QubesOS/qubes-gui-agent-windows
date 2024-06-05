@@ -71,4 +71,7 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event);
 // start the capture thread
 HRESULT CaptureStart(IN OUT CAPTURE_CONTEXT* ctx);
 
+// stop the capture thread
+void CaptureStop(IN OUT CAPTURE_CONTEXT* ctx);
+
 void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx);

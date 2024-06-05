@@ -20,6 +20,7 @@
  */
 
 #include <windows.h>
+#include <assert.h>
 
 #include "common.h"
 #include "main.h"
@@ -29,76 +30,47 @@
 
 #include <log.h>
 
-// Signal to actually change resolution to g_ResolutionChangeParams.
-// This is pretty ugly but we need to trigger resolution change from a separate thread...
-HANDLE g_ResolutionChangeEvent = NULL;
-
-// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
-// after last screen resize message received from gui daemon.
-// This is to not change resolution on every such message (multiple times per second).
-// This thread is created in handle_configure().
-static HANDLE g_ResolutionChangeThread = NULL;
-
-// Event signaled by handle_configure on receiving screen resize message.
-// g_ResolutionChangeThread handles that and throttles too frequent resolution changes.
-static HANDLE g_ResolutionChangeRequestedEvent = NULL;
-
-static RESOLUTION_CHANGE_PARAMS g_ResolutionChangeParams = { 0 };
-
-// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
-// after last screen resize message received from gui daemon.
-// This is to not change resolution on every such message (multiple times per second).
-// This thread is created in RequestResolutionChange().
-static DWORD WINAPI ResolutionChangeThread(void *param)
+// parameters for the resolution change thread
+typedef struct _RESOLUTION_THREAD_PARAMS
 {
-    DWORD waitResult;
+    HANDLE Event; // event to wait on
+    LONG Width; // requested resolution
+    LONG Height;
+} RESOLUTION_THREAD_PARAMS;
 
-    while (TRUE)
+struct SUPPORTED_MODES
+{
+    DWORD Count;
+    POINT* Dimensions;
+} g_SupportedModes;
+
+void InitVideoModes()
+{
+    DEVMODEW mode;
+
+    for (g_SupportedModes.Count = 0; ; g_SupportedModes.Count++)
     {
-        // Wait indefinitely for an initial "change resolution" event.
-        WaitForSingleObject(g_ResolutionChangeRequestedEvent, INFINITE);
-        LogDebug("resolution change requested: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
-
-        do
-        {
-            // If event is signaled again before timeout expires: ignore and wait for another one.
-            waitResult = WaitForSingleObject(g_ResolutionChangeRequestedEvent, RESOLUTION_CHANGE_TIMEOUT);
-            LogVerbose("second wait result: %lu", waitResult);
-        } while (waitResult == WAIT_OBJECT_0);
-
-        // If we're here, that means the wait finally timed out.
-        // We can change the resolution now.
-        LogInfo("resolution change: %dx%d", g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
-        if (!SetEvent(g_ResolutionChangeEvent)) // handled in WatchForEvents, actual resolution change
-            return win_perror("SetEvent");
+        mode.dmSize = sizeof(mode);
+        if (!EnumDisplaySettingsW(NULL, g_SupportedModes.Count, &mode))
+            break;
+        LogDebug("mode %u: %ux%u %u bpp @ %u, flags 0x%x", g_SupportedModes.Count,
+            mode.dmPelsWidth, mode.dmPelsHeight, mode.dmBitsPerPel, mode.dmDisplayFrequency, mode.dmDisplayFlags);
     }
-    return ERROR_SUCCESS;
+
+    g_SupportedModes.Dimensions = (POINT*)malloc(g_SupportedModes.Count * sizeof(POINT));
+
+    for (DWORD i = 0; i < g_SupportedModes.Count; i++)
+    {
+        mode.dmSize = sizeof(mode);
+        assert(EnumDisplaySettingsW(NULL, i, &mode));
+
+        g_SupportedModes.Dimensions[i].x = mode.dmPelsWidth;
+        g_SupportedModes.Dimensions[i].y = mode.dmPelsHeight;
+    }
+
+    LogDebug("Initialized %u supported modes", g_SupportedModes.Count);
 }
 
-// Signals g_ResolutionChangeRequestedEvent
-void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG x, IN LONG y)
-{
-    // Create trigger event for the throttling thread if not yet created.
-    if (!g_ResolutionChangeRequestedEvent)
-        g_ResolutionChangeRequestedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-    // Create the throttling thread if not yet running.
-    if (!g_ResolutionChangeThread)
-        g_ResolutionChangeThread = CreateThread(NULL, 0, ResolutionChangeThread, NULL, 0, 0);
-
-    g_ResolutionChangeParams.Width = width;
-    g_ResolutionChangeParams.Height = height;
-    g_ResolutionChangeParams.X = x;
-    g_ResolutionChangeParams.Y = y;
-    if (!SetEvent(g_ResolutionChangeRequestedEvent))
-        win_perror("SetEvent");
-
-    // ACK the daemon
-    // XXX needed for every configure msg received or only the last one in case of throttling?
-    SendWindowConfigure(NULL, x, y, width, height, FALSE);
-}
-
-// Actually set video mode through qvideo calls.
 static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height)
 {
     if (!IS_RESOLUTION_VALID(width, height))
@@ -129,14 +101,60 @@ static ULONG SetVideoModeInternal(IN ULONG width, IN ULONG height)
     return status;
 }
 
-// set video mode
+// return best-matching supported mode index for desired resolution
+DWORD SelectSupportedMode(IN DWORD width, IN DWORD height)
+{
+    DWORD mode = 0;
+    float sim = 0;
+
+    for (DWORD i = 0; i < g_SupportedModes.Count; i++)
+    {
+        DWORD w = g_SupportedModes.Dimensions[i].x;
+        DWORD h = g_SupportedModes.Dimensions[i].y;
+
+        // TODO: filter these when constructing supported mode list
+        if (w > g_HostScreenWidth || h > g_HostScreenHeight)
+            continue;
+
+        if (w == width && h == height)
+        {
+            LogDebug("Returning mode %u (%ux%u) for %ux%u", i, w, h, width, height);
+            return i;
+        }
+
+        float area_cur = w * (float)h;
+        float area_req = width * (float)height;
+        float inter = min(w, width) * (float)min(h, height);
+        float similarity = inter / (float)(area_cur + area_req - inter);
+
+        if (similarity > sim)
+        {
+            sim = similarity;
+            mode = i;
+        }
+    }
+
+    LogDebug("Returning mode %u (%ux%u) for %ux%u", mode,
+        g_SupportedModes.Dimensions[mode].x, g_SupportedModes.Dimensions[mode].y, width, height);
+    return mode;
+}
+
 ULONG SetVideoMode(IN ULONG width, IN ULONG height)
 {
-    // TODO: MS basic display driver has a hardcoded list of supported resolutions, use only those
     LogVerbose("%lu x %lu", width, height);
 
-    ULONG status = SetVideoModeInternal(width, height);
+    DWORD mode = SelectSupportedMode(width, height);
 
+    width = g_SupportedModes.Dimensions[mode].x;
+    height = g_SupportedModes.Dimensions[mode].y;
+
+    if (width == g_ScreenWidth && height == g_ScreenHeight)
+    {
+        LogDebug("No change");
+        return ERROR_SUCCESS;
+    }
+
+    ULONG status = SetVideoModeInternal(width, height);
     if (ERROR_SUCCESS != status)
     {
         g_SeamlessMode = FALSE;
@@ -152,8 +170,63 @@ ULONG SetVideoMode(IN ULONG width, IN ULONG height)
     return status;
 }
 
-// change screen resolution (params in g_ResolutionChangeParams).
-ULONG ChangeResolution()
+// This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+// after last screen resize message received from gui daemon.
+// This is to not change resolution on every such message (multiple times per second).
+static DWORD WINAPI ResolutionChangeThread(void *param)
 {
-    return SetVideoMode(g_ResolutionChangeParams.Width, g_ResolutionChangeParams.Height);
+    DWORD waitResult;
+    RESOLUTION_THREAD_PARAMS* args = (RESOLUTION_THREAD_PARAMS*)param;
+
+    while (TRUE)
+    {
+        // Wait indefinitely for an initial "change resolution" event.
+        WaitForSingleObject(args->Event, INFINITE);
+        LogDebug("resolution change requested: %dx%d", args->Width, args->Height);
+
+        do
+        {
+            // If event is signaled again before timeout expires: ignore and wait for another one.
+            waitResult = WaitForSingleObject(args->Event, RESOLUTION_CHANGE_TIMEOUT);
+            LogVerbose("second wait result: %lu", waitResult);
+        } while (waitResult == WAIT_OBJECT_0);
+
+        // If we're here, that means the wait finally timed out.
+        // We can change the resolution now.
+        LogInfo("resolution change: %dx%d", args->Width, args->Height);
+
+        SetVideoMode(args->Width, args->Height);
+    }
+    return ERROR_SUCCESS;
+}
+
+DWORD RequestResolutionChange(IN LONG width, IN LONG height)
+{
+    static RESOLUTION_THREAD_PARAMS threadArgs = { 0 };
+
+    // This thread triggers resolution change if RESOLUTION_CHANGE_TIMEOUT passes
+    // after last screen resize message received from gui daemon.
+    // This is to not change resolution on every such message (multiple times per second).
+    static HANDLE thread = NULL;
+
+    LogVerbose("%dx%d", width, height);
+
+    if (!threadArgs.Event)
+        threadArgs.Event = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+    if (!threadArgs.Event)
+        return win_perror("creating resolution change request event");
+
+    if (!thread)
+        thread = CreateThread(NULL, 0, ResolutionChangeThread, &threadArgs, 0, 0);
+
+    if (!thread)
+        return win_perror("creating resolution change thread");
+
+    threadArgs.Width = width;
+    threadArgs.Height = height;
+    if (!SetEvent(threadArgs.Event))
+        return win_perror("signaling resolution change request event");
+
+    return ERROR_SUCCESS;
 }

@@ -24,19 +24,6 @@
 
 #define RESOLUTION_CHANGE_TIMEOUT 500
 
-typedef struct _RESOLUTION_CHANGE_PARAMS
-{
-    LONG Width;
-    LONG Height;
-    LONG X; // this is needed to send ACK to daemon although it's useless for fullscreen
-    LONG Y;
-} RESOLUTION_CHANGE_PARAMS;
-
-extern HANDLE g_ResolutionChangeEvent;
-
-void RequestResolutionChange(IN LONG width, IN LONG height, IN LONG x, IN LONG y);
-
+DWORD RequestResolutionChange(IN LONG width, IN LONG height);
 ULONG SetVideoMode(IN ULONG width, IN ULONG height);
-
-// Reinitialize everything, change resolution (params in g_ResolutionChangeParams).
-ULONG ChangeResolution();
+void InitVideoModes();

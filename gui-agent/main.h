@@ -29,10 +29,10 @@
 
 extern BOOL g_UseDirtyBits;
 extern BOOL g_SeamlessMode;
-extern LONG g_ScreenHeight;
-extern LONG g_ScreenWidth;
-extern LONG g_HostScreenWidth;
-extern LONG g_HostScreenHeight;
+extern DWORD g_ScreenHeight;
+extern DWORD g_ScreenWidth;
+extern DWORD g_HostScreenWidth;
+extern DWORD g_HostScreenHeight;
 extern BOOL g_VchanClientConnected;
 extern HWND g_DesktopWindow;
 extern char g_DomainName[256];

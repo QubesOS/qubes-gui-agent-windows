@@ -54,16 +54,18 @@
 
 extern struct libvchan *g_Vchan;
 
-LONG g_ScreenHeight;
-LONG g_ScreenWidth;
+// FIXME: too much global state accessed from everywhere
+
+DWORD g_ScreenHeight;
+DWORD g_ScreenWidth;
 
 BOOL g_VchanClientConnected = FALSE;
 BOOL g_SeamlessMode = TRUE;
 
 // used to determine whether our window in fullscreen mode should be borderless
 // (when resolution is smaller than host's)
-LONG g_HostScreenWidth = 0;
-LONG g_HostScreenHeight = 0;
+DWORD g_HostScreenWidth = 0;
+DWORD g_HostScreenHeight = 0;
 
 // minimal acceptable window dimensions
 int g_MinWindowWidth = 0;
@@ -672,6 +674,12 @@ static ULONG ResetWatch(BOOL seamlessMode)
         if (g_TaskbarWindow)
             ShowWindow(g_TaskbarWindow, SW_HIDE);
     }
+    else
+    {
+        g_TaskbarWindow = FindWindow(L"Shell_TrayWnd", 0);
+        if (g_TaskbarWindow)
+            ShowWindow(g_TaskbarWindow, SW_SHOW);
+    }
 
     LogVerbose("end (%x)", status);
     return status;
@@ -708,8 +716,13 @@ ULONG SetSeamlessMode(IN BOOL seamlessMode, IN BOOL forceUpdate)
         if (g_ScreenWidth != g_HostScreenWidth || g_ScreenHeight != g_HostScreenHeight)
         {
             LogDebug("Changing resolution to match host's");
-            RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight, 0, 0);
+            status = RequestResolutionChange(g_HostScreenWidth, g_HostScreenHeight);
             // FIXME: wait until the resolution actually changes?
+            if (status != ERROR_SUCCESS)
+            {
+                win_perror2(status, "RequestResolutionChange");
+                goto end;
+            }
         }
         // hide the screen window
         status = SendWindowUnmap(NULL);
@@ -1093,18 +1106,25 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
     return ERROR_SUCCESS;
 }
 
-void StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
+// CaptureTeardown() must be called separately after gui daemon confirms screen destruction
+ULONG StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
 {
     LogVerbose("start");
     if (!capture)
-        return;
+        return ERROR_SUCCESS;
 
-    SendWindowUnmap(NULL);
-    SendWindowDestroy(NULL);
+    CaptureStop(*capture);
 
-    CaptureTeardown(*capture);
-    *capture = NULL;
+    ULONG status = SendWindowUnmap(NULL);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "SendWindowUnmap(screen)");
+
+    status = SendWindowDestroy(NULL);
+    if (ERROR_SUCCESS != status)
+        return win_perror2(status, "SendWindowDestroy(screen)");
+
     LogVerbose("end");
+    return ERROR_SUCCESS;
 }
 
 // main event loop
@@ -1139,9 +1159,6 @@ static ULONG WINAPI WatchForEvents  (void)
     HANDLE fullScreenOffEvent = CreateNamedEvent(FULLSCREEN_OFF_EVENT_NAME);
     if (!fullScreenOffEvent)
         return GetLastError();
-    g_ResolutionChangeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!g_ResolutionChangeEvent)
-        return GetLastError();
 
     g_VchanClientConnected = FALSE;
     vchanIoInProgress = FALSE;
@@ -1152,11 +1169,9 @@ static ULONG WINAPI WatchForEvents  (void)
     watchedEvents[1] = newFrameEvent;
     watchedEvents[2] = fullScreenOnEvent;
     watchedEvents[3] = fullScreenOffEvent;
-    watchedEvents[4] = g_ResolutionChangeEvent;
-    watchedEvents[5] = libvchan_fd_for_select(g_Vchan);
-    //watchedEvents[6] = CreateEvent(NULL, FALSE, FALSE, NULL); // force update event
-    watchedEvents[6] = captureErrorEvent;
-    eventCount = 7;
+    watchedEvents[4] = libvchan_fd_for_select(g_Vchan);
+    watchedEvents[5] = captureErrorEvent;
+    eventCount = 6;
 
     CAPTURE_CONTEXT* capture = NULL;
 
@@ -1232,30 +1247,7 @@ static ULONG WINAPI WatchForEvents  (void)
             }
             break;
 
-        case 4: // resolution change event, signaled by ResolutionChangeThread
-            LogVerbose("resolution change");
-            // don't explicitly reinitialize capture here
-            // if it gets invalidated it'll signal us
-
-            // Params are in g_ResolutionChangeParams in resolution.c
-            status = ChangeResolution();
-            if (ERROR_SUCCESS != status)
-            {
-                win_perror2(status, "ChangeResolution");
-                // XXX don't totally fail on resolution change, this will cause qga to
-                // be constantly respawned by watchdog and not doing anything constructive
-                // TODO: handle MS basic display driver's fixed list of supported resolutions
-                //exitLoop = TRUE;
-                //break;
-            }
-
-            // is it possible to have VM resolution bigger than host set by user?
-            if ((g_ScreenWidth < g_HostScreenWidth) && (g_ScreenHeight < g_HostScreenHeight))
-                g_SeamlessMode = FALSE; // can't have reliable/intuitive seamless mode in this case
-
-            break;
-
-        case 5: // vchan receive
+        case 4: // vchan receive
             if (!g_VchanClientConnected)
             {
                 vchanIoInProgress = FALSE;
@@ -1285,7 +1277,7 @@ static ULONG WINAPI WatchForEvents  (void)
                 status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
                 if (ERROR_SUCCESS != status)
                 {
-                    win_perror2(status, "StartCapture");
+                    win_perror2(status, "StartFrameProcessing");
                     exitLoop = TRUE;
                     break;
                 }
@@ -1306,9 +1298,10 @@ static ULONG WINAPI WatchForEvents  (void)
                 break;
             }
 
+            BOOL screenDestroyed = FALSE;
             while (VchanGetReadBufferSize(g_Vchan) > 0)
             {
-                status = HandleServerData();
+                status = HandleServerData(&screenDestroyed);
                 if (ERROR_SUCCESS != status)
                 {
                     exitLoop = TRUE;
@@ -1317,21 +1310,28 @@ static ULONG WINAPI WatchForEvents  (void)
                 }
             }
             LeaveCriticalSection(&g_VchanCriticalSection);
+
+            if (screenDestroyed)
+            {
+                LogDebug("gui daemon confirms screen destruction");
+                CaptureTeardown(capture);
+                capture = NULL;
+                status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
+                if (ERROR_SUCCESS != status)
+                {
+                    win_perror2(status, "StartFrameProcessing");
+                    exitLoop = TRUE;
+                    break;
+                }
+            }
             break;
 
-        case 6: // capture error, can be due to a desktop switch or resolution change
-            LogDebug("capture error, reinitializing");
+        case 5: // capture error, can be due to a desktop switch or resolution change
+            LogDebug("capture error");
 
             StopFrameProcessing(&capture);
-            capture = NULL;
-
-            status = StartFrameProcessing(newFrameEvent, captureErrorEvent, &capture);
-            if (ERROR_SUCCESS != status)
-            {
-                win_perror2(status, "StartCapture");
-                exitLoop = TRUE;
-                break;
-            }
+            // CaptureTeardown() is delayed until we receive confirming MSG_DESTROY for 0x0 from gui daemon
+            // revoking framebuffer access before that is unsafe
             break;
         }
 
@@ -1350,7 +1350,11 @@ static ULONG WINAPI WatchForEvents  (void)
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     if (capture)
+    {
         StopFrameProcessing(&capture);
+        CaptureTeardown(capture);
+    }
+
     LogInfo("exiting");
     // all handles will be closed on exit anyway
 
@@ -1502,6 +1506,8 @@ static ULONG Init(void)
 
     InitializeListHead(&g_WatchedWindowsList);
     InitializeCriticalSection(&g_csWatchedWindows);
+
+    InitVideoModes();
 
     g_MinWindowWidth = GetSystemMetrics(SM_CXMIN);
     g_MinWindowHeight = GetSystemMetrics(SM_CYMIN);

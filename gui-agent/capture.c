@@ -266,15 +266,7 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
     LogVerbose("start");
 
     DWORD status = GetLastError(); // preserve
-    InterlockedExchange(&g_CaptureThreadEnable, FALSE);
-    if (ctx->thread)
-    {
-        if (WaitForSingleObject(ctx->thread, 2 * FRAME_TIMEOUT) != WAIT_OBJECT_0)
-        {
-            LogWarning("capture thread timeout");
-            TerminateThread(ctx->thread, 0);
-        }
-    }
+    CaptureStop(ctx);
 
     if (ctx->ready_event)
         CloseHandle(ctx->ready_event);
@@ -328,6 +320,23 @@ HRESULT CaptureStart(IN OUT CAPTURE_CONTEXT* ctx)
 
     LogVerbose("end");
     return status;
+}
+
+void CaptureStop(IN OUT CAPTURE_CONTEXT* ctx)
+{
+    LogVerbose("start");
+    InterlockedExchange(&g_CaptureThreadEnable, FALSE);
+    if (ctx->thread)
+    {
+        if (WaitForSingleObject(ctx->thread, 2 * FRAME_TIMEOUT) != WAIT_OBJECT_0)
+        {
+            LogWarning("capture thread timeout");
+            TerminateThread(ctx->thread, 0);
+        }
+    }
+    ctx->thread = NULL;
+
+    LogVerbose("end");
 }
 
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
