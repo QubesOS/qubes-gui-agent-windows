@@ -340,7 +340,7 @@ static DWORD HandleMotion(IN HWND window)
     return ERROR_SUCCESS;
 }
 
-static DWORD HandleConfigure(IN HWND window)
+static DWORD HandleConfigure(IN HWND window, BOOL replyToMessages)
 {
     struct msg_configure configureMsg;
 
@@ -439,9 +439,14 @@ static DWORD HandleConfigure(IN HWND window)
         }
     }
 
-    // send ACK to gui daemon so it won't stop sending MSG_CONFIGURE
-    return SendWindowConfigure(window,
-        configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, configureMsg.override_redirect);
+    if (replyToMessages)
+    {
+        // send ACK to gui daemon so it won't stop sending MSG_CONFIGURE
+        return SendWindowConfigure(window,
+            configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, configureMsg.override_redirect);
+    }
+
+    return ERROR_SUCCESS;
 }
 
 static DWORD HandleFocus(IN HWND window)
@@ -518,7 +523,7 @@ static DWORD HandleDestroy(IN HWND window, OUT BOOL* screenDestroyed)
     return ERROR_SUCCESS;
 }
 
-DWORD HandleServerData(OUT BOOL* screenDestroyed)
+DWORD HandleServerData(BOOL replyToMessages, OUT BOOL* screenDestroyed)
 {
     struct msg_hdr header;
     BYTE discardBuffer[256];
@@ -547,7 +552,7 @@ DWORD HandleServerData(OUT BOOL* screenDestroyed)
         status = HandleMotion((HWND)header.window);
         break;
     case MSG_CONFIGURE:
-        status = HandleConfigure((HWND)header.window);
+        status = HandleConfigure((HWND)header.window, replyToMessages);
         break;
     case MSG_FOCUS:
         status = HandleFocus((HWND)header.window);

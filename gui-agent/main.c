@@ -62,6 +62,10 @@ DWORD g_ScreenWidth;
 BOOL g_VchanClientConnected = FALSE;
 BOOL g_SeamlessMode = TRUE;
 
+// after we send MSG_DESTROY in fullscreen mode we can get delayed MSG_CONFIGURE,
+// we shouldn't reply to that before sending MSG_CREATE
+BOOL g_LocalScreenDestroyed = FALSE;
+
 // used to determine whether our window in fullscreen mode should be borderless
 // (when resolution is smaller than host's)
 DWORD g_HostScreenWidth = 0;
@@ -1088,6 +1092,8 @@ ULONG StartFrameProcessing(IN HANDLE newFrameEvent, IN HANDLE captureErrorEvent,
     if (ERROR_SUCCESS != status)
         return win_perror2(status, "SendWindowCreate(NULL)");
 
+    g_LocalScreenDestroyed = FALSE;
+
     // send the whole screen framebuffer map
     status = SendScreenGrants(FRAMEBUFFER_PAGE_COUNT(g_ScreenWidth, g_ScreenHeight), (*capture)->grant_refs);
     if (ERROR_SUCCESS != status)
@@ -1123,13 +1129,16 @@ ULONG StopFrameProcessing(IN OUT CAPTURE_CONTEXT** capture)
     if (ERROR_SUCCESS != status)
         return win_perror2(status, "SendWindowDestroy(screen)");
 
+    // pause replying to gui daemon's messages for the destroyed screen window
+    g_LocalScreenDestroyed = TRUE;
+
     LogVerbose("end");
     return ERROR_SUCCESS;
 }
 
 // main event loop
 // TODO: refactor into smaller parts
-static ULONG WINAPI WatchForEvents  (void)
+static ULONG WINAPI WatchForEvents(void)
 {
     ULONG eventCount;
     DWORD signaledEvent;
@@ -1301,7 +1310,7 @@ static ULONG WINAPI WatchForEvents  (void)
             BOOL screenDestroyed = FALSE;
             while (VchanGetReadBufferSize(g_Vchan) > 0)
             {
-                status = HandleServerData(&screenDestroyed);
+                status = HandleServerData(!g_LocalScreenDestroyed, &screenDestroyed);
                 if (ERROR_SUCCESS != status)
                 {
                     exitLoop = TRUE;

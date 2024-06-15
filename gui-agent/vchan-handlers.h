@@ -23,4 +23,4 @@
 #include <windows.h>
 
 DWORD HandleXconf(void);
-DWORD HandleServerData(OUT BOOL* screenDestroyed);
+DWORD HandleServerData(BOOL replyToMessages, OUT BOOL* screenDestroyed);
