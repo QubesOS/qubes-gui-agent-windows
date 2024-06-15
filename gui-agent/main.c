@@ -325,6 +325,49 @@ ULONG GetRealWindowRect(IN HWND window, OUT RECT* rect)
     return ERROR_SUCCESS;
 }
 
+BOOL HasFlags(DWORD value, DWORD flags)
+{
+    return (value & flags) == flags;
+}
+
+BOOL IsPopup(IN const WINDOW_DATA* entry)
+{
+    if (!entry->IsVisible)
+        return FALSE;
+
+    BOOL isPopup = !(
+        // "Normal" popups without caption
+        HasFlags(entry->Style, WS_CAPTION) ||
+        // Metro apps without WS_CAPTION.
+        // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
+        // but I guess MS doesn't adhere to its own standards...
+        (HasFlags(entry->Style, WS_SYSMENU) && HasFlags(entry->ExStyle, WS_EX_APPWINDOW)));
+
+    // FIXME: better prevention of large popup windows that can obscure dom0 screen
+    if (isPopup && (entry->Width >= g_HostScreenWidth || entry->Height >= g_HostScreenHeight))
+    {
+        LogDebug("0x%x: popup too large: %dx%d, host screen %dx%d",
+            entry->Handle, entry->Width, entry->Height, g_HostScreenWidth, g_HostScreenHeight);
+        isPopup = FALSE;
+    }
+
+    if (isPopup && entry->IsVisible)
+    {
+        LogVerbose("0x%x: popup %dx%d", entry->Handle, entry->Width, entry->Height);
+    }
+
+    return isPopup;
+}
+
+ULONG ToggleMap(IN const WINDOW_DATA* entry)
+{
+    ULONG status = SendWindowUnmap(entry->Handle);
+    if (status != ERROR_SUCCESS)
+        return status;
+
+    return SendWindowMap(entry);
+}
+
 // fills WINDOW_DATA if successful
 // if *windowData is NULL, the function allocates a new struct and sets the pointer
 // if *windowData is not NULL, the function updates the supplied struct
@@ -412,41 +455,9 @@ ULONG GetWindowData(IN HWND window, IN OUT WINDOW_DATA** windowData)
             else
                 entry->ModalParent = NULL;
         }
-
-        // FIXME: better prevention of large popup windows that can obscure dom0 screen
-        // this is mainly for the logon window (which is screen-sized without caption)
-        if (entry->Width == g_ScreenWidth && entry->Height == g_ScreenHeight)
-        {
-            LogDebug("0x%x: popup too large: %dx%d, screen %dx%d",
-                     entry->Handle, entry->Width, entry->Height, g_ScreenWidth, g_ScreenHeight);
-            entry->IsOverrideRedirect = FALSE;
-        }
-        else
-        {
-            // WS_CAPTION is defined as WS_BORDER | WS_DLGFRAME, must check both bits
-            if ((entry->Style & WS_CAPTION) == WS_CAPTION)
-            {
-                // normal window
-                entry->IsOverrideRedirect = FALSE;
-            }
-            else if (((entry->Style & WS_SYSMENU) == WS_SYSMENU) && ((entry->ExStyle & WS_EX_APPWINDOW) == WS_EX_APPWINDOW))
-            {
-                // Metro apps without WS_CAPTION.
-                // MSDN says that windows with WS_SYSMENU *should* have WS_CAPTION,
-                // but I guess MS doesn't adhere to its own standards...
-                entry->IsOverrideRedirect = FALSE;
-            }
-            else
-            {
-                entry->IsOverrideRedirect = TRUE;
-            }
-        }
     }
 
-    if (entry->IsOverrideRedirect && entry->IsVisible)
-    {
-        LogVerbose("0x%x: popup %dx%d", entry->Handle, entry->Width, entry->Height);
-    }
+    entry->IsOverrideRedirect = IsPopup(entry);
 
     return ERROR_SUCCESS;
 }
@@ -902,10 +913,10 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
     }
 
     // coords
-    BOOL updateNeeded = (windowData->X != data.X || windowData->Y != data.Y ||
+    BOOL coordsChanged = (windowData->X != data.X || windowData->Y != data.Y ||
         windowData->Width != data.Width || windowData->Height != data.Height);
 
-    if (updateNeeded)
+    if (coordsChanged)
     {
         LogVerbose("coords changed: 0x%x (%d,%d) %dx%d -> (%d,%d) %dx%d",
             windowData->Handle, windowData->X, windowData->Y, windowData->Width, windowData->Height,
@@ -915,12 +926,60 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
         windowData->Y = data.Y;
         windowData->Width = data.Width;
         windowData->Height = data.Height;
+    }
 
-        status = SendWindowConfigure(windowData->Handle,
-            windowData->X, windowData->Y, windowData->Width, windowData->Height, windowData->IsOverrideRedirect);
+    BOOL oldPopupState = windowData->IsOverrideRedirect;
+    BOOL popupStateChanged = windowData->IsOverrideRedirect != data.IsOverrideRedirect;
+    if (popupStateChanged)
+    {
+        LogDebug("0x%x: popup state changed from %d to %d", windowData->Handle, windowData->IsOverrideRedirect,
+            data.IsOverrideRedirect);
 
-        if (status != ERROR_SUCCESS)
-            goto end;
+        windowData->IsOverrideRedirect = data.IsOverrideRedirect;
+    }
+
+    // Order of sending updates to the gui daemon here is important (window size vs popup state):
+    // wrong order can trigger the override-redirect protection for large windows.
+    // Case 1: window became large enough to trigger protection, but the popup state changed from true to false.
+    // In this case we need to send the popup state first, then the size update.
+    // Case 2: window became small (from large), popup state changed from false to true.
+    // In this case we need to send the size update first, then the popup state.
+    // For other combinations the order doesn't matter, so we use the old popup state to determine the order.
+    if (oldPopupState)
+    {
+        // popup state first, then configure
+        if (popupStateChanged)
+        {
+            status = ToggleMap(windowData);
+            if (status != ERROR_SUCCESS)
+                goto end;
+        }
+
+        if (coordsChanged)
+        {
+            status = SendWindowConfigure(windowData->Handle,
+                windowData->X, windowData->Y, windowData->Width, windowData->Height, windowData->IsOverrideRedirect);
+            if (status != ERROR_SUCCESS)
+                goto end;
+        }
+    }
+    else
+    {
+        // configure first, then popup state
+        if (coordsChanged)
+        {
+            status = SendWindowConfigure(windowData->Handle,
+                windowData->X, windowData->Y, windowData->Width, windowData->Height, windowData->IsOverrideRedirect);
+            if (status != ERROR_SUCCESS)
+                goto end;
+        }
+
+        if (popupStateChanged)
+        {
+            status = ToggleMap(windowData);
+            if (status != ERROR_SUCCESS)
+                goto end;
+        }
     }
 
     // TODO: should we care about style changes? some of them affect Z-order (topmost etc)
@@ -931,11 +990,7 @@ static ULONG UpdateWindowData(IN OUT WINDOW_DATA *windowData)
             data.Handle, windowData->ModalParent, data.ModalParent);
         windowData->ModalParent = data.ModalParent;
         // need to toggle map since this is the only way to change modal status for gui daemon
-        status = SendWindowUnmap(data.Handle);
-        if (ERROR_SUCCESS != status)
-            goto end;
-
-        status = SendWindowMap(windowData);
+        status = ToggleMap(windowData);
         if (ERROR_SUCCESS != status)
             goto end;
     }
