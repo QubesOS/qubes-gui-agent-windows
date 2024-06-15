@@ -235,6 +235,7 @@ static DWORD HandleButton(IN HWND window)
     /* TODO: send to correct window */
 
     inputEvent.type = INPUT_MOUSE;
+    inputEvent.mi.dwFlags = 0;
     inputEvent.mi.time = 0;
     inputEvent.mi.mouseData = 0;
     inputEvent.mi.dwExtraInfo = 0;
