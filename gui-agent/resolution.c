@@ -50,22 +50,34 @@ void InitVideoModes()
 
     for (g_SupportedModes.Count = 0; ; g_SupportedModes.Count++)
     {
+        ZeroMemory(&mode, sizeof(mode));
         mode.dmSize = sizeof(mode);
         if (!EnumDisplaySettingsW(NULL, g_SupportedModes.Count, &mode))
             break;
-        LogDebug("mode %u: %ux%u %u bpp @ %u, flags 0x%x", g_SupportedModes.Count,
-            mode.dmPelsWidth, mode.dmPelsHeight, mode.dmBitsPerPel, mode.dmDisplayFrequency, mode.dmDisplayFlags);
     }
 
+    LogDebug("Enumerated %u supported modes", g_SupportedModes.Count);
     g_SupportedModes.Dimensions = (POINT*)malloc(g_SupportedModes.Count * sizeof(POINT));
+    if (!g_SupportedModes.Dimensions)
+        exit(ERROR_OUTOFMEMORY);
 
     for (DWORD i = 0; i < g_SupportedModes.Count; i++)
     {
+        ZeroMemory(&mode, sizeof(mode));
         mode.dmSize = sizeof(mode);
-        assert(EnumDisplaySettingsW(NULL, i, &mode));
+        if (!EnumDisplaySettingsW(NULL, i, &mode))
+        {
+            LogWarning("Failed to get display settings for mode %u", i);
+            win_perror("EnumDisplaySettingsW");
+            g_SupportedModes.Dimensions[i].x = 0;
+            g_SupportedModes.Dimensions[i].y = 0;
+            continue;
+        }
 
         g_SupportedModes.Dimensions[i].x = mode.dmPelsWidth;
         g_SupportedModes.Dimensions[i].y = mode.dmPelsHeight;
+        LogDebug("mode %u: %ux%u %u bpp @ %u, flags 0x%x", i,
+            mode.dmPelsWidth, mode.dmPelsHeight, mode.dmBitsPerPel, mode.dmDisplayFrequency, mode.dmDisplayFlags);
     }
 
     LogDebug("Initialized %u supported modes", g_SupportedModes.Count);
@@ -107,18 +119,19 @@ DWORD SelectSupportedMode(IN DWORD width, IN DWORD height)
     DWORD mode = 0;
     float sim = 0;
 
+    LogVerbose("Host screen dimensions: %ux%u", g_HostScreenWidth, g_HostScreenHeight);
     for (DWORD i = 0; i < g_SupportedModes.Count; i++)
     {
         DWORD w = g_SupportedModes.Dimensions[i].x;
         DWORD h = g_SupportedModes.Dimensions[i].y;
 
         // TODO: filter these when constructing supported mode list
-        if (w > g_HostScreenWidth || h > g_HostScreenHeight)
+        if (w > g_HostScreenWidth || h > g_HostScreenHeight || w == 0 || h == 0)
             continue;
 
         if (w == width && h == height)
         {
-            LogDebug("Returning mode %u (%ux%u) for %ux%u", i, w, h, width, height);
+            LogDebug("Returning exact mode %u (%ux%u) for %ux%u", i, w, h, width, height);
             return i;
         }
 
