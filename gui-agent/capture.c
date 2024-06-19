@@ -33,7 +33,7 @@
 // TODO: configure timeout through registry config (milliseconds)
 #define FRAME_TIMEOUT 1000
 
-BOOL g_CaptureThreadEnable = FALSE;
+volatile LONG g_CaptureThreadEnable = 0;
 
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout);
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx);
@@ -148,7 +148,7 @@ static IDXGIOutput1* GetOutput(IN IDXGIAdapter* adapter)
 
 fail:
     LogVerbose("end");
-    SetLastError(DXGI_ERROR_NOT_FOUND);
+    SetLastError((DWORD)DXGI_ERROR_NOT_FOUND);
     return NULL;
 }
 
@@ -178,7 +178,7 @@ static IDXGIOutputDuplication* GetDuplication(IN IDXGIOutput1* output, IN ID3D11
         // this should never happen with the basic display driver
         IDXGIOutputDuplication_Release(duplication);
         LogError("TODO: desktop is not in system memory");
-        SetLastError(DXGI_ERROR_UNSUPPORTED);
+        SetLastError((DWORD)DXGI_ERROR_UNSUPPORTED);
         goto fail;
     }
 

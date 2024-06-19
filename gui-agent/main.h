@@ -54,8 +54,8 @@ typedef struct _WINDOW_DATA
     // This may be different than the real RECT of the window.
     int X;
     int Y;
-    int Width;
-    int Height;
+    DWORD Width;
+    DWORD Height;
 
     LIST_ENTRY ListEntry;
 
@@ -77,10 +77,6 @@ ULONG AddWindow(
 
 ULONG RemoveWindow(
     IN OUT WINDOW_DATA *entry
-    );
-
-ULONG UpdateWindowData(
-    IN OUT WINDOW_DATA* entry
     );
 
 // This (re)initializes watched windows, hooks etc.

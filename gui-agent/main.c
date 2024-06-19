@@ -72,8 +72,8 @@ DWORD g_HostScreenWidth = 0;
 DWORD g_HostScreenHeight = 0;
 
 // minimal acceptable window dimensions
-int g_MinWindowWidth = 0;
-int g_MinWindowHeight = 0;
+DWORD g_MinWindowWidth = 0;
+DWORD g_MinWindowHeight = 0;
 
 char g_DomainName[256] = "<unknown>";
 USHORT g_GuiDomainId = 0;
@@ -225,7 +225,7 @@ void DumpWindows(void)
         }
 
         LogLock();
-        LogDebugRaw("0x%x: (%6d,%6d) %4dx%4d ",
+        LogDebugRaw("0x%x: (%6d,%6d) %4ux%4u ",
             entry->Handle, entry->X, entry->Y, entry->Width, entry->Height);
         LogDebugRaw("%c %c ovr=%d [%s] '%s' {%s} parent=0x%x ",
             entry->IsVisible?'V':'-', entry->IsIconic?'_':' ', entry->IsOverrideRedirect,
@@ -346,14 +346,14 @@ BOOL IsPopup(IN const WINDOW_DATA* entry)
     // FIXME: better prevention of large popup windows that can obscure dom0 screen
     if (isPopup && (entry->Width >= g_HostScreenWidth || entry->Height >= g_HostScreenHeight))
     {
-        LogDebug("0x%x: popup too large: %dx%d, host screen %dx%d",
+        LogDebug("0x%x: popup too large: %ux%u, host screen %ux%u",
             entry->Handle, entry->Width, entry->Height, g_HostScreenWidth, g_HostScreenHeight);
         isPopup = FALSE;
     }
 
     if (isPopup && entry->IsVisible)
     {
-        LogVerbose("0x%x: popup %dx%d", entry->Handle, entry->Width, entry->Height);
+        LogVerbose("0x%x: popup %ux%u", entry->Handle, entry->Width, entry->Height);
     }
 
     return isPopup;
@@ -560,6 +560,7 @@ end:
 // watched windows critical section must be entered
 static BOOL CALLBACK AddWindowsProc(IN HWND window, IN LPARAM lParam)
 {
+    UNREFERENCED_PARAMETER(lParam);
     ULONG status;
 
     WINDOW_DATA* data = FindWindowByHandle(window);
@@ -1013,7 +1014,6 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
 {
     WINDOW_DATA *entry;
     WINDOW_DATA *nextEntry;
-    HWND oldDesktopWindow = g_DesktopWindow;
     ULONG status = ERROR_SUCCESS;
 
     LogVerbose("start");
@@ -1521,11 +1521,16 @@ static ULONG Init(void)
         g_DisableCursor = TRUE;
     }
 
-    status = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &g_SeamlessMode, NULL);
+    DWORD seamlessMode;
+    status = CfgReadDword(moduleName, REG_CONFIG_SEAMLESS_VALUE, &seamlessMode, NULL);
     if (ERROR_SUCCESS != status)
     {
         LogWarning("Failed to read '%s' config value, using default (FALSE)", REG_CONFIG_SEAMLESS_VALUE);
         g_SeamlessMode = FALSE;
+    }
+    else
+    {
+        g_SeamlessMode = seamlessMode;
     }
 
     SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_UPDATEINIFILE);
@@ -1580,6 +1585,11 @@ static ULONG Init(void)
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+    UNREFERENCED_PARAMETER(hInstance);
+    UNREFERENCED_PARAMETER(hPrevInstance);
+    UNREFERENCED_PARAMETER(lpCmdLine);
+    UNREFERENCED_PARAMETER(nCmdShow);
+
     if (ERROR_SUCCESS != Init())
         return win_perror("Init");
 

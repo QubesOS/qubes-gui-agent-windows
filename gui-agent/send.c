@@ -140,7 +140,7 @@ ULONG SendWindowCreate(IN const WINDOW_DATA *windowData)
     createMsg.width = wi.rcWindow.right - wi.rcWindow.left;
     createMsg.height = wi.rcWindow.bottom - wi.rcWindow.top;
 #pragma warning(suppress:4311)
-    createMsg.parent = (uint32_t)INVALID_HANDLE_VALUE; /* TODO? */
+    createMsg.parent = UINT32_MAX; // ignored by daemon
     createMsg.override_redirect = windowData ? windowData->IsOverrideRedirect : FALSE;
     LogDebug("(%d,%d) %ux%u", createMsg.x, createMsg.y, createMsg.width, createMsg.height);
 

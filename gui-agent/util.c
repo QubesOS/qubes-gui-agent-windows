@@ -261,8 +261,8 @@ ULONG AttachToInputDesktop(void)
 {
     ULONG status = ERROR_SUCCESS;
     HDESK desktop = 0, oldDesktop = 0;
+#ifdef _DEBUG
     HANDLE currentProcess = GetCurrentProcess();
-#ifdef DEBUG
     HANDLE currentToken;
     DWORD sessionId;
     DWORD size;
@@ -281,7 +281,7 @@ ULONG AttachToInputDesktop(void)
         goto cleanup;
     }
 
-#ifdef DEBUG
+#ifdef _DEBUG
     if (!GetUserObjectInformation(desktop, UOI_NAME, name, sizeof(name), &needed))
     {
         win_perror("GetUserObjectInformation");
