@@ -30,6 +30,7 @@
 #include "vchan.h"
 
 #include <qubes-gui-protocol.h>
+
 #include <log.h>
 
 #include <strsafe.h>

@@ -22,11 +22,7 @@
 #pragma once
 #include <stdint.h>
 
-#include "capture.h"
 #include "main.h"
-#include "vchan.h"
-
-#include <qubes-gui-protocol.h>
 
 // window size hint constants
 // http://tronche.com/gui/x/icccm/sec-4.html

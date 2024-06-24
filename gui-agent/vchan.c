@@ -21,7 +21,8 @@
 
 #include <windows.h>
 
-#include <qubes-gui-protocol.h>
+#include "vchan.h"
+
 #include <libvchan.h>
 #include <vchan-common.h>
 #include <log.h>

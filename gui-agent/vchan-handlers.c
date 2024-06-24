@@ -29,7 +29,6 @@
 #include "xorg-keymap.h"
 #include "resolution.h"
 
-#include <qubes-gui-protocol.h>
 #include <log.h>
 
 // tell helper service to simulate ctrl-alt-del

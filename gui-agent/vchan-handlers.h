@@ -20,7 +20,7 @@
  */
 
 #pragma once
-#include <windows.h>
+#include <windef.h>
 
 DWORD HandleXconf(void);
 DWORD HandleServerData(BOOL replyToMessages, OUT BOOL* screenDestroyed);

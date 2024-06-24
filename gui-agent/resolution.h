@@ -20,7 +20,7 @@
  */
 
 #pragma once
-#include <windows.h>
+#include <windef.h>
 
 #define RESOLUTION_CHANGE_TIMEOUT 500
 

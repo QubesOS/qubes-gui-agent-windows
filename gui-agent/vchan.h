@@ -20,15 +20,20 @@
  */
 
 #pragma once
-#include <windows.h>
+#include <windef.h>
 
 #include <vchan-common.h>
+
+#pragma warning(push)
+#pragma warning(disable:4200) // nonstandard extension used: zero-sized array in struct/union
+#include <qubes-gui-protocol.h>
+#pragma warning(pop)
 
 extern CRITICAL_SECTION g_VchanCriticalSection;
 extern struct libvchan *g_Vchan;
 
 BOOL VchanInit(IN int port);
-BOOL VchanSendMessage(IN const void *header, IN int headerSize, IN const void *data, IN int datasize, IN const WCHAR *what);
+BOOL VchanSendMessage(IN const struct msg_hdr* header, IN int headerSize, IN const void* data, IN int dataSize, IN const WCHAR* what);
 
 #define VCHAN_SEND_MSG(header, body, what) (\
     header.untrusted_len = sizeof(header), \

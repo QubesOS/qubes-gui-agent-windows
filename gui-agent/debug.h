@@ -20,7 +20,7 @@
  */
 
 #pragma once
-#include <Windows.h>
+#include <windef.h>
 
 // Debug helper functions
 
