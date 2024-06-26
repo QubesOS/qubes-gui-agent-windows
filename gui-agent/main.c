@@ -1330,7 +1330,7 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
-                // This will probably change the current video mode.
+                // This will probably change the current video mode if we don't have one saved in the registry.
                 if (ERROR_SUCCESS != HandleXconf())
                 {
                     LogError("HandleXconf failed");

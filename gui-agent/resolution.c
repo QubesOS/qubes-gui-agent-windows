@@ -28,6 +28,7 @@
 #include "send.h"
 #include "util.h"
 
+#include <config.h>
 #include <log.h>
 
 // parameters for the resolution change thread
@@ -178,6 +179,9 @@ ULONG SetVideoMode(IN ULONG width, IN ULONG height)
     {
         g_ScreenWidth = width;
         g_ScreenHeight = height;
+        // save last-set resolution to use on next startup
+        CfgWriteDword(NULL, REG_CONFIG_FULLSCREEN_WIDTH_VALUE, g_ScreenWidth, NULL);
+        CfgWriteDword(NULL, REG_CONFIG_FULLSCREEN_HEIGHT_VALUE, g_ScreenHeight, NULL);
     }
 
     return status;

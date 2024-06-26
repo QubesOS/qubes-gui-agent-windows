@@ -29,6 +29,7 @@
 #include "xorg-keymap.h"
 #include "resolution.h"
 
+#include <config.h>
 #include <log.h>
 
 // tell helper service to simulate ctrl-alt-del
@@ -64,7 +65,24 @@ DWORD HandleXconf(void)
     LogInfo("host resolution: %lux%lu, mem: %lu, depth: %lu", xconf.w, xconf.h, xconf.mem, xconf.depth);
     g_HostScreenWidth = xconf.w;
     g_HostScreenHeight = xconf.h;
-    return SetVideoMode(xconf.w, xconf.h);
+
+    // if we have a resolution saved in the registry config, use that instead of xconf value
+    // this is to preserve user-chosen resolution, it's saved by SetVideoMode
+    DWORD fullscreenWidth = g_HostScreenWidth;
+    DWORD fullscreenHeight = g_HostScreenHeight;
+
+    DWORD status = CfgReadDword(NULL, REG_CONFIG_FULLSCREEN_WIDTH_VALUE, &fullscreenWidth, NULL);
+    if (status != ERROR_SUCCESS)
+    {
+        LogDebug("no saved fullscreen width, using host's (%u)", xconf.w);
+        goto end;
+    }
+    status = CfgReadDword(NULL, REG_CONFIG_FULLSCREEN_HEIGHT_VALUE, &fullscreenHeight, NULL);
+    if (status != ERROR_SUCCESS)
+        LogDebug("no saved fullscreen height, using host's (%u)", xconf.h);
+
+end:
+    return SetVideoMode(fullscreenWidth, fullscreenHeight);
 }
 
 static int BitSet(IN OUT BYTE *keys, IN int num)

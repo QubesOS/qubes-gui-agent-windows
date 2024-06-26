@@ -31,6 +31,8 @@
 #define REG_CONFIG_FPS_VALUE        L"MaxFps"
 #define REG_CONFIG_CURSOR_VALUE     L"DisableCursor"
 #define REG_CONFIG_SEAMLESS_VALUE   L"SeamlessMode"
+#define REG_CONFIG_FULLSCREEN_WIDTH_VALUE   L"FullscreenWidth"
+#define REG_CONFIG_FULLSCREEN_HEIGHT_VALUE  L"FullscreenHeight"
 
 // path to the gui agent, launched by the watchdog service
 #define REG_CONFIG_AGENT_PATH_VALUE  L"GuiAgentPath"
