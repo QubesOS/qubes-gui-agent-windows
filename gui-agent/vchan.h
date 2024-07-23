@@ -36,7 +36,7 @@ BOOL VchanInit(IN int port);
 BOOL VchanSendMessage(IN const struct msg_hdr* header, IN int headerSize, IN const void* data, IN int dataSize, IN const WCHAR* what);
 
 #define VCHAN_SEND_MSG(header, body, what) (\
-    header.untrusted_len = sizeof(header), \
+    header.untrusted_len = sizeof(body), \
     VchanSendMessage(&(header), sizeof(header), &(body), sizeof(body), what) \
     )
 
