@@ -52,6 +52,18 @@ static void SignalSASEvent(void)
     }
 }
 
+DWORD HandleVersion(void)
+{
+    DWORD guidVersion;
+    if (!VchanReceiveBuffer(g_Vchan, &guidVersion, sizeof(guidVersion), L"version"))
+    {
+        LogError("VchanReceiveBuffer failed");
+        return ERROR_UNIDENTIFIED_ERROR;
+    }
+    LogDebug("gui daemon version: 0x%x", guidVersion);
+    return ERROR_SUCCESS;
+}
+
 DWORD HandleXconf(void)
 {
     struct msg_xconf xconf;
@@ -77,6 +89,7 @@ DWORD HandleXconf(void)
         LogDebug("no saved fullscreen width, using host's (%u)", xconf.w);
         goto end;
     }
+
     status = CfgReadDword(NULL, REG_CONFIG_FULLSCREEN_HEIGHT_VALUE, &fullscreenHeight, NULL);
     if (status != ERROR_SUCCESS)
         LogDebug("no saved fullscreen height, using host's (%u)", xconf.h);

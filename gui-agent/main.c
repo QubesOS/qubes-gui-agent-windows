@@ -1330,6 +1330,13 @@ static ULONG WINAPI WatchForEvents(void)
                     break;
                 }
 
+                if (ERROR_SUCCESS != HandleVersion())
+                {
+                    LogError("HandleVersion failed");
+                    exitLoop = TRUE;
+                    break;
+                }
+
                 // This will probably change the current video mode if we don't have one saved in the registry.
                 if (ERROR_SUCCESS != HandleXconf())
                 {

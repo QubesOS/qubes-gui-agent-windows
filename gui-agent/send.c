@@ -450,11 +450,10 @@ ULONG SendWindowName(IN HWND window, IN const WCHAR *caption OPTIONAL)
 
 ULONG SendProtocolVersion(void)
 {
-    uint32_t version = QUBES_GUI_PROTOCOL_VERSION_WINDOWS;
-    BOOL status;
+    uint32_t version = QUBES_GUID_PROTOCOL_VERSION;
 
     EnterCriticalSection(&g_VchanCriticalSection);
-    status = VCHAN_SEND(version, L"version");
+    BOOL status = VCHAN_SEND(version, L"version");
     LeaveCriticalSection(&g_VchanCriticalSection);
 
     return status ? ERROR_SUCCESS : ERROR_UNIDENTIFIED_ERROR;

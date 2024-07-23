@@ -22,5 +22,6 @@
 #pragma once
 #include <windef.h>
 
+DWORD HandleVersion(void);
 DWORD HandleXconf(void);
 DWORD HandleServerData(BOOL replyToMessages, OUT BOOL* screenDestroyed);

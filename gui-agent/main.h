@@ -24,9 +24,6 @@
 
 #include <list.h>
 
-#define QUBES_GUI_PROTOCOL_VERSION_LINUX (1 << 16 | 0)
-#define QUBES_GUI_PROTOCOL_VERSION_WINDOWS  QUBES_GUI_PROTOCOL_VERSION_LINUX
-
 extern BOOL g_UseDirtyBits;
 extern BOOL g_SeamlessMode;
 extern DWORD g_ScreenHeight;
