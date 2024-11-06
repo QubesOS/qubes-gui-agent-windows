@@ -1,6 +1,5 @@
 # Qubes GUI agent
 
-- TODO: integrate with Qubes builder
 - TODO: build test tools
 - TODO: (watchdog) detect if the agent fails/crashes too often and disable it/return to fullscreen mode
 - TODO: consider rewriting window tracking logic to use windows hooks intead of polling (I don't remember why hooks weren't used in the first place, maybe they don't work reliably for all windows since DLL injection is needed and that breaks for protected processes like winlogon)

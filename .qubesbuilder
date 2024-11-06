@@ -1,0 +1,8 @@
+vm:
+  windows:
+    build:
+    - vs2022/gui-agent-windows.sln
+    bin:
+    - vs2022/x64/@CONFIGURATION@/dump-windows/dump-windows.exe
+    - vs2022/x64/@CONFIGURATION@/gui-agent/gui-agent.exe
+    - vs2022/x64/@CONFIGURATION@/gui-watchdog/gui-watchdog.exe
