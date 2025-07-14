@@ -1211,7 +1211,7 @@ static ULONG WINAPI WatchForEvents(void)
     HANDLE captureErrorEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // This will not block.
-    if (!VchanInit(6000))
+    if (!VchanInit(g_GuiDomainId, 6000))
     {
         LogError("VchanInit() failed");
         return GetLastError();

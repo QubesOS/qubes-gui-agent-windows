@@ -47,7 +47,7 @@ BOOL VchanSendMessage(IN const struct msg_hdr *header, IN int headerSize, IN con
     return TRUE;
 }
 
-BOOL VchanInit(IN int port)
+BOOL VchanInit(IN int domain, IN int port)
 {
     // We give a 5 minute timeout here because xeniface can take some time
     // to load the first time after reboot after pvdrivers installation.
@@ -59,7 +59,7 @@ BOOL VchanInit(IN int port)
     // Investigate if this is a problem with windows vchan implementation or something else.
     // 64k allows for 4 x 1440p screens.
 
-    g_Vchan = VchanInitServer(0, port, 65536, 5 * 60 * 1000);
+    g_Vchan = VchanInitServer(domain, port, 65536, 5 * 60 * 1000);
     if (!g_Vchan)
     {
         LogError("VchanInitServer failed");
