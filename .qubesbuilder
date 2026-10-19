@@ -6,3 +6,7 @@ vm:
     - vs2022/x64/@CONFIGURATION@/dump-windows/dump-windows.exe
     - vs2022/x64/@CONFIGURATION@/gui-agent/gui-agent.exe
     - vs2022/x64/@CONFIGURATION@/gui-watchdog/gui-watchdog.exe
+    pdb:
+    - vs2022/x64/@CONFIGURATION@/dump-windows/dump-windows.pdb
+    - vs2022/x64/@CONFIGURATION@/gui-agent/gui-agent.pdb
+    - vs2022/x64/@CONFIGURATION@/gui-watchdog/gui-watchdog.pdb
