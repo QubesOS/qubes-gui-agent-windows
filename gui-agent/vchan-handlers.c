@@ -409,7 +409,26 @@ static DWORD HandleConfigure(IN HWND window, BOOL replyToMessages)
                     LogVerbose("SWP_NOSIZE");
                 }
 
-                if (SetWindowPos(window, NULL, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, flags))
+                // Windows ignores SetWindowPos on a maximized window, so restore it first
+                if ((flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE) && IsZoomed(window))
+                {
+                    LogDebug("0x%x is maximized, restoring", window);
+                    ShowWindowAsync(window, SW_SHOWNOACTIVATE);
+                    flags &= ~(SWP_NOMOVE | SWP_NOSIZE);
+                }
+
+                // the gui daemon uses the visible rect, SetWindowPos also covers DWM's invisible borders
+                int x = configureMsg.x, y = configureMsg.y, width = configureMsg.width, height = configureMsg.height;
+                RECT outer, visible;
+                if (GetWindowRect(window, &outer) && GetRealWindowRect(window, &visible) == ERROR_SUCCESS)
+                {
+                    x -= visible.left - outer.left;
+                    y -= visible.top - outer.top;
+                    width += (visible.left - outer.left) + (outer.right - visible.right);
+                    height += (visible.top - outer.top) + (outer.bottom - visible.bottom);
+                }
+
+                if (SetWindowPos(window, NULL, x, y, width, height, flags))
                 {
                     // update expected pos/size of the tracked window without waiting for actual change
                     // since we use SWP_ASYNCWINDOWPOS

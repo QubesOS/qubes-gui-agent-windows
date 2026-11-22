@@ -76,6 +76,11 @@ ULONG RemoveWindow(
     IN OUT WINDOW_DATA *entry
     );
 
+ULONG GetRealWindowRect(
+    IN HWND window,
+    OUT RECT* rect
+    );
+
 // This (re)initializes watched windows, hooks etc.
 ULONG SetSeamlessMode(
     IN BOOL seamlessMode,
