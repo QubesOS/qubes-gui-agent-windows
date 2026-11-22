@@ -409,6 +409,14 @@ static DWORD HandleConfigure(IN HWND window, BOOL replyToMessages)
                     LogVerbose("SWP_NOSIZE");
                 }
 
+                // Windows ignores SetWindowPos on a maximized window, so restore it first
+                if ((flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE) && IsZoomed(window))
+                {
+                    LogDebug("0x%x is maximized, restoring", window);
+                    ShowWindowAsync(window, SW_SHOWNOACTIVATE);
+                    flags &= ~(SWP_NOMOVE | SWP_NOSIZE);
+                }
+
                 if (SetWindowPos(window, NULL, configureMsg.x, configureMsg.y, configureMsg.width, configureMsg.height, flags))
                 {
                     // update expected pos/size of the tracked window without waiting for actual change
