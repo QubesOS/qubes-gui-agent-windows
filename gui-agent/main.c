@@ -1019,7 +1019,7 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
     LogVerbose("start");
     if (!g_SeamlessMode)
     {
-        if (frame->dirty_rects_count == 0)
+        if (frame->changed_rects_count == 0)
         {
             // normally we don't get frames with 0 dirty rects unless it's the 1st one
             // then refresh everything
@@ -1028,9 +1028,9 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
         }
         else
         {
-            for (UINT i = 0; i < frame->dirty_rects_count; i++)
+            for (UINT i = 0; i < frame->changed_rects_count; i++)
             {
-                RECT rect = frame->dirty_rects[i];
+                RECT rect = frame->changed_rects[i];
                 SendWindowDamageEvent(NULL, rect.left, rect.top,
                     rect.right - rect.left, rect.bottom - rect.top);
             }
@@ -1099,14 +1099,14 @@ static ULONG ProcessNewFrame(IN const CAPTURE_FRAME* frame)
         RECT changedArea; // intersection of damage rect with window rect
 
         // skip windows that aren't in the changed area
-        for (UINT i = 0; i < frame->dirty_rects_count; i++)
+        for (UINT i = 0; i < frame->changed_rects_count; i++)
         {
-            if (IntersectRect(&changedArea, &frame->dirty_rects[i], &windowRect))
+            if (IntersectRect(&changedArea, &frame->changed_rects[i], &windowRect))
             {
                 LogVerbose("damage for 0x%x: window (%d,%d) %dx%d, damage (%d,%d) %dx%d, intersect (%d,%d) %dx%d",
                     entry->Handle, entry->X, entry->Y, entry->Width, entry->Height,
-                    frame->dirty_rects[i].left, frame->dirty_rects[i].top,
-                    frame->dirty_rects[i].right - frame->dirty_rects[i].left, frame->dirty_rects[i].bottom - frame->dirty_rects[i].top,
+                    frame->changed_rects[i].left, frame->changed_rects[i].top,
+                    frame->changed_rects[i].right - frame->changed_rects[i].left, frame->changed_rects[i].bottom - frame->changed_rects[i].top,
                     changedArea.left, changedArea.top, changedArea.right - changedArea.left, changedArea.bottom - changedArea.top);
 
                 status = SendWindowDamageEvent(entry->Handle,
