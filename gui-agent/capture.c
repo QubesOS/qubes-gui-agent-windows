@@ -38,6 +38,7 @@ volatile LONG g_CaptureThreadEnable = 0;
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout);
 static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx);
 static DWORD WINAPI CaptureThread(void* param);
+static DWORD ShareFramebuffer(IN OUT CAPTURE_CONTEXT* ctx);
 
 // note: win_perror* functions set last error
 
@@ -240,7 +241,10 @@ CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event)
     if (!ctx->duplication)
         goto fail;
 
-    // get one frame to acquire framebuffer map
+    if (ShareFramebuffer(ctx) != ERROR_SUCCESS)
+        goto fail;
+
+    // get one frame to fill the framebuffer
     if (FAILED(GetFrame(ctx, 5*FRAME_TIMEOUT)))
         goto fail;
 
@@ -281,6 +285,10 @@ void CaptureTeardown(IN OUT CAPTURE_CONTEXT* ctx)
             win_perror2(status, "XcGnttabRevokeForeignAccess");
         }
     }
+
+    free(ctx->grant_refs);
+    if (ctx->framebuffer)
+        VirtualFree(ctx->framebuffer, 0, MEM_RELEASE);
 
     ReleaseFrame(ctx);
 
@@ -339,6 +347,58 @@ void CaptureStop(IN OUT CAPTURE_CONTEXT* ctx)
     LogVerbose("end");
 }
 
+static DWORD ShareFramebuffer(IN OUT CAPTURE_CONTEXT* ctx)
+{
+    size_t page_count = FRAMEBUFFER_PAGE_COUNT(ctx->width, ctx->height);
+    assert(page_count < ULONG_MAX);
+
+    ctx->framebuffer = VirtualAlloc(NULL, page_count * PAGE_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!ctx->framebuffer)
+        return win_perror("allocating framebuffer");
+
+    ctx->grant_refs = malloc(page_count * sizeof(ULONG));
+    if (!ctx->grant_refs)
+        exit(ERROR_OUTOFMEMORY);
+
+    void* shared = NULL;
+    DWORD status = XcGnttabPermitForeignAccess2(ctx->xc,
+        g_GuiDomainId,
+        ctx->framebuffer,
+        (ULONG)page_count,
+        0,
+        0,
+        XENIFACE_GNTTAB_READONLY,
+        &shared,
+        ctx->grant_refs);
+
+    if (status != ERROR_SUCCESS)
+    {
+        free(ctx->grant_refs);
+        ctx->grant_refs = NULL;
+        return win_perror2(status, "sharing framebuffer with GUI domain");
+    }
+
+    assert(shared == ctx->framebuffer);
+    return ERROR_SUCCESS;
+}
+
+// copy a rect of the mapped desktop image to the shared framebuffer
+static void CopyToFramebuffer(IN OUT CAPTURE_CONTEXT* ctx, IN const RECT* rect)
+{
+    RECT screen = { 0, 0, (LONG)ctx->width, (LONG)ctx->height };
+    RECT r;
+    if (!IntersectRect(&r, rect, &screen))
+        return;
+
+    size_t row_size = (size_t)(r.right - r.left) * 4;
+    for (LONG y = r.top; y < r.bottom; y++)
+    {
+        memcpy((BYTE*)ctx->framebuffer + ((size_t)y * ctx->width + r.left) * 4,
+            ctx->frame.rect.pBits + (size_t)y * ctx->frame.rect.Pitch + (size_t)r.left * 4,
+            row_size);
+    }
+}
+
 static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
 {
     LogVerbose("start");
@@ -356,109 +416,99 @@ static HRESULT GetFrame(IN OUT CAPTURE_CONTEXT* ctx, IN UINT timeout)
         goto fail1;
     }
 
-    if (ctx->frame.info.LastPresentTime.QuadPart == 0 && ctx->grant_refs)
+    if (ctx->frame.info.LastPresentTime.QuadPart == 0 && ctx->filled)
     {
-        // only skip here after we shared the framebuffer
         LogVerbose("framebuffer unchanged");
         ctx->frame.mapped = FALSE;
         goto end;
     }
 
-    // we only really need to map the framebuffer to get its pointer for sharing
-    if (!ctx->grant_refs)
+    // the desktop image only matches the frame's rects while the frame is held and mapped
+    status = IDXGIOutputDuplication_MapDesktopSurface(ctx->duplication, &ctx->frame.rect);
+    if (FAILED(status))
     {
-        LogDebug("1st frame, sharing framebuffer");
+        win_perror2(status, "duplication->MapDesktopSurface()");
+        goto fail2;
+    }
 
-        status = IDXGIOutputDuplication_MapDesktopSurface(ctx->duplication, &ctx->frame.rect);
-        if (FAILED(status))
+    ctx->frame.mapped = TRUE;
+
+    UINT size = ctx->frame.info.TotalMetadataBufferSize;
+    UINT move_count = 0;
+    UINT dirty_size = 0;
+    ctx->frame.changed_rects = NULL;
+    if (size > 0)
+    {
+        // a move rect is bigger than a RECT, so the move destinations and the dirty rects fit in size bytes
+        DXGI_OUTDUPL_MOVE_RECT* moves = (DXGI_OUTDUPL_MOVE_RECT*)malloc(size);
+        ctx->frame.changed_rects = (RECT*)malloc(size);
+        if (!moves || !ctx->frame.changed_rects)
         {
-            win_perror2(status, "duplication->MapDesktopSurface()");
-            goto fail2;
-        }
-
-        ctx->frame.mapped = TRUE;
-
-        size_t page_count = FRAMEBUFFER_PAGE_COUNT(ctx->width, ctx->height);
-        assert(page_count < ULONG_MAX);
-        ctx->grant_refs = malloc(page_count * sizeof(ULONG));
-
-        status = XcGnttabPermitForeignAccess2(ctx->xc,
-            g_GuiDomainId,
-            ctx->frame.rect.pBits,
-            (ULONG)page_count,
-            0,
-            0,
-            XENIFACE_GNTTAB_READONLY,
-            &ctx->framebuffer,
-            ctx->grant_refs);
-
-        if (status != ERROR_SUCCESS)
-        {
-            win_perror("sharing framebuffer with GUI domain");
+            free(moves);
+            status = E_OUTOFMEMORY;
+            win_perror2(status, "allocating rects buffer");
             goto fail3;
         }
 
-        assert(ctx->framebuffer == ctx->frame.rect.pBits);
+        UINT move_size = 0;
+        status = IDXGIOutputDuplication_GetFrameMoveRects(ctx->duplication, size, moves, &move_size);
+        if (FAILED(status))
+        {
+            free(moves);
+            win_perror2(status, "GetFrameMoveRects");
+            goto fail3;
+        }
+
+        // the mapped image already has the moved pixels, so a destination is just another changed area
+        move_count = move_size / (UINT)sizeof(DXGI_OUTDUPL_MOVE_RECT);
+        for (UINT i = 0; i < move_count; i++)
+            ctx->frame.changed_rects[i] = moves[i].DestinationRect;
+        free(moves);
+
+        status = IDXGIOutputDuplication_GetFrameDirtyRects(ctx->duplication,
+            size - move_count * (UINT)sizeof(RECT), ctx->frame.changed_rects + move_count, &dirty_size);
+        if (FAILED(status))
+        {
+            win_perror2(status, "GetFrameDirtyRects");
+            goto fail3;
+        }
     }
 
-    // dirty rects
-    UINT dr_size = 1; // initial buffer can't be empty
-    RECT temp_rect;
+    ctx->frame.changed_rects_count = move_count + dirty_size / (UINT)sizeof(RECT);
 
-    // query required size
-    ctx->frame.dirty_rects = NULL;
-    status = IDXGIOutputDuplication_GetFrameDirtyRects(ctx->duplication, dr_size, &temp_rect, &dr_size);
-    if (FAILED(status) && status != DXGI_ERROR_MORE_DATA)
+    if (!ctx->filled)
     {
-        win_perror2(status, "initial GetFrameDirtyRects");
-        goto fail4;
+        RECT screen = { 0, 0, (LONG)ctx->width, (LONG)ctx->height };
+        CopyToFramebuffer(ctx, &screen);
+        ctx->filled = TRUE;
     }
-
-    ctx->frame.dirty_rects = (RECT*)malloc(dr_size);
-    if (!ctx->frame.dirty_rects)
+    else
     {
-        win_perror2(ERROR_OUTOFMEMORY, "allocating dirty rects buffer");
-        goto fail4;
+        for (UINT i = 0; i < ctx->frame.changed_rects_count; i++)
+            CopyToFramebuffer(ctx, &ctx->frame.changed_rects[i]);
     }
-
-    status = IDXGIOutputDuplication_GetFrameDirtyRects(ctx->duplication, dr_size, ctx->frame.dirty_rects, &dr_size);
-    if (FAILED(status))
-    {
-        win_perror2(status, "GetFrameDirtyRects");
-        goto fail4;
-    }
-
-    ctx->frame.dirty_rects_count = dr_size / sizeof(RECT);
 
 #ifdef _DEBUG
-    LogVerbose("%u dirty rects", ctx->frame.dirty_rects_count);
-    for (UINT i = 0; i < ctx->frame.dirty_rects_count; i++)
-        LogVerbose("DR#%u: (%d,%d) %dx%d", i, ctx->frame.dirty_rects[i].left, ctx->frame.dirty_rects[i].top,
-            ctx->frame.dirty_rects[i].right - ctx->frame.dirty_rects[i].left,
-            ctx->frame.dirty_rects[i].bottom - ctx->frame.dirty_rects[i].top);
+    LogVerbose("%u move rects, %u dirty rects", move_count, ctx->frame.changed_rects_count - move_count);
+    for (UINT i = 0; i < ctx->frame.changed_rects_count; i++)
+        LogVerbose("DR#%u: (%d,%d) %dx%d", i, ctx->frame.changed_rects[i].left, ctx->frame.changed_rects[i].top,
+            ctx->frame.changed_rects[i].right - ctx->frame.changed_rects[i].left,
+            ctx->frame.changed_rects[i].bottom - ctx->frame.changed_rects[i].top);
 #endif
-
-    // TODO: GetFrameMoveRects (they seem to always be empty when testing)
-    // MSDN note: To produce a visually accurate copy of the desktop,
-    // an application must first process all move RECTs before it processes dirty RECTs.
 
 end:
     LeaveCriticalSection(&ctx->frame.lock);
     LogVerbose("end");
     return 0;
 
-fail4:
-    free(ctx->frame.dirty_rects);
-    ctx->frame.dirty_rects = NULL;
-    ctx->frame.dirty_rects_count = 0;
 fail3:
-    if (ctx->frame.mapped)
-    {
-        free(ctx->grant_refs);
-        ctx->grant_refs = NULL;
-        IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
-    }
+    free(ctx->frame.changed_rects);
+    ctx->frame.changed_rects = NULL;
+    ctx->frame.changed_rects_count = 0;
+    IDXGIOutputDuplication_UnMapDesktopSurface(ctx->duplication);
+    ctx->frame.mapped = FALSE;
 fail2:
+    IDXGIResource_Release(ctx->frame.texture);
     IDXGIOutputDuplication_ReleaseFrame(ctx->duplication);
 fail1:
     LogVerbose("end (%x)", status);
@@ -476,9 +526,9 @@ static HRESULT ReleaseFrame(IN OUT CAPTURE_CONTEXT* ctx)
     if (!ctx->frame.texture)
         goto end;
 
-    free(ctx->frame.dirty_rects);
-    ctx->frame.dirty_rects = NULL;
-    ctx->frame.dirty_rects_count = 0;
+    free(ctx->frame.changed_rects);
+    ctx->frame.changed_rects = NULL;
+    ctx->frame.changed_rects_count = 0;
 
     if (ctx->frame.mapped)
     {
@@ -547,7 +597,7 @@ static DWORD WINAPI CaptureThread(void* param)
             break;
         }
 
-        if (capture->frame.dirty_rects_count == 0)
+        if (capture->frame.changed_rects_count == 0)
             goto end_frame; // framebuffer contents not changed
 
         // notify main loop that there's a new frame

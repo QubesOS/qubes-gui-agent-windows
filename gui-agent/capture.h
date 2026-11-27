@@ -40,8 +40,8 @@ typedef struct _CAPTURE_FRAME
 	DXGI_OUTDUPL_FRAME_INFO info;
 	BOOL mapped;
 	DXGI_MAPPED_RECT rect;
-	UINT dirty_rects_count;
-	RECT* dirty_rects;
+	UINT changed_rects_count;
+	RECT* changed_rects;
 	CRITICAL_SECTION lock;
 } CAPTURE_FRAME;
 
@@ -55,17 +55,17 @@ typedef struct _CAPTURE_CONTEXT
 	IDXGIOutputDuplication* duplication;
 	HANDLE thread; // capture loop
 	PXENCONTROL_CONTEXT xc;
-	// mapped framebuffer location is constant as long as the capture interface is valid
-	// this gets initialized when the first frame is acquired
-	void* framebuffer; // framebuffer address
+	// copy of the desktop image shared with the GUI daemon, written only while a frame is held
+	void* framebuffer;
 	ULONG* grant_refs; // xen grant refs for shared framebuffer pages
+	BOOL filled; // framebuffer holds a whole desktop image
 	HANDLE frame_event; // capture thread -> main loop: new frame
 	HANDLE ready_event; // main loop -> capture thread: frame processed
 	HANDLE error_event; // capture thread -> main loop: capture error
 	CAPTURE_FRAME frame; // current frame data
 } CAPTURE_CONTEXT;
 
-// initialize capture interfaces and map framebuffer
+// initialize capture interfaces and share the framebuffer
 CAPTURE_CONTEXT* CaptureInitialize(HANDLE frame_event, HANDLE error_event);
 
 // start the capture thread
